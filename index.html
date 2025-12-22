@@ -6,8 +6,16 @@
   <meta name="color-scheme" content="dark light" />
   <meta name="format-detection" content="telephone=no" />
   <meta name="theme-color" content="#0b0b10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Grid Runner" />
 
   <title>Grid Runner</title>
+
+  <!-- Versión global -->
+  <script>
+    window.APP_VERSION = "0.1.1";
+  </script>
 
   <!-- Material Symbols (Google Fonts) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -19,24 +27,26 @@
 
   <link rel="manifest" href="./manifest.webmanifest?v=0.1.1" />
 
-  <!-- ICONS (tu estructura real: assets/icons/...) -->
+  <!-- ICONS -->
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
   <link rel="stylesheet" href="./styles.css?v=0.1.1" />
-
-  <script>
-    window.APP_VERSION = "0.1.1";
-  </script>
 </head>
 
 <body>
+  <noscript>
+    <div style="padding:16px;color:white;font-family:system-ui;background:#111;border-bottom:1px solid rgba(255,255,255,.12)">
+      Necesitas activar JavaScript para jugar.
+    </div>
+  </noscript>
+
   <div id="app">
     <!-- Topbar -->
-    <header class="topbar">
+    <header class="topbar" role="banner">
       <div class="brand">
-        <div class="brandDot"></div>
+        <div class="brandDot" aria-hidden="true"></div>
         <div class="brandText">
           <div class="brandTitle">Grid Runner</div>
           <div class="brandSub" id="brandSub">Arcade grid, upgrades, combos</div>
@@ -44,17 +54,17 @@
       </div>
 
       <div class="pills" aria-label="Estado">
-        <span class="pill" id="pillScore">
+        <span class="pill" id="pillScore" title="Score">
           <span class="ms" aria-hidden="true">flag</span>
           <span class="pv" data-pv="score">0</span>
         </span>
 
-        <span class="pill" id="pillBest">
+        <span class="pill" id="pillBest" title="Mejor">
           <span class="ms" aria-hidden="true">emoji_events</span>
           <span class="pv" data-pv="best">0</span>
         </span>
 
-        <span class="pill" id="pillStreak">
+        <span class="pill" id="pillStreak" title="Racha">
           <span class="ms" aria-hidden="true">local_fire_department</span>
           <span class="pv" data-pv="streak">0</span>
         </span>
@@ -64,17 +74,17 @@
           <span class="pv" data-pv="mult">1.0</span>
         </span>
 
-        <span class="pill" id="pillLevel">
+        <span class="pill" id="pillLevel" title="Nivel">
           <span class="ms" aria-hidden="true">stars</span>
           <span class="pv" data-pv="level">Lv 1</span>
         </span>
 
-        <span class="pill" id="pillSpeed">
+        <span class="pill" id="pillSpeed" title="Velocidad">
           <span class="ms" aria-hidden="true">speed</span>
           <span class="pv" data-pv="speed">0.0</span>
         </span>
 
-        <span class="pill pillBtn subtle" id="pillPlayer" title="Abrir menú">
+        <span class="pill pillBtn subtle" id="pillPlayer" title="Abrir menú" role="button" tabindex="0">
           <span class="ms" aria-hidden="true">person</span>
           <span class="pv" data-pv="player">Jugador</span>
         </span>
@@ -86,7 +96,7 @@
           <span class="pv">Offline</span>
         </span>
 
-        <span class="pill pillBtn" id="pillUpdate" hidden title="Actualizar">
+        <span class="pill pillBtn" id="pillUpdate" hidden title="Actualizar" role="button" tabindex="0">
           <span class="ms" aria-hidden="true">system_update</span>
           <span class="pv">Actualizar</span>
         </span>
@@ -116,11 +126,11 @@
     </header>
 
     <!-- Stage -->
-    <main class="stage" id="stage">
+    <main class="stage" id="stage" role="main">
       <canvas id="gameCanvas" width="640" height="960" aria-label="Juego"></canvas>
 
       <!-- In-stage HUD -->
-      <div class="hud">
+      <div class="hud" aria-hidden="true">
         <div class="combo">
           <div class="comboTop">
             <div class="comboSeq" id="comboSeq"></div>
@@ -132,10 +142,10 @@
           <div class="comboHint" id="comboHint">Completa la secuencia para subir multiplicador.</div>
         </div>
 
-        <div class="toast" id="toast" hidden></div>
+        <div class="toast" id="toast" hidden aria-live="polite"></div>
       </div>
 
-      <!-- Dpad (solo móvil si está activo en opciones) -->
+      <!-- Dpad -->
       <div class="dpad" id="dpad" hidden>
         <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
           <span class="ms" aria-hidden="true">keyboard_arrow_up</span>
@@ -176,14 +186,14 @@
           </div>
 
           <div class="form">
-            <label class="label">Perfil</label>
+            <label class="label" for="profileSelect">Perfil</label>
             <div class="row">
               <select id="profileSelect" class="select"></select>
               <button class="btn" id="btnNewProfile" type="button">Nuevo</button>
             </div>
 
             <div id="newProfileWrap" hidden>
-              <label class="label">Nombre</label>
+              <label class="label" for="startName">Nombre</label>
               <input id="startName" class="input" type="text" inputmode="text" maxlength="16" placeholder="Tu nombre (mín. 2)" />
               <div class="tiny muted" id="profileHint">Tus datos se guardan en este dispositivo.</div>
             </div>
@@ -304,7 +314,8 @@
     </main>
   </div>
 
-  <script src="./auth.js?v=0.1.1"></script>
-  <script src="./app.js?v=0.1.1"></script>
+  <!-- ✅ CLAVE: defer + orden (auth primero, app después) -->
+  <script src="./auth.js?v=0.1.1" defer></script>
+  <script src="./app.js?v=0.1.1" defer></script>
 </body>
 </html>
