@@ -1,10 +1,10 @@
-/* app.js — Grid Runner (PWA) v0.1.2 (HOTFIX)
-   ✅ Fix crash: “Cannot read properties of undefined (reading '0')” (bounds/NaN guards)
-   ✅ Botones SIEMPRE responden: binds seguros + overlays no bloquean por bug
-   ✅ Grid 100% cuadrado (sin distorsión): fuerza aspect-ratio del canvas por JS (fit dentro del stage)
-   ✅ Pausa real al abrir Opciones / Upgrades / Menús (no te mueres eligiendo)
-   ✅ Rendimiento: loop estable, dt cap, canvas desynchronized, menos trabajo cuando está pausado
-   ✅ “Juicy” básico: pop/pulse, partículas, shake suave, highlight zona, anim de jugador
+/* app.js — Grid Runner (PWA) v0.1.2 VISUAL+HOTFIX
+   - Overlays fullscreen por encima del header
+   - Splash real (logo + dots) con mínimo tiempo visible
+   - Transiciones suaves menú<->juego (fadeOut)
+   - Popups de puntuación en el grid (texto flotante)
+   - Robustez: bounds/NaN guards + grid validate
+   - Pausa real al abrir opciones/upgrades/menús
 */
 
 (() => {
@@ -26,14 +26,40 @@
 
   const $ = (id) => document.getElementById(id);
 
-  function overlayShow(el) { if (el) el.hidden = false; }
-  function overlayHide(el) { if (el) el.hidden = true; }
+  function overlayShow(el) {
+    if (!el) return;
+    el.classList.remove("fadeOut");
+    el.classList.add("fadeIn");
+    el.hidden = false;
+  }
+
+  function overlayHide(el) {
+    if (!el) return;
+    el.hidden = true;
+    el.classList.remove("fadeIn", "fadeOut");
+  }
+
+  function overlayFadeOut(el, ms = 180) {
+    return new Promise((res) => {
+      if (!el || el.hidden) return res();
+      el.classList.remove("fadeIn");
+      el.classList.add("fadeOut");
+      setTimeout(() => {
+        overlayHide(el);
+        res();
+      }, ms);
+    });
+  }
 
   function setPill(el, value) {
     if (!el) return;
     const pv = el.querySelector?.(".pv");
     if (pv) pv.textContent = String(value);
     else el.textContent = String(value);
+  }
+
+  function setState(s) {
+    try { document.body.dataset.state = s; } catch {}
   }
 
   // ───────────────────────── Storage keys ─────────────────────────
@@ -47,7 +73,7 @@
     useSprites: false,
     vibration: true,
     showDpad: true,
-    fx: 1.0, // “juicy” scale
+    fx: 1.0,
   });
 
   let settings = (() => {
@@ -117,7 +143,6 @@
       ["bonus", "tile_bonus.svg"],
       ["trap", "tile_trap.svg"],
       ["block", "tile_block.svg"],
-      // player opcional (si existe no pasa nada si no)
       ["player", "tile_player.svg"],
     ];
 
@@ -138,8 +163,6 @@
   // ───────────────────────── Game constants ─────────────────────────
   const COLS = 8;
   const ROWS = 24;
-
-  // Para “cuadrados perfectos”: canvas aspect ratio = COLS/ROWS (1:3)
   const CANVAS_AR = COLS / ROWS;
 
   const CellType = Object.freeze({
@@ -151,7 +174,6 @@
     Block: 5,
   });
 
-  // Tonalidad mejorada (más contrast)
   const CELL_COLORS = {
     [CellType.Empty]: "rgba(0,0,0,0)",
     [CellType.Coin]: "#2ef2a0",
@@ -177,33 +199,27 @@
   let consumed = [];
   let gridReady = false;
 
-  // Canvas sizing (CSS px)
   let dpr = 1;
   let stageW = 0, stageH = 0;
   let cssCanvasW = 0, cssCanvasH = 0;
 
-  // Grid geom in CSS px
   let cellPx = 18;
   let gridW = 0, gridH = 0;
   let offX = 0, offY = 0;
 
-  // scroll in px
   let scrollPx = 0;
   let runTime = 0;
 
-  // play zone
   let zoneBase = 3;
   let zoneExtra = 0;
   let zoneH = 3;
   let zoneY0 = 0;
 
-  // player target & smoothing
   let targetCol = 3;
   let targetRow = 1;
   let colF = 3;
   let rowF = 1;
 
-  // upgrades
   let shields = 0;
   let magnet = 0;
   let scoreBoost = 0;
@@ -214,7 +230,6 @@
   let gemValue = 30;
   let bonusValue = 60;
 
-  // combo
   const COMBO_POOL = [
     [CellType.Coin, CellType.Coin, CellType.Gem],
     [CellType.Gem, CellType.Coin, CellType.Bonus],
@@ -227,14 +242,15 @@
   let comboTimeMax = 6.0;
   let comboTime = 6.0;
 
-  // fx / juicy
+  // UI FX
   let toastT = 0;
-  let playerPulse = 0;     // 0..1
-  let zonePulse = 0;       // 0..1
-  let shakeT = 0;          // ms
-  let shakePow = 0;        // px
+  let playerPulse = 0;
+  let zonePulse = 0;
+  let shakeT = 0;
+  let shakePow = 0;
 
-  const particles = []; // {x,y,vx,vy,life,max,rad,color}
+  const particles = [];
+  const floatTexts = []; // {x,y,vy,life,max,text,color,stroke}
 
   // ───────────────────────── DOM refs ─────────────────────────
   let stage, canvas, ctx;
@@ -252,9 +268,9 @@
 
   let upTitle, upSub, upgradeChoices, btnReroll, btnSkipUpgrade;
 
-  let goStats, btnBackToStart, btnRetry;
+  let goStats, goScoreBig, goBestBig, btnBackToStart, btnRetry;
 
-  let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal;
+  let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal, btnRepairPWA;
 
   let errMsg, btnErrClose, btnErrReload;
 
@@ -266,8 +282,6 @@
   function showFatal(err) {
     try {
       console.error(err);
-
-      // no bloquear UI
       try { overlayHide(overlayLoading); } catch {}
 
       const msg =
@@ -293,12 +307,15 @@
     if (!toast) return;
     toast.textContent = msg;
     toast.hidden = false;
+    toast.classList.add("show");
     toastT = ms;
   }
 
   function hideToast() {
     if (!toast) return;
-    toast.hidden = true;
+    toast.classList.remove("show");
+    // deja un pelín para transición
+    setTimeout(() => { toast.hidden = true; }, 180);
     toastT = 0;
   }
 
@@ -307,14 +324,7 @@
     pillOffline.hidden = navigator.onLine;
   }
 
- _toggleOfflineListeners();
-  function _toggleOfflineListeners(){
-    // se llama una sola vez en setupPWA, pero por seguridad:
-    // (no hace nada si ya existen)
-  }
-
   function speedRowsPerSec() {
-    // Más consistente: subida por tiempo+level con clamp suave
     const t = runTime;
     const base = 1.05;
     const byTime = 0.026 * t;
@@ -343,7 +353,6 @@
     const isCoarse = matchMedia("(pointer:coarse)").matches;
     if (dpad) dpad.hidden = !(isCoarse && settings.showDpad);
 
-    // re-resize para reservar espacio al dpad si está visible
     resize();
   }
 
@@ -379,7 +388,6 @@
       }
     }
 
-    // evita filas imposibles
     const blocks = out.reduce((a, v) => a + (v === CellType.Block ? 1 : 0), 0);
     if (blocks >= 5) {
       for (let c = 0; c < COLS; c++) {
@@ -410,7 +418,6 @@
   }
 
   function shiftRows() {
-    // SHIFT robusto
     for (let r = ROWS - 1; r >= 1; r--) {
       grid[r] = grid[r - 1];
       consumed[r] = consumed[r - 1];
@@ -469,6 +476,23 @@
     return 0;
   }
 
+  function shake(ms, powPx) {
+    shakeT = Math.max(shakeT, ms);
+    shakePow = Math.max(shakePow, powPx);
+  }
+
+  function spawnFloatText(x, y, text, color, stroke = "rgba(0,0,0,0.55)") {
+    floatTexts.push({
+      x, y,
+      vy: -18 - 22 * settings.fx,
+      life: 720,
+      max: 720,
+      text,
+      color,
+      stroke
+    });
+  }
+
   function spawnPop(x, y, color, intensity = 1) {
     const n = clampInt(Math.round(10 * intensity * settings.fx), 6, 22);
     for (let i = 0; i < n; i++) {
@@ -486,13 +510,7 @@
     }
   }
 
-  function shake(ms, powPx) {
-    shakeT = Math.max(shakeT, ms);
-    shakePow = Math.max(shakePow, powPx);
-  }
-
   function applyCollect(t, checkCombo = true) {
-    // pop FX
     playerPulse = 1;
     zonePulse = 1;
 
@@ -548,12 +566,14 @@
           setConsumed(rr, cc, true);
           setCellEmpty(rr, cc);
 
-          // pequeño pop por “imán”
           const x = offX + cc * cellPx + cellPx * 0.5;
           const y = offY + rr * cellPx + cellPx * 0.5 + scrollPx;
           spawnPop(x, y, CELL_COLORS[t], 0.45);
 
+          const before = score;
           applyCollect(t, false);
+          const delta = score - before;
+          if (delta !== 0) spawnFloatText(x, y, (delta > 0 ? `+${delta}` : `${delta}`), delta > 0 ? "rgba(255,255,255,0.92)" : "rgba(255,120,120,0.95)");
         }
       }
     }
@@ -579,12 +599,13 @@
       setConsumed(r, c, true);
       setCellEmpty(r, c);
 
-      // FX pop en celda pisada
       const x = offX + c * cellPx + cellPx * 0.5;
       const y = offY + r * cellPx + cellPx * 0.5 + scrollPx;
+
       spawnPop(x, y, CELL_COLORS[t], t === CellType.Block ? 0.85 : 0.65);
 
       if (t === CellType.Block) {
+        spawnFloatText(x, y, "KO", "rgba(255,120,120,0.95)");
         if (shields > 0) {
           shields--;
           showToast("Shield salvó un KO", 900);
@@ -596,7 +617,14 @@
         return;
       }
 
+      const before = score;
       applyCollect(t, true);
+      const delta = score - before;
+      if (delta !== 0) spawnFloatText(
+        x, y,
+        (delta > 0 ? `+${delta}` : `${delta}`),
+        delta > 0 ? "rgba(255,255,255,0.92)" : "rgba(255,120,120,0.95)"
+      );
     }
   }
 
@@ -688,7 +716,6 @@
   let currentUpgradeChoices = [];
 
   function pauseForOverlay(on) {
-    // Pausa real: si hay un overlay “de decisión”, no se mueve el grid
     if (!running || gameOver) return;
     paused = !!on;
   }
@@ -784,7 +811,7 @@
       const t = p.life / p.max;
 
       p.vx *= damp;
-      p.vy = (p.vy * damp) + 40 * (dtMs / 1000); // gravedad ligera
+      p.vy = (p.vy * damp) + 40 * (dtMs / 1000);
       p.x += p.vx * (dtMs / 1000);
       p.y += p.vy * (dtMs / 1000);
 
@@ -797,11 +824,36 @@
     ctx.globalAlpha = 1;
   }
 
+  function drawFloatTexts(dtMs) {
+    if (!floatTexts.length) return;
+    for (let i = floatTexts.length - 1; i >= 0; i--) {
+      const f = floatTexts[i];
+      f.life -= dtMs;
+      if (f.life <= 0) { floatTexts.splice(i, 1); continue; }
+
+      const t = f.life / f.max;
+      f.y += f.vy * (dtMs / 1000);
+
+      const a = clamp(0.95 * (t * t), 0, 0.95);
+
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.font = `900 ${Math.max(12, Math.floor(cellPx * 0.34))}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = f.stroke;
+      ctx.fillStyle = f.color;
+      ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.restore();
+    }
+  }
+
   function draw(dtMs = 16) {
     if (!ctx) return;
     if (!gridReady || !ensureGridValid()) { clearScreen(); return; }
 
-    // shake
     let sx = 0, sy = 0;
     if (shakeT > 0) {
       const k = shakeT / 260;
@@ -814,28 +866,22 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
 
-    // wallpaper inside canvas (más bonito)
     const g = ctx.createLinearGradient(0, 0, 0, cssCanvasH);
     g.addColorStop(0, "#060610");
     g.addColorStop(1, "#04040a");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
 
-    // apply shake translate in CSS px
     ctx.translate(sx, sy);
 
-    // grid background
     ctx.fillStyle = "rgba(255,255,255,0.028)";
     ctx.fillRect(offX, offY, gridW, gridH);
 
-    // zone highlight + pulse
     const zTop = offY + zoneY0 * cellPx;
-    const zp = zonePulse;
-    const zoneA = 0.075 + 0.06 * zp;
+    const zoneA = 0.075 + 0.06 * zonePulse;
     ctx.fillStyle = `rgba(106,176,255,${zoneA.toFixed(3)})`;
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
-    // tiles
     for (let r = 0; r < ROWS; r++) {
       const y = offY + r * cellPx + scrollPx;
       for (let c = 0; c < COLS; c++) {
@@ -854,24 +900,15 @@
 
         const pad = Math.max(2, Math.floor(cellPx * 0.08));
         const ok = drawSprite(key, x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2, alpha);
-
         if (!ok) {
           ctx.globalAlpha = alpha;
           ctx.fillStyle = CELL_COLORS[t];
           ctx.fillRect(x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2);
-
-          // “bevel” sutil para que parezca más pro
-          ctx.globalAlpha = alpha * 0.55;
-          ctx.strokeStyle = "rgba(0,0,0,0.28)";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x + pad + 1, y + pad + 1, cellPx - pad * 2 - 2, cellPx - pad * 2 - 2);
-
           ctx.globalAlpha = 1;
         }
       }
     }
 
-    // grid lines (crisp)
     ctx.globalAlpha = 0.28;
     ctx.strokeStyle = "rgba(255,255,255,0.075)";
     ctx.lineWidth = 1;
@@ -891,12 +928,10 @@
     }
     ctx.globalAlpha = 1;
 
-    // player (pulse)
     const px = offX + colF * cellPx;
     const py = offY + (zoneY0 + rowF) * cellPx;
 
-    const pPulse = playerPulse;
-    const s = 1 + 0.08 * pPulse;
+    const s = 1 + 0.08 * playerPulse;
     const cx = px + cellPx / 2;
     const cy = py + cellPx / 2;
 
@@ -915,15 +950,6 @@
       ctx.strokeRect(px + padP + 1, py + padP + 1, cellPx - padP * 2 - 2, cellPx - padP * 2 - 2);
     }
 
-    // glow
-    ctx.globalAlpha = 0.14 + 0.18 * pPulse;
-    ctx.fillStyle = "rgba(106,176,255,0.9)";
-    ctx.beginPath();
-    ctx.arc(cx, cy, cellPx * (0.62 + 0.18 * pPulse), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
-    // shield count
     if (shields > 0) {
       ctx.fillStyle = "rgba(106,176,255,0.96)";
       ctx.font = `900 ${Math.max(11, Math.floor(cellPx * 0.38))}px system-ui`;
@@ -932,17 +958,17 @@
       ctx.fillText(String(shields), px + cellPx - 10, py + 12);
     }
 
-    ctx.restore(); // player transform
+    ctx.restore();
 
-    // particles
     ctx.globalCompositeOperation = "lighter";
     drawParticles(dtMs);
     ctx.globalCompositeOperation = "source-over";
+    drawFloatTexts(dtMs);
 
     ctx.restore();
   }
 
-  // ───────────────────────── Resize (NO distorsión) ─────────────────────────
+  // ───────────────────────── Resize (fit AR perfecto) ─────────────────────────
   function resize() {
     if (!stage || !canvas || !ctx) return;
 
@@ -950,14 +976,12 @@
     stageW = Math.max(240, Math.floor(r.width));
     stageH = Math.max(240, Math.floor(r.height));
 
-    // Reserva espacio si dpad visible (para que no moleste)
     let reservedBottom = 0;
-    if (dpad && !dpad.hidden) reservedBottom = 190; // aprox altura dpad + margen
+    if (dpad && !dpad.hidden) reservedBottom = 190;
 
     const availW = stageW;
     const availH = Math.max(240, stageH - reservedBottom);
 
-    // Fit canvas manteniendo aspect ratio COLS/ROWS (cuadrados perfectos)
     let w = availW;
     let h = Math.floor(w / CANVAS_AR);
     if (h > availH) {
@@ -968,17 +992,14 @@
     cssCanvasW = Math.max(240, w);
     cssCanvasH = Math.max(240, h);
 
-    // 🔥 Esto evita que el CSS “estire” el canvas raro
     canvas.style.width = `${cssCanvasW}px`;
     canvas.style.height = `${cssCanvasH}px`;
     canvas.style.aspectRatio = `${COLS} / ${ROWS}`;
 
     dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-
     canvas.width = Math.floor(cssCanvasW * dpr);
     canvas.height = Math.floor(cssCanvasH * dpr);
 
-    // cellPx en CSS px (cuadrado)
     cellPx = Math.floor(Math.min(cssCanvasW / COLS, cssCanvasH / ROWS));
     cellPx = clampInt(cellPx, 14, 68);
 
@@ -993,16 +1014,8 @@
 
   // ───────────────────────── Input ─────────────────────────
   function isAnyBlockingOverlayOpen() {
-    // overlays que deben pausar/controlar
     const open = (el) => el && el.hidden === false;
-    return (
-      open(overlayStart) ||
-      open(overlayOptions) ||
-      open(overlayUpgrades) ||
-      open(overlayPaused) ||
-      open(overlayGameOver) ||
-      open(overlayError)
-    );
+    return open(overlayStart) || open(overlayOptions) || open(overlayUpgrades) || open(overlayPaused) || open(overlayGameOver) || open(overlayError) || open(overlayLoading);
   }
 
   function canControl() {
@@ -1020,8 +1033,6 @@
   function bindInputs() {
     window.addEventListener("keydown", (e) => {
       const k = e.key;
-
-      // atajos útiles
       if (k === "Escape") { togglePause(); return; }
       if (k === "r" || k === "R") { if (!isAnyBlockingOverlayOpen()) { resetRun(false); startRun(); } return; }
 
@@ -1052,7 +1063,6 @@
     const endSwipe = (e) => {
       if (!active) return;
       active = false;
-
       if (!canControl()) return;
 
       const dx = e.clientX - sx;
@@ -1073,8 +1083,7 @@
   // ───────────────────────── UI ─────────────────────────
   function togglePause() {
     if (!running || gameOver || inLevelUp) return;
-    if (overlayOptions && !overlayOptions.hidden) return; // no “mezclar” overlays
-
+    if (overlayOptions && !overlayOptions.hidden) return;
     paused = !paused;
     if (paused) overlayShow(overlayPaused);
     else overlayHide(overlayPaused);
@@ -1125,6 +1134,7 @@
     scrollPx = 0;
 
     particles.length = 0;
+    floatTexts.length = 0;
     playerPulse = 0;
     zonePulse = 0;
     shakeT = 0;
@@ -1138,15 +1148,20 @@
     overlayHide(overlayGameOver);
     overlayHide(overlayOptions);
 
-    if (showMenu) overlayShow(overlayStart);
-    else overlayHide(overlayStart);
+    if (showMenu) {
+      overlayShow(overlayStart);
+      setState("menu");
+    } else {
+      overlayHide(overlayStart);
+    }
 
     updatePills();
     draw(16);
   }
 
-  function startRun() {
-    overlayHide(overlayStart);
+  async function startRun() {
+    // transición menú -> juego
+    if (overlayStart && !overlayStart.hidden) await overlayFadeOut(overlayStart, 170);
     overlayHide(overlayGameOver);
     overlayHide(overlayPaused);
     overlayHide(overlayOptions);
@@ -1160,10 +1175,9 @@
 
     runTime = 0;
     scrollPx = 0;
-
-    // reinicia timers de combo al empezar para que no “se muera” en menú
     comboTime = comboTimeMax;
 
+    setState("playing");
     updatePills();
     draw(16);
   }
@@ -1174,6 +1188,7 @@
     gameOver = true;
     inLevelUp = false;
 
+    setState("over");
     shake(260, 9);
     vibrate(32);
 
@@ -1186,17 +1201,21 @@
     try {
       const raw = localStorage.getItem(RUNS_KEY);
       const arr = raw ? safeParse(raw, []) : [];
-      arr.unshift({ ts: Date.now(), profileId: activeProfileId, name: playerName, score, level });
+      arr.unshift({ ts: Date.now(), profileId: activeProfileId, name: playerName, score, level, time: Math.round(runTime) });
       arr.length = Math.min(arr.length, 30);
       localStorage.setItem(RUNS_KEY, JSON.stringify(arr));
     } catch {}
 
+    if (goScoreBig) goScoreBig.textContent = String(score | 0);
+    if (goBestBig) goBestBig.textContent = String(best | 0);
+
     if (goStats) {
       goStats.innerHTML = `
         <div class="line"><span>Motivo</span><span>${reason}</span></div>
-        <div class="line"><span>Score</span><span>${score}</span></div>
         <div class="line"><span>Nivel</span><span>${level}</span></div>
-        <div class="line"><span>Mejor</span><span>${best}</span></div>
+        <div class="line"><span>Tiempo</span><span>${Math.round(runTime)}s</span></div>
+        <div class="line"><span>Racha</span><span>${streak}</span></div>
+        <div class="line"><span>Mult</span><span>${mult.toFixed(2)}</span></div>
       `;
     }
 
@@ -1212,13 +1231,11 @@
   let lastT = 0;
 
   function tickFx(dtMs) {
-    // toast
     if (toastT > 0) {
       toastT -= dtMs;
       if (toastT <= 0) hideToast();
     }
 
-    // juicy decay
     playerPulse = Math.max(0, playerPulse - dtMs / (220 / settings.fx));
     zonePulse = Math.max(0, zonePulse - dtMs / (260 / settings.fx));
 
@@ -1226,13 +1243,17 @@
       shakeT -= dtMs;
       if (shakeT <= 0) { shakeT = 0; shakePow = 0; }
     }
+
+    // partículas decay
+    for (let i = particles.length - 1; i >= 0; i--) {
+      particles[i].life -= 0; // life se descuenta en drawParticles
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
   }
 
   function update(dtMs) {
-    // update solo cuando está corriendo (no drenar combo en menús)
     if (!running || paused || gameOver || inLevelUp) return;
 
-    // combo timer
     comboTime -= dtMs / 1000;
     if (comboTimerVal) comboTimerVal.textContent = `${Math.max(0, comboTime).toFixed(1)}s`;
     if (comboTime <= 0) {
@@ -1240,17 +1261,14 @@
       comboTime = comboTimeMax;
     }
 
-    // smoothing player
     const k = 14;
     colF = lerp(colF, targetCol, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
     rowF = lerp(rowF, targetRow, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
 
-    // scroll
     runTime += dtMs / 1000;
     const sp = speedRowsPerSec();
     scrollPx += (sp * cellPx) * (dtMs / 1000);
 
-    // advances deterministas
     let safe = 0;
     while (scrollPx >= cellPx && safe++ < 12) {
       scrollPx -= cellPx;
@@ -1263,14 +1281,11 @@
 
   function frame(t) {
     try {
-      const dt = clamp(t - lastT, 0, 50); // cap fuerte
+      const dt = clamp(t - lastT, 0, 50);
       lastT = t;
 
       tickFx(dt);
-
       update(dt);
-
-      // draw SIEMPRE (para que overlays se sientan vivos)
       draw(dt);
     } catch (e) {
       showFatal(e);
@@ -1306,7 +1321,6 @@
   }
 
   async function applySWUpdateNow() {
-    // si no hay SW, recarga normal
     if (!swReg) { location.reload(); return; }
 
     if (swReg.waiting) {
@@ -1322,6 +1336,22 @@
     } else {
       location.reload();
     }
+  }
+
+  async function repairPWA() {
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch {}
+    try {
+      if (window.caches && caches.keys) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch {}
+    location.reload();
   }
 
   async function setupPWA() {
@@ -1366,13 +1396,14 @@
       applySWUpdateNow();
     });
 
+    if (window.__GRIDRUNNER_NOSW) return;
+
     if ("serviceWorker" in navigator) {
       try {
         const swUrl = new URL(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`, location.href);
         swReg = await navigator.serviceWorker.register(swUrl);
 
         try { await swReg.update(); } catch {}
-
         if (swReg.waiting) markUpdateAvailable("Actualizar");
 
         swReg.addEventListener("updatefound", () => {
@@ -1471,7 +1502,6 @@
     if (!stage) throw new Error("Falta #stage");
     if (!canvas) throw new Error("Falta #gameCanvas");
 
-    // desynchronized ayuda en algunos navegadores
     ctx = canvas.getContext("2d", { alpha: false, desynchronized: true }) ||
           canvas.getContext("2d", { alpha: false }) ||
           canvas.getContext("2d");
@@ -1520,6 +1550,8 @@
     btnSkipUpgrade = $("btnSkipUpgrade");
 
     goStats = $("goStats");
+    goScoreBig = $("goScoreBig");
+    goBestBig = $("goBestBig");
     btnBackToStart = $("btnBackToStart");
     btnRetry = $("btnRetry");
 
@@ -1530,6 +1562,7 @@
     optFx = $("optFx");
     optFxValue = $("optFxValue");
     btnClearLocal = $("btnClearLocal");
+    btnRepairPWA = $("btnRepairPWA");
 
     errMsg = $("errMsg");
     btnErrClose = $("btnErrClose");
@@ -1549,14 +1582,16 @@
 
   async function boot() {
     try {
-      cacheDOM();
+      const bootStartedAt = performance.now();
 
+      cacheDOM();
       window.__GRIDRUNNER_BOOTED = true;
 
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
 
       if (loadingSub) loadingSub.textContent = "Iniciando…";
+      setState("loading");
 
       syncFromAuth();
 
@@ -1578,7 +1613,7 @@
       btnOptions?.addEventListener("click", showOptions);
 
       btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); });
-      btnQuitToStart?.addEventListener("click", () => { overlayHide(overlayPaused); resetRun(true); });
+      btnQuitToStart?.addEventListener("click", async () => { await overlayFadeOut(overlayPaused); resetRun(true); });
 
       btnRetry?.addEventListener("click", () => { resetRun(false); startRun(); });
       btnBackToStart?.addEventListener("click", () => { resetRun(true); });
@@ -1595,6 +1630,8 @@
         saveSettings();
       });
 
+      btnRepairPWA?.addEventListener("click", repairPWA);
+
       btnClearLocal?.addEventListener("click", () => {
         const ok = confirm("¿Borrar datos locales? (Perfiles, settings, runs)");
         if (!ok) return;
@@ -1608,7 +1645,7 @@
       btnReroll?.addEventListener("click", rerollUpgrades);
       btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast("Saltar", 650); });
 
-      btnStart?.addEventListener("click", () => {
+      btnStart?.addEventListener("click", async () => {
         if (Auth && profileSelect) {
           if (profileSelect.value === "__new__") {
             const nm = (startName?.value || "").trim();
@@ -1628,7 +1665,7 @@
           }
         }
         updatePills();
-        startRun();
+        await startRun();
       });
 
       pillPlayer?.addEventListener("click", () => resetRun(true));
@@ -1648,13 +1685,19 @@
       lastT = performance.now();
       requestAnimationFrame(frame);
 
-      // quitar loading
-      setTimeout(() => {
-        overlayHide(overlayLoading);
+      // Splash mínimo visible (para que se vea SIEMPRE)
+      const SPLASH_MIN_MS = 950;
+      const elapsed = performance.now() - bootStartedAt;
+      const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
+
+      setTimeout(async () => {
+        // transición loading -> menú
+        await overlayFadeOut(overlayLoading, 180);
         overlayShow(overlayStart);
+        setState("menu");
         if (brandSub) brandSub.textContent = "Listo";
         updatePills();
-      }, 650);
+      }, wait);
 
       document.addEventListener("visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {

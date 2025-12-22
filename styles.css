@@ -29,9 +29,13 @@
 
   --focus: 0 0 0 3px rgba(105,168,255,0.25);
 
-  /* 🎨 wallpaper */
+  /* wallpaper */
   --glowA: rgba(80,120,255,0.16);
   --glowB: rgba(255,170,60,0.12);
+
+  /* overlay backdrop */
+  --overlayDim: rgba(0,0,0,0.58);
+  --overlayBlur: blur(16px);
 }
 
 *{ box-sizing: border-box; }
@@ -102,6 +106,17 @@ a{ color: inherit; }
   gap: 10px;
 }
 
+/* “modo jugando” (más compacto para que el grid se vea enorme) */
+body[data-state="playing"] .topbar{
+  padding:
+    calc(6px + env(safe-area-inset-top))
+    10px
+    6px
+    10px;
+}
+body[data-state="playing"] .brandSub{ display:none; }
+body[data-state="playing"] .pill{ padding: 6px 9px; }
+
 .brand{ grid-area: brand; display:flex; align-items:center; gap:10px; min-width: 210px; }
 .brandDot{
   width: 12px; height: 12px;
@@ -134,7 +149,7 @@ a{ color: inherit; }
   font-size: 12.5px;
   white-space: nowrap;
   user-select: none;
-  transition: border-color .15s ease, transform .12s ease, background .15s ease;
+  transition: border-color .15s ease, transform .12s ease, background .15s ease, opacity .15s ease;
 }
 .pill .pv{ display:inline-flex; align-items:center; }
 .pill.subtle{ background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.74); }
@@ -217,9 +232,9 @@ a{ color: inherit; }
   place-items: center;
 }
 
-/* ✅ Canvas SIN DISTORSIÓN: mantiene ratio 8/24 y se maximiza dentro del stage */
+/* Canvas (fallback CSS) — el JS lo ajusta inline para “fit” perfecto */
 #gameCanvas{
-  width: min(720px, 100%);
+  width: min(820px, 100%);
   height: auto;
   max-height: 100%;
   aspect-ratio: 8 / 24;
@@ -234,8 +249,21 @@ a{ color: inherit; }
   box-shadow: var(--shadow);
   touch-action: none;
 
-  /* nitidez */
   image-rendering: pixelated;
+}
+
+/* frame glow */
+.canvasWrap::before{
+  content:"";
+  position:absolute;
+  inset: 6px;
+  border-radius: calc(var(--r) + 8px);
+  background:
+    radial-gradient(820px 420px at 35% 15%, rgba(80,120,255,0.10), transparent 60%),
+    radial-gradient(820px 420px at 65% 85%, rgba(255,170,60,0.09), transparent 62%);
+  filter: blur(18px);
+  opacity: .85;
+  pointer-events:none;
 }
 
 /* ───────────────── HUD ───────────────── */
@@ -312,7 +340,7 @@ a{ color: inherit; }
   max-width: 60ch;
   font-size: 13px;
 
-  transform: translateY(-6px);
+  transform: translateY(-8px);
   opacity: 0;
   transition: transform .18s ease, opacity .18s ease;
 }
@@ -349,19 +377,32 @@ a{ color: inherit; }
 .dpadBtn:hover{ border-color: rgba(255,255,255,0.20); background: rgba(0,0,0,0.50); }
 .dpadBtn:active{ transform: translateY(1px) scale(0.99); }
 
-/* ───────────────── Overlays ───────────────── */
+/* ───────────────── Overlays (FULLSCREEN, arriba del header) ───────────────── */
 .overlay{
-  position:absolute;
-  z-index: 30;
-  inset: var(--pad);
+  position: fixed;
+  z-index: 500;            /* >>> por encima del topbar */
+  inset: 0;
+  padding: calc(var(--pad) + env(safe-area-inset-top))
+           var(--pad)
+           calc(var(--pad) + env(safe-area-inset-bottom))
+           var(--pad);
   display:grid;
   place-items:center;
   pointer-events:auto;
+
+  background: var(--overlayDim);
+  backdrop-filter: var(--overlayBlur);
+
+  opacity: 1;
+  transition: opacity .18s ease;
 }
 .overlay[hidden]{ display:none !important; }
 
+.overlay.fadeOut{ opacity: 0; }
+.overlay.fadeIn{ opacity: 1; }
+
 .panel{
-  width: min(540px, calc(100% - 12px));
+  width: min(560px, calc(100% - 18px));
   border-radius: var(--r);
   background: var(--card);
   border: 1px solid rgba(255,255,255,0.12);
@@ -372,10 +413,10 @@ a{ color: inherit; }
   opacity: 0.98;
   animation: popIn .14s ease-out both;
 }
-.panel.wide{ width: min(860px, calc(100% - 12px)); }
+.panel.wide{ width: min(900px, calc(100% - 18px)); }
 
 @keyframes popIn{
-  from{ transform: translateY(10px) scale(0.98); opacity: 0.0; }
+  from{ transform: translateY(12px) scale(0.98); opacity: 0.0; }
   to{ transform: translateY(0px) scale(1.0); opacity: 1.0; }
 }
 
@@ -397,6 +438,52 @@ a{ color: inherit; }
   gap: 10px;
   justify-content:flex-end;
   margin-top: 12px;
+}
+
+/* Splash / Loading */
+.splash{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items:flex-start;
+}
+.splashLogoRow{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+}
+.splashDot{
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 0 5px rgba(255,255,255,0.05), 0 12px 34px rgba(0,0,0,0.40);
+}
+.splashTitle{
+  font-size: 20px;
+  font-weight: 950;
+  letter-spacing: .2px;
+}
+.splashSub{
+  color: rgba(255,255,255,0.70);
+  font-size: 13px;
+}
+.dots{
+  display:inline-flex;
+  gap: 6px;
+  align-items:center;
+}
+.dots i{
+  width: 6px; height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.75);
+  opacity: .35;
+  animation: dotPulse 1.05s ease-in-out infinite;
+}
+.dots i:nth-child(2){ animation-delay: .14s; }
+.dots i:nth-child(3){ animation-delay: .28s; }
+@keyframes dotPulse{
+  0%,100%{ transform: translateY(0px); opacity: .35; }
+  50%{ transform: translateY(-3px); opacity: .95; }
 }
 
 .loadingBar{
@@ -523,6 +610,28 @@ a{ color: inherit; }
 .optRow.danger{
   border-color: rgba(255,59,89,0.22);
   background: rgba(255,59,89,0.07);
+}
+
+/* GameOver hero (más pro) */
+.goHero{
+  display:flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.22);
+  margin: 8px 0 10px 0;
+}
+.goHero .big{
+  font-size: 28px;
+  font-weight: 950;
+  letter-spacing: .2px;
+}
+.goHero .tag{
+  font-size: 12px;
+  color: rgba(255,255,255,0.70);
 }
 
 /* Stats */

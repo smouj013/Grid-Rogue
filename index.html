@@ -20,8 +20,6 @@
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
-
-      // Prueba sin SW: ?nosw=1
       window.__GRIDRUNNER_NOSW = qs.has("nosw");
 
       async function nukeSWAndCaches() {
@@ -40,7 +38,6 @@
         } catch (e) {}
       }
 
-      // ✅ si abres con ?repair=1 → limpia todo y recarga limpio
       if (qs.has("repair")) {
         nukeSWAndCaches().finally(() => {
           qs.delete("repair");
@@ -69,7 +66,7 @@
   <link rel="stylesheet" href="./styles.css?v=0.1.2" />
 </head>
 
-<body>
+<body data-state="loading">
   <noscript>
     <div style="padding:16px;color:white;font-family:system-ui;background:#111;border-bottom:1px solid rgba(255,255,255,.12)">
       Necesitas activar JavaScript para jugar.
@@ -198,20 +195,24 @@
           </div>
         </div>
 
-        <!-- LOADING -->
+        <!-- LOADING (Splash real) -->
         <section class="overlay" id="overlayLoading">
           <div class="panel">
-            <div class="panelHead">
-              <div class="h2">Cargando</div>
-              <div class="muted tiny" id="loadingSub">Iniciando…</div>
+            <div class="splash">
+              <div class="splashLogoRow">
+                <div class="splashDot" aria-hidden="true"></div>
+                <div class="splashTitle">Grid Runner</div>
+              </div>
+              <div class="splashSub">
+                Cargando <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              </div>
             </div>
+
             <div class="loadingBar">
               <div class="loadingBarFill"></div>
             </div>
 
-            <div class="tiny muted" id="loadingHint">
-              Si tarda, se desbloquea solo (failsafe).
-            </div>
+            <div class="muted tiny" id="loadingSub">Iniciando…</div>
 
             <div class="panelActions" style="justify-content:flex-start; margin-top:10px;">
               <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
@@ -295,6 +296,17 @@
               <div class="h2">Game Over</div>
             </div>
 
+            <div class="goHero">
+              <div>
+                <div class="tag">Tu score</div>
+                <div class="big" id="goScoreBig">0</div>
+              </div>
+              <div style="text-align:right">
+                <div class="tag">Mejor</div>
+                <div class="big" id="goBestBig">0</div>
+              </div>
+            </div>
+
             <div class="stats" id="goStats"></div>
 
             <div class="panelActions">
@@ -372,8 +384,6 @@
   <script>
     (function(){
       const $ = (id)=>document.getElementById(id);
-      const overlayLoading = $("overlayLoading");
-      const overlayStart = $("overlayStart");
       const loadingSub = $("loadingSub");
       const btnReload = $("btnEmergencyReload");
       const btnRepair = $("btnEmergencyRepair");
@@ -402,10 +412,6 @@
       setTimeout(()=>{
         if (!window.__GRIDRUNNER_BOOTED){
           showFailsafe();
-          try{
-            if (overlayLoading) overlayLoading.hidden = false;
-            if (overlayStart) overlayStart.hidden = false;
-          }catch(e){}
         }
       }, 4500);
     })();
