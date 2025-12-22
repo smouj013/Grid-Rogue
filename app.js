@@ -1,19 +1,15 @@
-/* app.js — Grid Runner (PWA) v0.1.3 VISUAL+HUD
-   - Overlays fullscreen por encima del header (CSS fixed + backdrop)
-   - Splash real (logo + dots) con mínimo visible
-   - Transiciones suaves menú<->juego (fadeOut)
-   - Popups de puntuación en el grid (texto flotante)
-   - Combo UI con iconos coloreados por tipo
-   - Barra de progreso al siguiente nivel (HUD)
-   - Zona de imán visible: halo + anillo suave
-   - Robustez: bounds/NaN guards + grid validate
-   - Pausa real al abrir opciones/upgrades/menús
+/* app.js — Grid Runner (PWA) v0.1.4 VISUAL+HUD
+   - HUD fuera del canvas (no ensucia el grid)
+   - Splash mínimo 5s
+   - Partículas mejoradas al “comer” tiles
+   - Flash rojo + temblor al chocar (KO/Block) y flash naranja en trampa
+   - Anti-scroll/anti-zoom en área de juego (mobile safe)
 */
 
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.3");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.4");
   window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
@@ -197,7 +193,6 @@
   let mult = 1.0;
   let level = 1;
 
-  // ✅ para barra de progreso
   let levelStartScore = 0;
   let nextLevelAt = 220;
 
@@ -255,11 +250,16 @@
   let shakeT = 0;
   let shakePow = 0;
 
-  const particles = [];
-  const floatTexts = []; // {x,y,vy,life,max,text,color,stroke}
+  // ✅ Flash de fondo
+  let hitFlashT = 0;
+  let hitFlashMax = 1;
+  let hitFlashColor = "#ff2b4d"; // default rojo
+
+  const particles = [];   // {kind,x,y,vx,vy,life,max,rad,color,rot,vr,w,h}
+  const floatTexts = [];  // {x,y,vy,life,max,text,color,stroke}
 
   // ───────────────────────── DOM refs ─────────────────────────
-  let stage, canvas, ctx;
+  let stage, canvasWrap, gameArea, hud, canvas, ctx;
   let brandSub;
 
   let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion;
@@ -497,6 +497,12 @@
     shakePow = Math.max(shakePow, powPx);
   }
 
+  function flash(color = "#ff2b4d", ms = 220) {
+    hitFlashColor = color;
+    hitFlashT = Math.max(hitFlashT, ms);
+    hitFlashMax = Math.max(1, ms);
+  }
+
   function spawnFloatText(x, y, text, color, stroke = "rgba(0,0,0,0.55)") {
     floatTexts.push({
       x, y,
@@ -507,22 +513,70 @@
       color,
       stroke
     });
+    if (floatTexts.length > 80) floatTexts.splice(0, floatTexts.length - 80);
   }
 
   function spawnPop(x, y, color, intensity = 1) {
-    const n = clampInt(Math.round(10 * intensity * settings.fx), 6, 22);
+    const n = clampInt(Math.round(12 * intensity * settings.fx), 8, 30);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = (0.35 + Math.random() * 1.15) * (20 + 28 * settings.fx) * intensity;
+      const sp = (0.35 + Math.random() * 1.20) * (26 + 34 * settings.fx) * intensity;
       particles.push({
+        kind: "dot",
         x, y,
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp,
         life: 260 + Math.random() * 220,
-        max: 420,
-        rad: (1.2 + Math.random() * 2.4) * settings.fx,
+        max: 460,
+        rad: (1.2 + Math.random() * 2.8) * settings.fx,
         color,
       });
+    }
+    if (particles.length > 900) particles.splice(0, particles.length - 900);
+  }
+
+  function spawnSparks(x, y, color, intensity = 1) {
+    const n = clampInt(Math.round(10 * intensity * settings.fx), 6, 24);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (0.55 + Math.random() * 1.25) * (34 + 44 * settings.fx) * intensity;
+      particles.push({
+        kind: "spark",
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 220 + Math.random() * 180,
+        max: 420,
+        w: Math.max(1.4, (1.6 + Math.random() * 1.4) * settings.fx),
+        h: Math.max(4.0, (6.0 + Math.random() * 7.0) * settings.fx),
+        rot: a + (Math.random() * 0.6 - 0.3),
+        vr: (Math.random() * 5.0 - 2.5),
+        color,
+      });
+    }
+    if (particles.length > 900) particles.splice(0, particles.length - 900);
+  }
+
+  function spawnEatFX(t, x, y) {
+    const col = CELL_COLORS[t] || "rgba(255,255,255,0.85)";
+
+    if (t === CellType.Coin) {
+      spawnPop(x, y, col, 0.85);
+      spawnSparks(x, y, "rgba(255,255,255,0.92)", 0.65);
+      shake(55, 1.2);
+      return;
+    }
+    if (t === CellType.Gem) {
+      spawnPop(x, y, col, 0.95);
+      spawnSparks(x, y, "rgba(170,210,255,0.95)", 0.85);
+      shake(60, 1.35);
+      return;
+    }
+    if (t === CellType.Bonus) {
+      spawnPop(x, y, col, 1.15);
+      spawnSparks(x, y, "rgba(255,245,200,0.95)", 1.0);
+      shake(75, 1.6);
+      return;
     }
   }
 
@@ -540,7 +594,11 @@
       vibrate(18);
       failCombo();
       showToast("Trampa", 650);
-      shake(180, 6);
+
+      // ✅ choque = flash + temblor
+      flash("#ff6b3d", 220);
+      shake(220, 7);
+
       return;
     }
 
@@ -554,7 +612,8 @@
         if (comboIdx >= combo.length) {
           mult = clamp(mult + 0.15, 1.0, 4.0);
           showToast("Combo completado: +MULT", 900);
-          shake(120, 3);
+          shake(140, 3.2);
+          flash("#6ab0ff", 140);
           rerollCombo();
         } else {
           renderComboUI();
@@ -584,12 +643,17 @@
 
           const x = offX + cc * cellPx + cellPx * 0.5;
           const y = offY + rr * cellPx + cellPx * 0.5 + scrollPx;
-          spawnPop(x, y, CELL_COLORS[t], 0.45);
+
+          spawnEatFX(t, x, y);
 
           const before = score;
           applyCollect(t, false);
           const delta = score - before;
-          if (delta !== 0) spawnFloatText(x, y, (delta > 0 ? `+${delta}` : `${delta}`), delta > 0 ? "rgba(255,255,255,0.92)" : "rgba(255,120,120,0.95)");
+          if (delta !== 0) spawnFloatText(
+            x, y,
+            (delta > 0 ? `+${delta}` : `${delta}`),
+            delta > 0 ? "rgba(255,255,255,0.92)" : "rgba(255,120,120,0.95)"
+          );
         }
       }
     }
@@ -618,19 +682,32 @@
       const x = offX + c * cellPx + cellPx * 0.5;
       const y = offY + r * cellPx + cellPx * 0.5 + scrollPx;
 
-      spawnPop(x, y, CELL_COLORS[t], t === CellType.Block ? 0.85 : 0.65);
-
       if (t === CellType.Block) {
+        // ✅ choque fuerte: flash rojo + temblor
+        flash("#ff2b4d", 280);
+        shake(260, 10);
+
+        spawnPop(x, y, CELL_COLORS[t], 1.25);
+        spawnSparks(x, y, "rgba(255,140,160,0.95)", 1.0);
         spawnFloatText(x, y, "KO", "rgba(255,120,120,0.95)");
+
         if (shields > 0) {
           shields--;
           showToast("Shield salvó un KO", 900);
           vibrate(24);
-          shake(160, 5);
+          shake(190, 6);
+          flash("#6ab0ff", 140);
         } else {
           gameOverNow("KO");
         }
         return;
+      }
+
+      // ✅ comemos un tile: partículas bonitas
+      if (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus) {
+        spawnEatFX(t, x, y);
+      } else {
+        spawnPop(x, y, CELL_COLORS[t], 0.85);
       }
 
       const before = score;
@@ -744,7 +821,7 @@
     pauseForOverlay(true);
 
     level++;
-    levelStartScore = score; // ✅ reinicia progreso del nivel
+    levelStartScore = score;
     nextLevelAt = score + Math.round(240 + level * 150);
 
     if (upTitle) upTitle.textContent = `Nivel ${level}`;
@@ -781,6 +858,7 @@
         u.apply();
         showToast(`Mejora: ${u.name}`, 950);
         shake(120, 3);
+        flash("#6ab0ff", 120);
         closeUpgrade();
       });
       upgradeChoices?.appendChild(card);
@@ -796,6 +874,7 @@
     renderUpgradeChoices();
     showToast("Reroll", 650);
     shake(90, 2);
+    flash("#ffd35a", 110);
   }
 
   // ───────────────────────── Rendering ─────────────────────────
@@ -830,15 +909,29 @@
       const t = p.life / p.max;
 
       p.vx *= damp;
-      p.vy = (p.vy * damp) + 40 * (dtMs / 1000);
+      p.vy = (p.vy * damp) + 42 * (dtMs / 1000);
       p.x += p.vx * (dtMs / 1000);
       p.y += p.vy * (dtMs / 1000);
 
-      ctx.globalAlpha = clamp(0.85 * t, 0, 0.85);
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.6, p.rad * (0.6 + 0.7 * t)), 0, Math.PI * 2);
-      ctx.fill();
+      const a = clamp(0.90 * t, 0, 0.90);
+
+      if (p.kind === "spark") {
+        p.rot += (p.vr || 0) * (dtMs / 1000);
+
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot || 0);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-(p.w || 2) * 0.5, -(p.h || 8) * 0.5, (p.w || 2), (p.h || 8));
+        ctx.restore();
+      } else {
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.6, (p.rad || 2) * (0.65 + 0.65 * t)), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -873,7 +966,6 @@
     if (magnet <= 0) return;
     const rad = (magnet + 0.35) * cellPx;
 
-    // halo suave
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
@@ -885,7 +977,6 @@
     ctx.arc(cx, cy, rad * 1.15, 0, Math.PI * 2);
     ctx.fill();
 
-    // anillo fino
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 0.35;
     ctx.strokeStyle = "rgba(106,176,255,0.55)";
@@ -903,7 +994,7 @@
 
     let sx = 0, sy = 0;
     if (shakeT > 0) {
-      const k = shakeT / 260;
+      const k = shakeT / 280;
       const pow = shakePow * k;
       sx = (Math.random() * 2 - 1) * pow;
       sy = (Math.random() * 2 - 1) * pow;
@@ -919,6 +1010,17 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
 
+    // ✅ flash de fondo (no tapa el grid con HUD, es en canvas)
+    if (hitFlashT > 0) {
+      const t = clamp(hitFlashT / hitFlashMax, 0, 1);
+      const a = 0.55 * (t * t);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = hitFlashColor;
+      ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
+      ctx.restore();
+    }
+
     ctx.translate(sx, sy);
 
     // panel grid
@@ -931,7 +1033,7 @@
     ctx.fillStyle = `rgba(106,176,255,${zoneA.toFixed(3)})`;
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
-    // borde sutil de zona
+    // borde zona
     ctx.globalAlpha = 0.35;
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
     ctx.lineWidth = 1;
@@ -994,7 +1096,6 @@
     const cx = px + cellPx / 2;
     const cy = py + cellPx / 2;
 
-    // ✅ zona imán visible (antes del jugador)
     drawMagnetZone(cx, cy);
 
     ctx.save();
@@ -1033,14 +1134,14 @@
 
   // ───────────────────────── Resize (fit AR perfecto) ─────────────────────────
   function resize() {
-    if (!stage || !canvas || !ctx) return;
+    if (!gameArea || !canvas || !ctx) return;
 
-    const r = stage.getBoundingClientRect();
+    const r = gameArea.getBoundingClientRect();
     stageW = Math.max(240, Math.floor(r.width));
     stageH = Math.max(240, Math.floor(r.height));
 
     let reservedBottom = 0;
-    if (dpad && !dpad.hidden) reservedBottom = 190;
+    if (dpad && !dpad.hidden) reservedBottom = 182;
 
     const availW = stageW;
     const availH = Math.max(240, stageH - reservedBottom);
@@ -1110,7 +1211,18 @@
     btnUp?.addEventListener("click", () => move(0, -1));
     btnDown?.addEventListener("click", () => move(0, +1));
 
-    if (!canvas) return;
+    if (!canvas || !gameArea) return;
+
+    // ✅ anti-scroll/anti-zoom dentro del juego (sin “cámara” moviéndose)
+    const blockIfGame = (e) => {
+      if (!e.cancelable) return;
+      // bloquea siempre sobre el área de juego (así no hay scroll ni pinch raro)
+      e.preventDefault();
+    };
+    gameArea.addEventListener("wheel", blockIfGame, { passive: false });
+    gameArea.addEventListener("touchmove", blockIfGame, { passive: false });
+    gameArea.addEventListener("gesturestart", blockIfGame, { passive: false });
+    gameArea.addEventListener("gesturechange", blockIfGame, { passive: false });
 
     let sx = 0, sy = 0, st = 0, active = false;
 
@@ -1205,6 +1317,9 @@
     shakeT = 0;
     shakePow = 0;
 
+    hitFlashT = 0;
+    hitFlashMax = 1;
+
     makeGrid();
     rerollCombo();
 
@@ -1253,7 +1368,8 @@
     inLevelUp = false;
 
     setState("over");
-    shake(260, 9);
+    shake(360, 12);
+    flash("#ff2b4d", 360);
     vibrate(32);
 
     if (score > best) {
@@ -1306,6 +1422,11 @@
     if (shakeT > 0) {
       shakeT -= dtMs;
       if (shakeT <= 0) { shakeT = 0; shakePow = 0; }
+    }
+
+    if (hitFlashT > 0) {
+      hitFlashT -= dtMs;
+      if (hitFlashT < 0) hitFlashT = 0;
     }
   }
 
@@ -1556,8 +1677,12 @@
   // ───────────────────────── Boot ─────────────────────────
   function cacheDOM() {
     stage = $("stage");
+    canvasWrap = $("canvasWrap");
+    gameArea = $("gameArea");
+    hud = $("hud");
     canvas = $("gameCanvas");
     if (!stage) throw new Error("Falta #stage");
+    if (!gameArea) throw new Error("Falta #gameArea");
     if (!canvas) throw new Error("Falta #gameCanvas");
 
     ctx = canvas.getContext("2d", { alpha: false, desynchronized: true }) ||
@@ -1747,8 +1872,8 @@
       lastT = performance.now();
       requestAnimationFrame(frame);
 
-      // Splash mínimo visible (para que se vea SIEMPRE)
-      const SPLASH_MIN_MS = 950;
+      // ✅ Splash mínimo 5s
+      const SPLASH_MIN_MS = 5000;
       const elapsed = performance.now() - bootStartedAt;
       const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
 

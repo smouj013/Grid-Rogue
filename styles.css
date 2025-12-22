@@ -29,11 +29,9 @@
 
   --focus: 0 0 0 3px rgba(105,168,255,0.25);
 
-  /* 🎨 wallpaper */
   --glowA: rgba(80,120,255,0.16);
   --glowB: rgba(255,170,60,0.12);
 
-  /* HUD accent per tipo */
   --coin: #2ef2a0;
   --gem:  #6ab0ff;
   --bonus:#ffd35a;
@@ -88,6 +86,7 @@ a{ color:inherit; }
   height:100dvh;
   display:flex;
   flex-direction:column;
+  min-height:0;
 }
 
 /* ───────────────── Topbar ───────────────── */
@@ -206,24 +205,81 @@ a{ color:inherit; }
   #pillSpeed{ display:none; }
 }
 
+/* ✅ Gameplay en móvil: header ultra-compacto (no “come” pantalla) */
+@media (max-width:720px){
+  body[data-state="playing"] .topbar{
+    padding:
+      calc(6px + env(safe-area-inset-top))
+      8px
+      6px
+      8px;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "pills actions";
+    gap:8px;
+  }
+  body[data-state="playing"] .brand{ display:none; }
+  body[data-state="playing"] #pillBest{ display:none; }
+  body[data-state="playing"] #pillSpeed{ display:none; }
+  body[data-state="playing"] #pillPlayer{ display:none; }
+  body[data-state="playing"] #pillVersion{ display:none; }
+}
+
 /* ───────────────── Stage ───────────────── */
 .stage{
   position:relative;
   z-index:1;
   flex:1;
   min-height:0;
-  display:grid;
-  place-items:center;
+
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  gap: var(--pad);
+
   padding: var(--pad);
   padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+}
+
+@media (max-width:720px){
+  .stage{
+    padding: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
 }
 
 .canvasWrap{
   position:relative;
   width:100%;
-  height:100%;
+  flex:1;
+  min-height:0;
+
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  gap: var(--pad);
+}
+
+/* ✅ HUD fuera del canvas */
+.hud{
+  width: min(720px, 100%);
+  pointer-events:none;
+}
+
+/* Área de juego */
+.gameArea{
+  width:100%;
+  flex:1;
+  min-height:0;
   display:grid;
   place-items:center;
+  position:relative;
+
+  /* ✅ evita scroll/zoom/arrastre dentro del juego */
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 /* ✅ Canvas SIN DISTORSIÓN: ratio 8/24 */
@@ -241,24 +297,17 @@ a{ color:inherit; }
     linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45));
 
   box-shadow: var(--shadow);
+
+  /* ✅ importantísimo para no mover “cámara” del navegador */
   touch-action:none;
+  user-select:none;
 
   image-rendering: pixelated;
 }
 
 /* ───────────────── HUD ───────────────── */
-.hud{
-  position:absolute;
-  inset: var(--pad);
-  z-index:12;
-  pointer-events:none;
-  display:flex;
-  justify-content: space-between;
-  gap:10px;
-}
-
 .combo{
-  max-width: min(560px, calc(100% - 20px));
+  max-width: 100%;
   padding: 10px 12px;
   border-radius: var(--r2);
   background: var(--glass);
@@ -313,7 +362,7 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.62);
 }
 
-/* ✅ Level progress “slider bar” */
+/* Level progress */
 .levelProg{
   margin-top: 10px;
   padding-top: 8px;
@@ -349,11 +398,10 @@ a{ color:inherit; }
   transition: width .10s linear;
 }
 
+/* Toast debajo del HUD (no tapa el grid) */
 .toast{
-  pointer-events:none;
-  position:absolute;
-  top: var(--pad);
-  right: var(--pad);
+  margin-top: 10px;
+  width: 100%;
   padding: 10px 12px;
   border-radius: var(--r2);
   background: rgba(10,10,14,0.78);
@@ -413,7 +461,6 @@ a{ color:inherit; }
 }
 .overlay[hidden]{ display:none !important; }
 
-/* fade helpers usados por app.js */
 .overlay.fadeIn{ animation: overlayIn .18s ease-out both; }
 .overlay.fadeOut{ animation: overlayOut .18s ease-in both; }
 @keyframes overlayIn{ from{ opacity:0; } to{ opacity:1; } }
