@@ -1,8 +1,9 @@
-/* sw.js — Grid Runner PWA (v0.0.7)
+/* sw.js — Grid Runner PWA (v0.0.8)
    - App shell precache + navegación offline (index)
    - Stale-while-revalidate para assets
+   - Mensaje SKIP_WAITING para auto-actualizar
 */
-const VERSION = "v0.0.7";
+const VERSION = "v0.0.8";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
@@ -13,7 +14,15 @@ const CORE_ASSETS = [
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
+
+  // icons (si faltan, no rompe)
   "./assets/icon.svg",
+  "./assets/icons/favicon-32.png",
+  "./assets/icons/icon-192.png",
+  "./assets/icons/icon-512.png",
+  "./assets/icons/apple-touch-icon-180.png",
+  "./assets/icons/apple-touch-icon-167.png",
+  "./assets/icons/apple-touch-icon-152.png",
 
   // sprites opcionales (si no existen, no rompe)
   "./assets/sprites/player.svg",
@@ -24,6 +33,13 @@ const CORE_ASSETS = [
   "./assets/sprites/tile_bonus.svg",
   "./assets/sprites/tile_empty.svg",
 ];
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (data && data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
@@ -56,7 +72,7 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // navegación
+  // Navegación: fallback a index.html
   if (req.mode === "navigate"){
     event.respondWith((async () => {
       const cache = await caches.open(CORE_CACHE);
@@ -72,7 +88,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // assets: stale-while-revalidate
+  // Assets: stale-while-revalidate
   event.respondWith((async () => {
     const cache = await caches.open(RUNTIME_CACHE);
     const cached = await cache.match(req);

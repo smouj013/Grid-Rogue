@@ -1,16 +1,13 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
-  "description": "Runner en cuadrícula 8×24. Puntos, racha, combos y mejoras roguelike.",
-  "lang": "es-ES",
+  "description": "Runner en cuadrícula 8×24 con combos, niveles y mejoras. PWA offline.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#07070b",
   "theme_color": "#e60012",
-  "categories": ["games"],
-  "prefer_related_applications": false,
+  "orientation": "portrait",
   "icons": [
     {
       "src": "./assets/icons/icon-192.png",
@@ -19,7 +16,7 @@
       "purpose": "any"
     },
     {
-      "src": "./assets/icons/icon-192-maskable.png",
+      "src": "./assets/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
@@ -31,7 +28,7 @@
       "purpose": "any"
     },
     {
-      "src": "./assets/icons/icon-512-maskable.png",
+      "src": "./assets/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

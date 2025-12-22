@@ -1,24 +1,32 @@
-/* Grid Runner — PWA (v0.0.7)
-   - Layout responsive real (iOS/Android/PC)
-   - Player centrado + banda de 3 filas (zona de movimiento)
-   - Movimiento 4 direcciones (teclado / swipe / dpad opcional)
-   - Visual mejorado: KO muy visible, filas pasadas atenuadas, más “juicy”
-   - Combos visibles + nivel/XP + mejoras roguelike (20+)
-   - Ranking eliminado (ignorar por ahora)
+/* Grid Runner — PWA (v0.0.8)
+   - Grid más grande y responsive (móvil/PC)
+   - Pantalla de carga inicial (mínimo 5s)
+   - Auto-update real (SW: SKIP_WAITING + reload)
+   - Movimiento 4 direcciones + banda (3 filas por defecto)
+   - Combos visibles + niveles + mejoras (20+)
+   - Ranking ignorado por ahora
 */
 (() => {
   "use strict";
 
-  const APP_VERSION = (window.APP_VERSION || "0.0.7");
+  const APP_VERSION = (window.APP_VERSION || "0.0.8");
 
   // ───────────────────────── DOM ─────────────────────────
   const $ = (id) => document.getElementById(id);
 
   const canvas = $("game");
   const ctx = canvas.getContext("2d", { alpha: false });
+  const stage = $("stage") || canvas.parentElement;
 
-  const stage = canvas.parentElement;
+  // Pills
+  const pillVersion = $("pillVersion");
+  const pillOffline = $("pillOffline");
+  const pillSpeed = $("pillSpeed");
+  const pillLevel = $("pillLevel");
+  const pillPlayer = $("pillPlayer");
+  const pillSprites = $("pillSprites");
 
+  // HUD
   const hudScore = $("hudScore");
   const hudScoreDelta = $("hudScoreDelta");
   const hudStreak = $("hudStreak");
@@ -30,19 +38,37 @@
   const hudXp = $("hudXp");
   const hudLevelFill = $("hudLevelFill");
 
-  const pillSpeed = $("pillSpeed");
-  const pillPlayer = $("pillPlayer");
-  const pillSprites = $("pillSprites");
-  const pillOffline = $("pillOffline");
-  const pillLevel = $("pillLevel");
-  const pillVersion = $("pillVersion");
-
+  // Buttons
+  const btnOptions = $("btnOptions");
   const btnPause = $("btnPause");
   const btnRestart = $("btnRestart");
   const btnInstall = $("btnInstall");
 
-  const btnOptions = $("btnOptions");
+  // Overlays
+  const overlayLoading = $("overlayLoading");
+  const loadingText = $("loadingText");
+  const loadingSub = $("loadingSub");
+
+  const overlayStart = $("overlayStart");
+  const overlayPaused = $("overlayPaused");
+  const overlayGameOver = $("overlayGameOver");
+  const overlayUpgrades = $("overlayUpgrades");
   const overlayOptions = $("overlayOptions");
+
+  // Start UI
+  const startName = $("startName");
+  const startBest = $("startBest");
+  const startRuns = $("startRuns");
+  const btnStart = $("btnStart");
+
+  // Pause/GameOver UI
+  const btnResume = $("btnResume");
+  const btnPlayAgain = $("btnPlayAgain");
+  const btnBackToStart = $("btnBackToStart");
+  const btnBackToStart2 = $("btnBackToStart2");
+  const finalLine = $("finalLine");
+
+  // Options UI
   const btnCloseOptions = $("btnCloseOptions");
   const optSprites = $("optSprites");
   const optVibration = $("optVibration");
@@ -51,1524 +77,840 @@
   const optFxValue = $("optFxValue");
   const btnClearLocal = $("btnClearLocal");
 
-  const overlayStart = $("overlayStart");
-  const overlayPaused = $("overlayPaused");
-  const overlayGameOver = $("overlayGameOver");
-  const overlayUpgrades = $("overlayUpgrades");
-
-  const startName = $("startName");
-  const startBest = $("startBest");
-  const startRuns = $("startRuns");
-
-  const btnStart = $("btnStart");
-  const btnResume = $("btnResume");
-  const btnPlayAgain = $("btnPlayAgain");
-  const btnBackToStart = $("btnBackToStart");
-  const finalLine = $("finalLine");
-
-  const toast = $("toast");
+  // Touch
   const zoneLeft = $("zoneLeft");
   const zoneRight = $("zoneRight");
 
-  const comboSeq = $("comboSeq");
-  const comboTimer = $("comboTimer");
-  const comboHint = $("comboHint");
+  // Combo Dock
+  const comboSeqEl = $("comboSeq");
+  const comboTimerEl = $("comboTimer");
+  const comboHintEl = $("comboHint");
 
+  // D-pad
   const dpad = $("dpad");
   const btnUp = $("btnUp");
   const btnDown = $("btnDown");
   const btnLeft = $("btnLeft");
   const btnRight = $("btnRight");
 
-  const upgBtns = [ $("upg0"), $("upg1"), $("upg2") ];
+  // Upgrades buttons
+  const upg0 = $("upg0");
+  const upg1 = $("upg1");
+  const upg2 = $("upg2");
+  const btnReroll = $("btnReroll");
+  const rerollCount = $("rerollCount");
 
-  // ───────────────────────── Storage keys ─────────────────────────
+  const toast = $("toast");
+
+  // ───────────────────────── Config ─────────────────────────
+  const COLS = 8;
+  const ROWS = 24;
+
+  const CELL = Object.freeze({
+    EMPTY: 0,
+    BLOCK: 1,
+    COIN: 2,
+    GEM: 3,
+    TRAP: 4,
+    BONUS: 5
+  });
+
+  const TYPE_NAME = {
+    [CELL.EMPTY]: "Vacío",
+    [CELL.BLOCK]: "KO",
+    [CELL.COIN]: "Moneda",
+    [CELL.GEM]: "Gema",
+    [CELL.TRAP]: "Trampa",
+    [CELL.BONUS]: "Bonus"
+  };
+
+  const BASE_COLOR = {
+    [CELL.EMPTY]: "#0f1020",
+    [CELL.BLOCK]: "#ff3355",
+    [CELL.COIN]:  "#2ee59d",
+    [CELL.GEM]:   "#69a8ff",
+    [CELL.TRAP]:  "#ff7b2e",
+    [CELL.BONUS]: "#ffd35a"
+  };
+
+  const VALUE = {
+    [CELL.COIN]:  10,
+    [CELL.GEM]:   25,
+    [CELL.BONUS]: 60,
+    [CELL.TRAP]:  -15
+  };
+
+  const SPRITE_URL = {
+    player: "./assets/sprites/player.svg",
+    [CELL.EMPTY]: "./assets/sprites/tile_empty.svg",
+    [CELL.BLOCK]: "./assets/sprites/tile_block.svg",
+    [CELL.COIN]:  "./assets/sprites/tile_coin.svg",
+    [CELL.GEM]:   "./assets/sprites/tile_gem.svg",
+    [CELL.TRAP]:  "./assets/sprites/tile_trap.svg",
+    [CELL.BONUS]: "./assets/sprites/tile_bonus.svg"
+  };
+
+  // ───────────────────────── Storage ─────────────────────────
   const LS_PREFIX = "grid_runner_";
-  const BEST_KEY = LS_PREFIX + "best";
-  const RUNS_KEY = LS_PREFIX + "runs";
-  const NAME_KEY = LS_PREFIX + "name";
-  const SETTINGS_KEY = LS_PREFIX + "settings_v2";
+  const BEST_KEY = LS_PREFIX + "best_v1";
+  const RUNS_KEY = LS_PREFIX + "runs_v1";
+  const NAME_KEY = LS_PREFIX + "name_v1";
+  const SETTINGS_KEY = LS_PREFIX + "settings_v3";
+
+  // ───────────────────────── Device detect ─────────────────────────
+  function isMobileLike(){
+    const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    const small = Math.min(window.innerWidth, window.innerHeight) <= 760;
+    return coarse || small;
+  }
+  function setDeviceAttr(){
+    document.documentElement.dataset.device = isMobileLike() ? "mobile" : "desktop";
+  }
 
   // ───────────────────────── Utils ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
-  const randi = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-  const now = () => performance.now() * 0.001;
+  const now = () => performance.now();
 
-  function isMobileLike(){
-    return (matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
-  }
-
-  function vibrate(ms){
-    if (!settings.vibration) return;
-    if (navigator.vibrate) navigator.vibrate(ms);
-  }
-
-  function bump(el){
-    if (!el) return;
-    el.classList.remove("bump");
-    void el.offsetWidth;
-    el.classList.add("bump");
-  }
-
-  let toastTimer = 0;
-  function showToast(msg, ms=900){
+  function showToast(msg, ms=1200){
     toast.textContent = msg;
     toast.hidden = false;
-    toastTimer = ms / 1000;
-  }
-  function hideToast(){
-    toast.hidden = true;
-    toastTimer = 0;
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { toast.hidden = true; }, ms);
   }
 
   function overlayShow(el){
-    el.classList.remove("fadeOut");
+    if (!el) return;
     el.hidden = false;
   }
-  function overlayHide(el, ms=180){
-    el.classList.add("fadeOut");
-    window.setTimeout(() => {
-      el.hidden = true;
-      el.classList.remove("fadeOut");
-    }, ms);
+  function overlayHide(el){
+    if (!el) return;
+    el.hidden = true;
   }
 
   // ───────────────────────── Settings ─────────────────────────
-  const defaultSettings = {
-    useSprites: true,
-    vibration: true,
-    showDpad: true,
-    fx: 1.0,
+  const defaultSettings = () => {
+    const mobile = isMobileLike();
+    return {
+      useSprites: true,
+      vibration: mobile,
+      showDpad: mobile,
+      fx: 1.0
+    };
   };
 
-  let settings = loadSettings();
-  function loadSettings(){
+  let settings = (() => {
     try{
       const raw = localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return { ...defaultSettings, showDpad: isMobileLike() };
-      const obj = JSON.parse(raw);
-      return {
-        ...defaultSettings,
-        ...obj,
-        showDpad: ("showDpad" in obj) ? !!obj.showDpad : isMobileLike(),
-      };
+      if (!raw) return defaultSettings();
+      const s = JSON.parse(raw);
+      return { ...defaultSettings(), ...s };
     } catch {
-      return { ...defaultSettings, showDpad: isMobileLike() };
+      return defaultSettings();
     }
-  }
+  })();
+
   function saveSettings(){
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
   }
+
   function applySettingsToUI(){
-    optSprites.checked = !!settings.useSprites;
-    optVibration.checked = !!settings.vibration;
-    optDpad.checked = !!settings.showDpad;
-    optFx.value = String(clamp(settings.fx, 0.4, 1.25));
-    optFxValue.textContent = clamp(settings.fx, 0.4, 1.25).toFixed(2);
+    if (optSprites) optSprites.checked = !!settings.useSprites;
+    if (optVibration) optVibration.checked = !!settings.vibration;
+    if (optDpad) optDpad.checked = !!settings.showDpad;
+    if (optFx){
+      optFx.value = String(settings.fx);
+      optFxValue.textContent = Number(settings.fx).toFixed(2);
+    }
 
-    dpad.hidden = !settings.showDpad;
-    pillSprites.textContent = settings.useSprites ? "🧩 Sprites" : "🎨 Colores";
-    ctx.imageSmoothingEnabled = !settings.useSprites;
+    if (pillSprites) pillSprites.textContent = settings.useSprites ? "🧩 Sprites" : "🎨 Colores";
+    if (dpad) dpad.hidden = !settings.showDpad;
   }
 
-  // ───────────────────────── Sprites (opcionales) ─────────────────────────
-  const SPR = {
-    player: null,
-    empty: null,
-    block: null,
-    coin: null,
-    gem: null,
-    trap: null,
-    bonus: null,
-    ok: false,
+  // ───────────────────────── Sprites ─────────────────────────
+  const sprites = {
+    loaded:false,
+    player:null,
+    tiles: new Map()
   };
 
-  function loadImage(src){
+  function loadImage(url){
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = () => resolve(null);
-      img.src = src;
+      img.src = url;
     });
   }
 
-  async function loadSprites(){
-    const base = "./assets/sprites/";
-    const [player, empty, block, coin, gem, trap, bonus] = await Promise.all([
-      loadImage(base + "player.svg"),
-      loadImage(base + "tile_empty.svg"),
-      loadImage(base + "tile_block.svg"),
-      loadImage(base + "tile_coin.svg"),
-      loadImage(base + "tile_gem.svg"),
-      loadImage(base + "tile_trap.svg"),
-      loadImage(base + "tile_bonus.svg"),
-    ]);
-    SPR.player = player;
-    SPR.empty = empty;
-    SPR.block = block;
-    SPR.coin = coin;
-    SPR.gem = gem;
-    SPR.trap = trap;
-    SPR.bonus = bonus;
-    SPR.ok = !!(player && empty && block && coin && gem && trap && bonus);
-    // no bloquea si faltan
+  async function preloadSprites(){
+    const toLoad = [];
+    toLoad.push(loadImage(SPRITE_URL.player).then(img => sprites.player = img));
+    Object.keys(SPRITE_URL).forEach((k) => {
+      if (k === "player") return;
+      const t = Number(k);
+      toLoad.push(loadImage(SPRITE_URL[t]).then(img => sprites.tiles.set(t, img)));
+    });
+    await Promise.allSettled(toLoad);
+    sprites.loaded = true;
   }
 
-  // ───────────────────────── Game constants ─────────────────────────
-  const W = 8;
-  const H = 24;
-
-  const CELL = {
-    EMPTY: 0,
-    COIN: 1,
-    GEM: 2,
-    BONUS: 3,
-    TRAP: 4,
-    BLOCK: 5,
-  };
-
-  const CELL_COLOR = {
-    [CELL.EMPTY]: "rgba(255,255,255,0.06)",
-    [CELL.COIN]:  "rgba(124,255,210,0.92)",
-    [CELL.GEM]:   "rgba(120,182,255,0.92)",
-    [CELL.BONUS]: "rgba(255,209,106,0.92)",
-    [CELL.TRAP]:  "rgba(255,122,168,0.92)",
-    [CELL.BLOCK]: "rgba(255,78,78,0.90)",
-  };
-
-  const CENTER_ROW = Math.floor(H/2);
-
-  // ───────────────────────── Runtime state ─────────────────────────
+  // ───────────────────────── Canvas layout ─────────────────────────
   let dpr = 1;
-  let cellPx = 16;
-  let boardX = 0, boardY = 0, boardW = 0, boardH = 0;
+  let cw = 0, ch = 0;
+  let cellPx = 18;
+  let offX = 0, offY = 0;
 
-  // grid rows: each row is array of cell types
-  let grid = [];
+  function resize(){
+    setDeviceAttr();
+
+    const rect = stage.getBoundingClientRect();
+    const mobile = isMobileLike();
+
+    const maxDpr = mobile ? 2.0 : 2.25;
+    dpr = Math.min(maxDpr, window.devicePixelRatio || 1);
+
+    cw = Math.max(1, Math.floor(rect.width * dpr));
+    ch = Math.max(1, Math.floor(rect.height * dpr));
+
+    canvas.width = cw;
+    canvas.height = ch;
+
+    const pad = (mobile ? 10 : 14) * dpr;
+    const availW = Math.max(1, cw - pad*2);
+    const availH = Math.max(1, ch - pad*2);
+
+    cellPx = Math.floor(Math.min(availW / COLS, availH / ROWS));
+    cellPx = Math.max(cellPx, Math.floor(14 * dpr));
+
+    const boardW = cellPx * COLS;
+    const boardH = cellPx * ROWS;
+
+    offX = Math.floor((cw - boardW) * 0.5);
+    offY = Math.floor((ch - boardH) * 0.5);
+  }
+
+  // ───────────────────────── Game state ─────────────────────────
+  let best = 0;
+  let runs = 0;
+  let playerName = "";
 
   let running = false;
   let paused = false;
   let gameOver = false;
-  let inLevelUp = false;
 
-  let playerName = "";
-  let best = Number(localStorage.getItem(BEST_KEY) || 0);
+  // player
+  const midRow = Math.floor(ROWS/2);
+  let laneRows = 3;              // banda vertical de movimiento
+  let playerRow = midRow;        // dentro de la banda
+  let playerCol = Math.floor(COLS/2);
+  let playerSpan = 1;            // upgrade: 2 (dos cuadrados)
+  let shield = 0;                // protecciones
 
+  // scoring
   let score = 0;
   let streak = 0;
   let mult = 1;
 
-  let xp = 0;
+  // speed (rows per second)
+  let baseSpeed = 2.2;
+  let speed = baseSpeed;
+  let tAlive = 0;
+
+  // level/xp
   let level = 1;
-  let xpNeed = 50;
+  let xp = 0;
+  let nextXp = 60;
 
-  let rowsSurvived = 0;
-  let runTime = 0;
-
-  // movement band
-  let bandH = 3; // can upgrade
-  let playerW = 1; // can upgrade (2)
-  let shieldHits = 0;
-
-  // player pos (grid coords) and smoothing
-  let pCol = Math.floor(W/2);
-  let pRow = CENTER_ROW; // inside band
-  let pColF = pCol;
-  let pRowF = pRow;
-
-  // scrolling
-  let scrollPx = 0;
-
-  // fx
-  let hue = 220;
-  let hueTarget = 220;
+  // soft FX
   let shake = 0;
-  let pulse = 0;
+  let shakeX = 0, shakeY = 0;
 
-  let deltaTimer = 0;
+  // scroll
+  let scroll = 0; // 0..1 (fracción de fila)
+  let lastT = now();
 
-  // buffs
-  let buffX2T = 0;
-  let magnet = 0; // radius
-  let luck = 0;   // spawn bias
-
-  // combo target
-  let comboTarget = null;
-
-  // particles / float texts
-  const particles = [];
-  const floatTexts = [];
-
-  // ───────────────────────── Helpers ─────────────────────────
-  function bandTop(){
-    const half = Math.floor(bandH/2);
-    return clamp(CENTER_ROW - half, 0, H-1);
-  }
-  function bandBottom(){
-    return clamp(bandTop() + bandH - 1, 0, H-1);
+  // floating numbers
+  const pops = []; // {x,y,text,color,life,vy,scale}
+  function addPop(cx, cy, text, color){
+    const fx = clamp(settings.fx || 1, 0.4, 1.25);
+    pops.push({
+      x: cx, y: cy,
+      text,
+      color,
+      life: 900 * fx,
+      t: 0,
+      vy: -0.06 * dpr,
+      scale: 1.0
+    });
   }
 
-  function effectiveMult(){
-    return (buffX2T > 0 ? 2 : 1);
-  }
+  // grid
+  let grid = [];
+  function makeRow(){
+    // densidad más baja (menos “cuadrados”)
+    // Ajustable por upgrades
+    const pBlock = clamp(0.10 + (speed-2.2)*0.01, 0.08, 0.18) * (spawn.blockMul || 1);
+    const pGood  = clamp(0.18 + (speed-2.2)*0.015, 0.14, 0.28) * (spawn.goodMul || 1);
+    const pTrap  = clamp(0.07 + (speed-2.2)*0.01, 0.06, 0.16) * (spawn.trapMul || 1);
 
-  function setScoreDelta(v){
-    hudScoreDelta.textContent = (v >= 0 ? `+${v}` : `${v}`);
-    hudScoreDelta.classList.add("show");
-    deltaTimer = 0.85;
-  }
+    const row = new Array(COLS).fill(0).map(() => ({ t: CELL.EMPTY }));
+    // 0..2 elementos por fila aprox
+    const rolls = (Math.random() < 0.65) ? 1 : 2;
+    for (let i=0;i<rolls;i++){
+      const c = (Math.random()*COLS)|0;
+      if (row[c].t !== CELL.EMPTY) continue;
 
-  function awardXp(amount){
-    xp += amount;
-    while (xp >= xpNeed){
-      xp -= xpNeed;
-      level += 1;
-      xpNeed = Math.floor(50 + (level-1) * 14);
-      triggerLevelUp();
-    }
-  }
+      const r = Math.random();
+      let t = CELL.EMPTY;
 
-  // ───────────────────────── Generation ─────────────────────────
-  function initGrid(){
-    grid = [];
-    for (let r=0;r<H;r++){
-      grid.push(genRow(r));
-    }
-  }
-
-  function weightPick(pairs){
-    // pairs: [value, weight]
-    let sum = 0;
-    for (const p of pairs) sum += p[1];
-    let t = Math.random() * sum;
-    for (const p of pairs){
-      t -= p[1];
-      if (t <= 0) return p[0];
-    }
-    return pairs[pairs.length-1][0];
-  }
-
-  function genRow(rIdx){
-    // densidad más baja al principio, sube suave con nivel/tiempo
-    const prog = clamp((runTime/40) + (level-1)*0.08, 0, 2.2);
-    const density = clamp(0.26 + prog*0.06, 0.22, 0.52); // menos ruido
-    const blockChance = clamp(0.04 + prog*0.015, 0.03, 0.12);
-
-    const row = new Array(W).fill(CELL.EMPTY);
-
-    // decide cuántas celdas no-vacías
-    let count = 0;
-    for (let c=0;c<W;c++){
-      if (Math.random() < density) count++;
-    }
-    count = clamp(count, 1, Math.floor(W*0.55));
-
-    const positions = [];
-    for (let c=0;c<W;c++) positions.push(c);
-    // shuffle
-    for (let i=positions.length-1;i>0;i--){
-      const j = (Math.random()*(i+1))|0;
-      [positions[i], positions[j]] = [positions[j], positions[i]];
-    }
-
-    for (let i=0;i<count;i++){
-      const c = positions[i];
-
-      // tipos: block poco frecuente pero visible
-      const isBlock = (Math.random() < blockChance);
-      if (isBlock){
-        row[c] = CELL.BLOCK;
-        continue;
+      if (r < pBlock) t = CELL.BLOCK;
+      else if (r < pBlock + pTrap) t = CELL.TRAP;
+      else if (r < pBlock + pTrap + pGood){
+        // buenos
+        const rr = Math.random();
+        t = (rr < 0.60) ? CELL.COIN : (rr < 0.90) ? CELL.GEM : CELL.BONUS;
       }
-
-      // spawn de goodies: luck aumenta gem/bonus y reduce trap
-      const l = clamp(luck, 0, 6);
-      row[c] = weightPick([
-        [CELL.COIN,  52 + l*2],
-        [CELL.GEM,   18 + l*3],
-        [CELL.BONUS,  8 + l*2],
-        [CELL.TRAP,  22 - l*2],
-      ]);
+      row[c].t = t;
     }
-
-    // evita filas imposibles: no llenes de blocks
-    const blocks = row.filter(x => x === CELL.BLOCK).length;
-    if (blocks >= 4){
-      for (let c=0;c<W;c++){
-        if (row[c] === CELL.BLOCK && Math.random() < 0.6) row[c] = CELL.EMPTY;
-      }
-    }
-
     return row;
   }
 
-  // ───────────────────────── Combo target ─────────────────────────
-  function chipForCell(cell){
-    if (cell === CELL.COIN)  return { cls:"coin",  label:"Moneda" };
-    if (cell === CELL.GEM)   return { cls:"gem",   label:"Gema" };
-    if (cell === CELL.BONUS) return { cls:"bonus", label:"Bonus" };
-    if (cell === CELL.TRAP)  return { cls:"trap",  label:"Trampa" };
-    return { cls:"", label:"—" };
+  function initGrid(){
+    grid = [];
+    for (let r=0;r<ROWS;r++) grid.push(makeRow());
   }
 
-  function newComboTarget(){
-    // secuencia variable y relativamente corta para leer bien
-    const len = randi(3, 5);
-    const seq = [];
+  // ───────────────────────── Combo system ─────────────────────────
+  const combo = {
+    seq: [],
+    idx: 0,
+    expiresAt: 0,
+    durationMs: 12000,
+  };
+
+  function pickCombo(){
+    const pool = [CELL.COIN, CELL.GEM, CELL.BONUS];
+    const len = (Math.random() < 0.55) ? 3 : 4;
+    combo.seq = [];
     for (let i=0;i<len;i++){
-      const t = weightPick([
-        [CELL.COIN, 60],
-        [CELL.GEM,  25],
-        [CELL.BONUS, 15],
-      ]);
-      seq.push(t);
+      combo.seq.push(pool[(Math.random()*pool.length)|0]);
     }
-    comboTarget = {
-      seq,
-      idx: 0,
-      expires: now() + (18 - Math.min(8, level*0.35)), // se ajusta
-      reward: 140 + level*10,
-    };
-    renderComboTarget();
+    combo.idx = 0;
+    combo.expiresAt = now() + combo.durationMs;
+    renderComboUI();
   }
 
-  function renderComboTarget(){
-    if (!comboTarget){
-      comboSeq.innerHTML = "";
-      comboTimer.textContent = "—";
-      comboHint.textContent = "—";
-      return;
+  function renderComboUI(){
+    if (!comboSeqEl) return;
+    comboSeqEl.innerHTML = "";
+    combo.seq.forEach((t, i) => {
+      const el = document.createElement("div");
+      el.className = "comboPill" + (i < combo.idx ? " done" : "");
+      const dot = document.createElement("span");
+      dot.className = "comboDot";
+      dot.style.background = BASE_COLOR[t];
+      const txt = document.createElement("span");
+      txt.textContent = TYPE_NAME[t];
+      el.appendChild(dot);
+      el.appendChild(txt);
+      comboSeqEl.appendChild(el);
+    });
+    if (comboHintEl){
+      comboHintEl.textContent = (combo.idx >= combo.seq.length)
+        ? "¡Combo completado!"
+        : `Paso ${combo.idx+1}/${combo.seq.length}`;
     }
-
-    const tLeft = Math.max(0, comboTarget.expires - now());
-    comboTimer.textContent = `${tLeft.toFixed(0)}s`;
-
-    comboSeq.innerHTML = "";
-    for (let i=0;i<comboTarget.seq.length;i++){
-      const cell = comboTarget.seq[i];
-      const info = chipForCell(cell);
-      const div = document.createElement("div");
-      div.className = "comboChip" + (i < comboTarget.idx ? " done" : "");
-      div.innerHTML = `<span class="comboDot ${info.cls}"></span><span>${info.label}</span>`;
-      comboSeq.appendChild(div);
-    }
-    comboHint.textContent = (comboTarget.idx > 0)
-      ? `Progreso: ${comboTarget.idx}/${comboTarget.seq.length}`
-      : "Completa la secuencia para bonus extra.";
   }
 
-  function onCollectedForCombo(cellType){
-    if (!comboTarget) return;
-
-    // expira
-    if (now() > comboTarget.expires){
-      comboTarget.idx = 0;
-      comboTarget.expires = now() + 16;
-      hueTarget = 220;
-      renderComboTarget();
-      return;
+  function tickCombo(){
+    const ms = combo.expiresAt - now();
+    if (comboTimerEl){
+      comboTimerEl.textContent = ms > 0 ? `⏳ ${(ms/1000).toFixed(1)}s` : "⏳ 0.0s";
     }
+    if (ms <= 0){
+      combo.idx = 0;
+      combo.expiresAt = now() + combo.durationMs;
+      renderComboUI();
+    }
+  }
 
-    const want = comboTarget.seq[comboTarget.idx];
-    if (cellType === want){
-      comboTarget.idx++;
-      pulse = Math.min(1, pulse + 0.25);
-      hueTarget = 190 + (streak * 6);
-      renderComboTarget();
+  function onCollectForCombo(t){
+    if (!combo.seq.length) return;
+    const need = combo.seq[combo.idx];
+    const isCollectible = (t === CELL.COIN || t === CELL.GEM || t === CELL.BONUS);
 
-      if (comboTarget.idx >= comboTarget.seq.length){
-        const bonus = Math.floor(comboTarget.reward * (1 + Math.min(3, streak/10)) * effectiveMult());
+    if (t === need){
+      combo.idx++;
+      renderComboUI();
+      if (combo.idx >= combo.seq.length){
+        // bonus de combo
+        const bonus = Math.round(120 * mult);
         score += bonus;
-        setScoreDelta(bonus);
-        bump(hudScore);
-        showToast(`Combo ✅ +${bonus}`, 900);
-        vibrate(22);
-        spawnBurstAtPlayer("rgba(255,220,120,0.95)", 24);
-
-        // reset y nueva
-        comboTarget = null;
-        newComboTarget();
-
-        // recompensa extra
-        awardXp(10);
+        xp += 20;
+        streak += 2;
+        mult = clamp(mult + 1, 1, 12);
+        addPop(screenPlayerX(), screenPlayerY(), `COMBO +${bonus}`, "#ffd35a");
+        if (settings.vibration) tryVibrate(25);
+        shake = Math.max(shake, 0.9 * settings.fx);
+        pickCombo();
       }
-    } else {
-      // si coges otra cosa buena: pequeño “fallo” sin castigo fuerte
-      if (cellType === CELL.COIN || cellType === CELL.GEM || cellType === CELL.BONUS){
-        comboTarget.idx = 0;
-        renderComboTarget();
-      }
+      return;
+    }
+
+    // si coges algo “bien” pero no era el correcto => reset suave
+    if (isCollectible && combo.idx > 0){
+      combo.idx = 0;
+      combo.expiresAt = now() + combo.durationMs;
+      renderComboUI();
     }
   }
 
   // ───────────────────────── Upgrades (20+) ─────────────────────────
-  const UPG = [];
-  const upgPickHistory = new Set();
-
-  function addUpg(id, title, desc, meta, apply){
-    UPG.push({ id, title, desc, meta, apply });
-  }
-
-  addUpg("BAND_PLUS1", "Banda +1", "Aumenta 1 fila la zona central de movimiento.", "Movilidad", () => {
-    bandH = clamp(bandH + 1, 3, 9);
-    showToast("Banda ampliada ✅", 800);
-  });
-
-  addUpg("BAND_PLUS2", "Banda +2", "Aumenta 2 filas la zona central de movimiento.", "Movilidad", () => {
-    bandH = clamp(bandH + 2, 3, 9);
-    showToast("Banda ampliada ✅", 800);
-  });
-
-  addUpg("WIDE_PLAYER", "Doble bloque", "Ahora ocupas 2 columnas (más fácil pillar items, más riesgo).", "Cuerpo", () => {
-    playerW = clamp(playerW + 1, 1, 2);
-    pCol = clamp(pCol, 0, W - playerW);
-    showToast("Ahora eres 2× ancho ✅", 900);
-  });
-
-  addUpg("SHIELD_1", "Escudo", "Absorbe 1 KO (bloque) y te salva.", "Defensa", () => {
-    shieldHits = clamp(shieldHits + 1, 0, 3);
-    showToast("Escudo +1 ✅", 800);
-  });
-
-  addUpg("X2_8S", "x2 (8s)", "Puntos x2 durante 8 segundos.", "Buff", () => {
-    buffX2T = Math.max(buffX2T, 8);
-    showToast("x2 activo ⚡", 800);
-  });
-
-  addUpg("X2_14S", "x2 (14s)", "Puntos x2 durante 14 segundos.", "Buff", () => {
-    buffX2T = Math.max(buffX2T, 14);
-    showToast("x2 activo ⚡", 800);
-  });
-
-  addUpg("MAGNET_1", "Imán I", "Atrae monedas/gemas cercanas (±1 columna).", "Utilidad", () => {
-    magnet = clamp(magnet + 1, 0, 3);
-    showToast("Imán +1 ✅", 800);
-  });
-
-  addUpg("MAGNET_2", "Imán II", "Atrae monedas/gemas cercanas (±2 columnas).", "Utilidad", () => {
-    magnet = clamp(magnet + 2, 0, 3);
-    showToast("Imán +2 ✅", 800);
-  });
-
-  addUpg("LUCK_1", "Suerte I", "Más gemas/bonus, menos trampas.", "Spawn", () => {
-    luck = clamp(luck + 1, 0, 6);
-    showToast("Suerte +1 ✅", 800);
-  });
-
-  addUpg("LUCK_2", "Suerte II", "Más gemas/bonus, menos trampas.", "Spawn", () => {
-    luck = clamp(luck + 2, 0, 6);
-    showToast("Suerte +2 ✅", 800);
-  });
-
-  addUpg("TRAP_SOFT", "Trampas suaves", "Las trampas restan menos y no resetean tanto.", "Defensa", () => {
-    // lo aplicamos bajando castigo en runtime con flag
-    flags.trapSoft = true;
-    showToast("Trampas más suaves ✅", 850);
-  });
-
-  addUpg("COIN_PLUS", "Moneda +", "Monedas dan +3 extra (antes de mult).", "Score", () => {
-    flags.coinPlus += 3;
-    showToast("Monedas mejoradas ✅", 800);
-  });
-
-  addUpg("GEM_PLUS", "Gema +", "Gemas dan +10 extra (antes de mult).", "Score", () => {
-    flags.gemPlus += 10;
-    showToast("Gemas mejoradas ✅", 800);
-  });
-
-  addUpg("BONUS_PLUS", "Bonus +", "Bonus da +20 extra (antes de mult).", "Score", () => {
-    flags.bonusPlus += 20;
-    showToast("Bonus mejorado ✅", 800);
-  });
-
-  addUpg("SLOW_START", "Arranque suave", "La velocidad inicial baja (más tiempo al inicio).", "Pacing", () => {
-    flags.slowStart = true;
-    showToast("Inicio más lento ✅", 900);
-  });
-
-  addUpg("XP_UP", "XP +", "Ganas +25% de XP.", "Progreso", () => {
-    flags.xpBoost = Math.min(2.0, flags.xpBoost + 0.25);
-    showToast("XP aumentado ✅", 800);
-  });
-
-  addUpg("COMBO_TIME", "Combo + tiempo", "Los combos duran +6s.", "Combo", () => {
-    flags.comboTimePlus += 6;
-    showToast("Combos más largos ✅", 800);
-  });
-
-  addUpg("COMBO_REWARD", "Combo + premio", "Los combos dan +35% premio.", "Combo", () => {
-    flags.comboRewardMul *= 1.35;
-    showToast("Premio combo ↑ ✅", 800);
-  });
-
-  addUpg("STREAK_KEEP", "Racha firme", "Las filas vacías casi no bajan racha.", "Racha", () => {
-    flags.streakFirm = true;
-    showToast("Racha más estable ✅", 800);
-  });
-
-  addUpg("SAFE_STEP", "Paso seguro", "Tras comer bonus, 1 fila de invulnerabilidad.", "Defensa", () => {
-    flags.safeStep = true;
-    showToast("Paso seguro ✅", 800);
-  });
-
-  addUpg("SCORE_ON_ROWS", "Supervivencia", "Ganas +1 punto por fila sobrevivida.", "Score", () => {
-    flags.scorePerRow = true;
-    showToast("+1 por fila ✅", 800);
-  });
-
-  addUpg("SHAKE_LOW", "FX calmado", "Reduce shake sin quitar partículas.", "Accesibilidad", () => {
-    flags.lowShake = true;
-    showToast("Shake reducido ✅", 800);
-  });
-
-  addUpg("HEAL_STREAK", "Curar racha", "Al subir de nivel: racha +3.", "Racha", () => {
-    streak += 3;
-    showToast("Racha +3 ✅", 800);
-  });
-
-  // runtime flags
-  const flags = {
-    trapSoft: false,
-    coinPlus: 0,
-    gemPlus: 0,
-    bonusPlus: 0,
-    slowStart: false,
-    xpBoost: 1.0,
-    comboTimePlus: 0,
-    comboRewardMul: 1.0,
-    streakFirm: false,
-    safeStep: false,
-    scorePerRow: false,
-    lowShake: false,
+  const spawn = { goodMul:1, trapMul:1, blockMul:1 };
+  const timed = {
+    x2Until: 0,
+    slowUntil: 0,
+    magnetUntil: 0
   };
+  const stacks = new Map();
+  let rerolls = 0;
+  let currentChoices = [];
 
-  let invulRows = 0;
+  function addStack(id, n=1){
+    stacks.set(id, (stacks.get(id)||0) + n);
+  }
 
-  function triggerLevelUp(){
-    inLevelUp = true;
-    paused = true;
+  function hasTimed(key){ return now() < (timed[key] || 0); }
 
-    overlayShow(overlayUpgrades);
+  const UPGRADES = [
+    { id:"twin", name:"Doble corredor", desc:"Ahora eres 2 cuadrados (más fácil pillar bonus).", max:1, w:1.0,
+      apply(){ playerSpan = 2; } },
 
-    const picks = pickUpgrades(3);
-    for (let i=0;i<3;i++){
-      const u = picks[i];
-      const btn = upgBtns[i];
-      btn.innerHTML = `
-        <div class="uTitle">${u.title}</div>
-        <div class="uDesc">${u.desc}</div>
-        <div class="uMeta">${u.meta}</div>
+    { id:"widen1", name:"Más carriles", desc:"+2 filas a la banda de movimiento (máx 9).", max:3, w:1.2,
+      apply(){ laneRows = clamp(laneRows + 2, 3, 9); } },
+
+    { id:"shield1", name:"Escudo", desc:"Bloque KO te perdona 1 vez.", max:5, w:1.0,
+      apply(){ shield += 1; } },
+
+    { id:"magnet", name:"Imán", desc:"Durante 10s atraes monedas/gemas cercanas.", max:5, w:1.0,
+      apply(){ timed.magnetUntil = now() + 10000; } },
+
+    { id:"x2", name:"x2 Puntos", desc:"Durante 12s, puntos x2.", max:8, w:1.0,
+      apply(){ timed.x2Until = now() + 12000; } },
+
+    { id:"slow", name:"Slow-mo", desc:"Durante 8s, la velocidad baja.", max:8, w:1.0,
+      apply(){ timed.slowUntil = now() + 8000; } },
+
+    { id:"lucky", name:"Suerte", desc:"Más items buenos, menos “vacío”.", max:6, w:1.1,
+      apply(){ spawn.goodMul = clamp(spawn.goodMul + 0.12, 1, 2.0); } },
+
+    { id:"cleaner", name:"Menos KO", desc:"Reduce bloques KO.", max:6, w:1.0,
+      apply(){ spawn.blockMul = clamp(spawn.blockMul * 0.90, 0.55, 1.0); } },
+
+    { id:"antiTrap", name:"Menos trampas", desc:"Reduce trampas.", max:6, w:1.0,
+      apply(){ spawn.trapMul = clamp(spawn.trapMul * 0.90, 0.55, 1.0); } },
+
+    { id:"multUp", name:"Multiplicador +1", desc:"Aumenta x en +1 (máx x12).", max:10, w:1.2,
+      apply(){ mult = clamp(mult + 1, 1, 12); } },
+
+    { id:"streakGuard", name:"Racha protegida", desc:"Trampas ya no resetean racha (solo restan).", max:1, w:0.8,
+      apply(){ addStack("streakGuard", 1); } },
+
+    { id:"xpBoost", name:"XP extra", desc:"+20 XP ahora mismo.", max:99, w:1.3,
+      apply(){ xp += 20; } },
+
+    { id:"scoreBoost", name:"Puntos extra", desc:"+80 puntos ahora mismo.", max:99, w:1.2,
+      apply(){ score += 80; } },
+
+    { id:"speedBaseDown", name:"Arranque suave", desc:"Baja la velocidad base un poco.", max:4, w:0.9,
+      apply(){ baseSpeed = clamp(baseSpeed - 0.15, 1.6, 3.0); } },
+
+    { id:"speedGrowDown", name:"Crecimiento lento", desc:"La velocidad sube más lento.", max:5, w:0.9,
+      apply(){ addStack("speedGrowDown", 1); } },
+
+    { id:"fxUp", name:"Más FX", desc:"Sube intensidad FX +0.05 (máx 1.25).", max:10, w:0.7,
+      apply(){ settings.fx = clamp((settings.fx||1) + 0.05, 0.4, 1.25); saveSettings(); applySettingsToUI(); } },
+
+    { id:"reroll", name:"Reroll +1", desc:"Ganas 1 reroll para elegir upgrades.", max:10, w:1.0,
+      apply(){ rerolls += 1; } },
+
+    { id:"comboTime", name:"Combo más largo", desc:"+3s al temporizador de combos.", max:5, w:0.9,
+      apply(){ combo.durationMs = clamp(combo.durationMs + 3000, 9000, 24000); } },
+
+    { id:"comboReward", name:"Combo más potente", desc:"Bonus de combo +20%.", max:6, w:0.9,
+      apply(){ addStack("comboReward", 1); } },
+
+    { id:"magnetPlus", name:"Imán mejorado", desc:"El imán dura +2s.", max:6, w:0.9,
+      apply(){ timed.magnetUntil = Math.max(timed.magnetUntil, now()) + 2000; } },
+
+    { id:"shieldPlus", name:"Escudo++", desc:"Ganas 2 escudos.", max:5, w:0.6,
+      apply(){ shield += 2; } },
+
+    { id:"laneNudge", name:"Ajuste de carril", desc:"Te centra automáticamente si te sales.", max:1, w:0.8,
+      apply(){ addStack("laneNudge", 1); } }
+  ];
+
+  function canTake(upg){
+    const c = stacks.get(upg.id) || 0;
+    return c < (upg.max || 99);
+  }
+
+  function pick3Upgrades(){
+    const available = UPGRADES.filter(canTake);
+    const bag = [];
+    // weighted pick
+    for (let i=0;i<available.length;i++){
+      const u = available[i];
+      const w = clamp(u.w || 1, 0.2, 3);
+      const copies = Math.max(1, Math.round(w * 3));
+      for (let k=0;k<copies;k++) bag.push(u);
+    }
+    const out = [];
+    while (out.length < 3 && bag.length){
+      const u = bag[(Math.random()*bag.length)|0];
+      if (out.includes(u)) continue;
+      out.push(u);
+    }
+    // fallback
+    while (out.length < 3 && available.length){
+      const u = available[(Math.random()*available.length)|0];
+      if (!out.includes(u)) out.push(u);
+    }
+    return out;
+  }
+
+  function showUpgradeChoices(){
+    currentChoices = pick3Upgrades();
+    const els = [upg0, upg1, upg2];
+    els.forEach((el, i) => {
+      const u = currentChoices[i];
+      if (!el || !u) return;
+      const count = stacks.get(u.id) || 0;
+      const max = u.max || 99;
+      el.innerHTML = `
+        <div class="upgName">${u.name}</div>
+        <div class="upgDesc">${u.desc}</div>
+        <div class="upgMeta">
+          <span class="pill subtle">Stack ${count}/${max}</span>
+        </div>
       `;
-      btn.onclick = () => {
-        overlayHide(overlayUpgrades, 160);
-        inLevelUp = false;
-        paused = false;
-        u.apply();
-        upgPickHistory.add(u.id);
-        // mini reward
-        vibrate(18);
-        showToast(`Mejora: ${u.title}`, 900);
-      };
-    }
-    updateHud(true);
-  }
-
-  function pickUpgrades(n){
-    // evita repetir demasiado, pero si ya cogiste muchas, rellena
-    const pool = UPG.slice().filter(u => !upgPickHistory.has(u.id));
-    const src = (pool.length >= n) ? pool : UPG.slice();
-    const arr = src.slice();
-
-    // shuffle
-    for (let i=arr.length-1;i>0;i--){
-      const j = (Math.random()*(i+1))|0;
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr.slice(0, n);
-  }
-
-  // ───────────────────────── FX: particles / float texts ─────────────────────────
-  function spawnParticles(x, y, color, n, power){
-    const k = settings.fx;
-    const count = Math.floor(n * k);
-    for (let i=0;i<count;i++){
-      particles.push({
-        x, y,
-        vx: (Math.random()*2-1) * 0.9 * power,
-        vy: (Math.random()*2-1) * 1.1 * power,
-        life: 0.55 + Math.random()*0.25,
-        t: 0,
-        color,
-        s: 2 + Math.random()*2,
-      });
-    }
-  }
-
-  function spawnBurstAtPlayer(color, n){
-    const px = boardX + (pColF + 0.5) * cellPx;
-    const py = boardY + (pRowF + 0.5) * cellPx - scrollPx;
-    spawnParticles(px, py, color, n, 1.2);
-  }
-
-  function spawnFloatText(col, row, text, color){
-    floatTexts.push({
-      x: boardX + (col + 0.5) * cellPx,
-      y: boardY + (row + 0.45) * cellPx - scrollPx,
-      vy: -0.55,
-      t: 0,
-      life: 0.9,
-      text,
-      color,
     });
+    if (rerollCount) rerollCount.textContent = String(rerolls);
+    overlayShow(overlayUpgrades);
   }
 
-  function updateParticles(dt){
-    // dt in seconds
-    for (let i=particles.length-1;i>=0;i--){
-      const p = particles[i];
-      p.t += dt;
-      p.x += p.vx * (cellPx * 0.9) * dt;
-      p.y += p.vy * (cellPx * 0.9) * dt;
-      p.vy += 2.0 * dt;
-      if (p.t >= p.life) particles.splice(i, 1);
-    }
+  function applyUpgrade(i){
+    const u = currentChoices[i];
+    if (!u) return;
+    addStack(u.id, 1);
+    u.apply();
 
-    for (let i=floatTexts.length-1;i>=0;i--){
-      const f = floatTexts[i];
-      f.t += dt;
-      f.y += f.vy * (cellPx * 0.8) * dt;
-      if (f.t >= f.life) floatTexts.splice(i, 1);
+    saveSettings();
+    overlayHide(overlayUpgrades);
+
+    // re-render combo (por si cambió duración)
+    combo.expiresAt = now() + combo.durationMs;
+    renderComboUI();
+
+    paused = false;
+    running = true;
+  }
+
+  function tryLevelUp(){
+    while (xp >= nextXp){
+      xp -= nextXp;
+      level += 1;
+      nextXp = Math.round(nextXp * 1.18 + 12);
+
+      // pausa y upgrades
+      running = false;
+      paused = true;
+      showToast(`Nivel ${level} ⭐`, 900);
+      showUpgradeChoices();
+      break;
     }
   }
 
-  // ───────────────────────── Gameplay ─────────────────────────
+  // ───────────────────────── Start/Reset ─────────────────────────
+  function refreshStartStats(){
+    best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
+    runs = parseInt(localStorage.getItem(RUNS_KEY) || "0", 10) || 0;
+    if (startBest) startBest.textContent = String(best);
+    if (startRuns) startRuns.textContent = String(runs);
+    if (hudBest) hudBest.textContent = String(best);
+  }
+
   function resetRunState(){
+    running = false;
+    paused = false;
+    gameOver = false;
+
     score = 0;
     streak = 0;
     mult = 1;
 
-    xp = 0;
     level = 1;
-    xpNeed = 50;
+    xp = 0;
+    nextXp = 60;
 
-    rowsSurvived = 0;
-    runTime = 0;
+    baseSpeed = 2.2;
+    speed = baseSpeed;
+    tAlive = 0;
 
-    bandH = 3;
-    playerW = 1;
-    shieldHits = 0;
+    laneRows = 3;
+    playerSpan = 1;
+    shield = 0;
 
-    buffX2T = 0;
-    magnet = 0;
-    luck = 0;
+    spawn.goodMul = 1;
+    spawn.trapMul = 1;
+    spawn.blockMul = 1;
 
-    invulRows = 0;
+    timed.x2Until = 0;
+    timed.slowUntil = 0;
+    timed.magnetUntil = 0;
 
-    flags.trapSoft = false;
-    flags.coinPlus = 0;
-    flags.gemPlus = 0;
-    flags.bonusPlus = 0;
-    flags.slowStart = false;
-    flags.xpBoost = 1.0;
-    flags.comboTimePlus = 0;
-    flags.comboRewardMul = 1.0;
-    flags.streakFirm = false;
-    flags.safeStep = false;
-    flags.scorePerRow = false;
-    flags.lowShake = false;
+    stacks.clear();
+    rerolls = 0;
+    currentChoices = [];
 
-    pCol = Math.floor(W/2);
-    pRow = CENTER_ROW;
-    pColF = pCol;
-    pRowF = pRow;
-
-    scrollPx = 0;
-
+    scroll = 0;
+    pops.length = 0;
     shake = 0;
-    pulse = 0;
-    hue = 220;
-    hueTarget = 220;
 
-    particles.length = 0;
-    floatTexts.length = 0;
-
-    comboTarget = null;
-    newComboTarget();
+    playerCol = Math.floor(COLS/2);
+    playerRow = midRow;
 
     initGrid();
+    pickCombo();
+    updateHud(true);
   }
 
-  function resetGame(toStart=false){
-    running = false;
+  function startRun(){
+    resetRunState();
+    running = true;
     paused = false;
     gameOver = false;
-    inLevelUp = false;
-
-    resetRunState();
-
-    overlayHide(overlayPaused, 0);
-    overlayHide(overlayGameOver, 0);
-    overlayHide(overlayUpgrades, 0);
-
-    if (toStart){
-      overlayShow(overlayStart);
-      refreshStartStats();
-      syncStartNameUI();
-    } else {
-      overlayHide(overlayStart, 0);
-    }
-
-    updateHud(true);
-    renderComboTarget();
-    draw();
+    overlayHide(overlayStart);
+    overlayHide(overlayPaused);
+    overlayHide(overlayGameOver);
+    showToast("¡Vamos! 🔥", 700);
   }
 
-  function currentSpeedRowsPerSec(){
-    // progresión: lenta al inicio, acelera suave con tiempo/nivel
-    const base = flags.slowStart ? 0.85 : 1.05;
-    const t = clamp(runTime / 55, 0, 1.5);
-    const lvl = (level-1) * 0.10;
-    const streakB = clamp(streak / 80, 0, 0.18);
-    const x2 = 0;
-
-    // easing: al inicio acelera menos
-    const eased = t * t * (3 - 2*t); // smoothstep
-    const sp = base + eased * 1.25 + lvl + streakB + x2;
-    return clamp(sp, 0.75, 4.25);
-  }
-
-  function tryCollectAt(col, row){
-    if (row < 0 || row >= H) return;
-    if (col < 0 || col >= W) return;
-
-    const cell = grid[row][col];
-    if (cell === CELL.EMPTY) return;
-
-    // KO
-    if (cell === CELL.BLOCK){
-      if (invulRows > 0){
-        // invul
-        grid[row][col] = CELL.EMPTY;
-        spawnFloatText(col, row, "SAFE", "rgba(180,255,255,0.95)");
-        spawnParticles(boardX + (col+0.5)*cellPx, boardY + (row+0.5)*cellPx - scrollPx, "rgba(180,255,255,0.95)", 18, 1.0);
-        return;
-      }
-      if (shieldHits > 0){
-        shieldHits--;
-        grid[row][col] = CELL.EMPTY;
-        showToast("Escudo 🛡️", 850);
-        spawnFloatText(col, row, "🛡️", "rgba(180,255,255,0.95)");
-        spawnBurstAtPlayer("rgba(180,255,255,0.95)", 22);
-        shake = Math.max(shake, 0.12 * settings.fx);
-        vibrate(18);
-        updateHud(true);
-        return;
-      }
-      endGame("Bloque KO.");
-      return;
-    }
-
-    // recoge y convierte en vacío
-    grid[row][col] = CELL.EMPTY;
-
-    if (cell === CELL.TRAP){
-      const penalty = flags.trapSoft ? 12 : 25;
-      score = Math.max(0, score - penalty);
-      setScoreDelta(-penalty);
-      spawnFloatText(col, row, `-${penalty}`, "rgba(255,120,160,0.95)");
-      spawnBurstAtPlayer("rgba(255,120,160,0.95)", 18);
-      streak = 0;
-      mult = 1;
-      hueTarget = 330;
-      shake = Math.max(shake, (flags.lowShake ? 0.08 : 0.14) * settings.fx);
-      vibrate(25);
-      awardXp(Math.floor(2 * flags.xpBoost));
-      onCollectedForCombo(CELL.TRAP);
-      updateHud(true);
-      return;
-    }
-
-    // goodies
-    streak += 1;
-
-    // si quieres una racha más estable, las vacías penalizan menos (se usa en tick)
-    mult = 1 + Math.min(4, Math.floor(streak / 6));
-
-    let add = 0;
-    let xpAdd = 0;
-    let color = "rgba(200,255,220,0.95)";
-
-    if (cell === CELL.COIN){
-      add = (10 + flags.coinPlus) * mult;
-      xpAdd = 3;
-      color = "rgba(124,255,210,0.95)";
-    } else if (cell === CELL.GEM){
-      add = (30 + flags.gemPlus) * mult;
-      xpAdd = 5;
-      color = "rgba(120,182,255,0.95)";
-    } else if (cell === CELL.BONUS){
-      add = (60 + flags.bonusPlus) * mult;
-      xpAdd = 7;
-      color = "rgba(255,209,106,0.95)";
-      // bonus: pequeña invul por filas
-      if (flags.safeStep) invulRows = Math.max(invulRows, 1);
-    }
-
-    add = Math.floor(add * effectiveMult());
-    score += add;
-
-    setScoreDelta(add);
-    bump(hudScore);
-
-    spawnFloatText(col, row, `+${add}`, color);
-    spawnParticles(
-      boardX + (col+0.5)*cellPx,
-      boardY + (row+0.5)*cellPx - scrollPx,
-      color,
-      (cell === CELL.BONUS ? 22 : 14),
-      (cell === CELL.BONUS ? 1.25 : 1.0)
-    );
-
-    hueTarget = 200 + streak * 3.5;
-    pulse = Math.min(1, pulse + 0.12);
-
-    vibrate(cell === CELL.BONUS ? 22 : 12);
-
-    awardXp(Math.floor(xpAdd * flags.xpBoost));
-
-    onCollectedForCombo(cell);
-    updateHud(true);
-  }
-
-  function tryCollectPlayerCell(){
-    // imán: atrae coin/gem cercanos dentro de banda
-    if (magnet > 0){
-      for (let dx=-magnet; dx<=magnet; dx++){
-        for (let w=0; w<playerW; w++){
-          const c = clamp(pCol + w + dx, 0, W-1);
-          const cell = grid[pRow][c];
-          if (cell === CELL.COIN || cell === CELL.GEM){
-            tryCollectAt(c, pRow);
-          }
-        }
-      }
-    }
-
-    for (let w=0; w<playerW; w++){
-      tryCollectAt(pCol + w, pRow);
-    }
-  }
-
-  function movePlayer(dx, dy){
-    if (!running || paused || gameOver || inLevelUp) return;
-
-    const bt = bandTop();
-    const bb = bandBottom();
-
-    pCol = clamp(pCol + dx, 0, W - playerW);
-    pRow = clamp(pRow + dy, bt, bb);
-
-    // colecciona al moverte (tocar)
-    tryCollectPlayerCell();
-  }
-
-  function endGame(reason){
+  function endRun(reason){
     running = false;
     paused = false;
     gameOver = true;
 
-    // guarda best
+    runs = (parseInt(localStorage.getItem(RUNS_KEY) || "0", 10) || 0) + 1;
+    localStorage.setItem(RUNS_KEY, String(runs));
+
     if (score > best){
       best = score;
       localStorage.setItem(BEST_KEY, String(best));
+      showToast("Nuevo récord 🏆", 1100);
     }
 
-    // guarda runs
-    const runs = loadRuns();
-    runs.unshift({ t: Date.now(), score, rows: rowsSurvived, level });
-    while (runs.length > 8) runs.pop();
-    localStorage.setItem(RUNS_KEY, JSON.stringify(runs));
+    if (finalLine){
+      finalLine.textContent = `${reason} — Puntos: ${score} • Racha: ${streak} • Nivel: ${level}`;
+    }
 
-    finalLine.textContent = `Has hecho ${score} puntos (Nivel ${level}, ${rowsSurvived} filas). ${reason}`;
+    refreshStartStats();
     overlayShow(overlayGameOver);
-    overlayHide(overlayPaused, 0);
-    overlayHide(overlayStart, 0);
-    overlayHide(overlayUpgrades, 0);
-
-    shake = Math.max(shake, 0.20 * settings.fx);
-    spawnBurstAtPlayer("rgba(255,90,90,0.95)", 28);
-    vibrate(55);
-
-    updateHud(true);
-  }
-
-  function stepRowAdvance(){
-    // fila sobrevivida
-    rowsSurvived++;
-    if (flags.scorePerRow) score += 1;
-
-    // invul por filas
-    if (invulRows > 0) invulRows--;
-
-    // shift grid down: pop bottom, unshift new row on top
-    grid.pop();
-    grid.unshift(genRow(0));
-
-    // “vacío” puede bajar racha muy suave
-    if (!flags.streakFirm && Math.random() < 0.12 && streak > 0){
-      streak = Math.max(0, streak - 1);
-      mult = 1 + Math.min(4, Math.floor(streak / 6));
-    }
-
-    // XP por supervivencia mínima
-    awardXp(Math.floor(1 * flags.xpBoost));
-
-    // combo caduca
-    if (comboTarget && now() > comboTarget.expires){
-      comboTarget.idx = 0;
-      comboTarget.expires = now() + (16 + flags.comboTimePlus);
-      hueTarget = 220;
-      renderComboTarget();
-    }
-
-    updateHud(false);
-
-    // recoge si la celda “entra” en ti con el scroll
-    tryCollectPlayerCell();
-  }
-
-  // ───────────────────────── HUD ─────────────────────────
-  function updateHud(force=false){
-    hudScore.textContent = String(score);
-    hudStreak.textContent = String(streak);
-    hudMult.textContent = String(mult * effectiveMult());
-    hudBest.textContent = String(best);
-
-    hudLevel.textContent = String(level);
-    hudXp.textContent = `${xp}/${xpNeed}`;
-    hudLevelFill.style.width = `${Math.floor((xp / xpNeed) * 100)}%`;
-
-    const comboText = comboTarget
-      ? `${comboTarget.idx}/${comboTarget.seq.length}`
-      : "—";
-    hudComboText.textContent = comboText;
-    const fill = comboTarget ? (comboTarget.idx / comboTarget.seq.length) : 0;
-    hudComboFill.style.width = `${Math.floor(fill * 100)}%`;
-
-    pillLevel.textContent = `⭐ Lv ${level}`;
-    pillPlayer.textContent = `👤 ${playerName || "—"}`;
-
-    if (force){
-      bump(hudScore);
-    }
-  }
-
-  // ───────────────────────── Stats start ─────────────────────────
-  function loadRuns(){
-    try{
-      const raw = localStorage.getItem(RUNS_KEY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return [];
-      return arr;
-    } catch {
-      return [];
-    }
-  }
-
-  function refreshStartStats(){
-    startBest.textContent = String(best);
-    const runs = loadRuns();
-    if (!runs.length){
-      startRuns.textContent = "—";
-      return;
-    }
-    const top = runs.slice(0, 3).map(r => r.score).join(" · ");
-    startRuns.textContent = top;
-  }
-
-  function syncStartNameUI(){
-    startName.value = playerName || "";
-    btnStart.disabled = !((startName.value || "").trim().length >= 2);
-    updateHud(true);
-  }
-
-  // ───────────────────────── Resize / draw ─────────────────────────
-  function resize(){
-    const rect = stage.getBoundingClientRect();
-    dpr = Math.max(1, Math.min(2.25, window.devicePixelRatio || 1));
-
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
-
-    const pad = Math.floor(16 * dpr);
-    const availW = canvas.width - pad * 2;
-    const availH = canvas.height - pad * 2;
-
-    cellPx = Math.max(12, Math.floor(Math.min(availW / W, availH / H)));
-    boardW = cellPx * W;
-    boardH = cellPx * H;
-
-    boardX = Math.floor((canvas.width - boardW) * 0.5);
-    boardY = Math.floor((canvas.height - boardH) * 0.5);
-
-    ctx.imageSmoothingEnabled = !settings.useSprites;
-    draw();
-  }
-
-  function drawRoundedRect(x,y,w,h,r){
-    const rr = Math.min(r, w/2, h/2);
-    ctx.beginPath();
-    ctx.moveTo(x+rr,y);
-    ctx.arcTo(x+w,y,x+w,y+h,rr);
-    ctx.arcTo(x+w,y+h,x,y+h,rr);
-    ctx.arcTo(x,y+h,x,y,rr);
-    ctx.arcTo(x,y,x+w,y,rr);
-    ctx.closePath();
-  }
-
-  function drawTile(x, y, type, alpha, t){
-    ctx.globalAlpha = alpha;
-
-    // sprite path
-    if (settings.useSprites && SPR.ok){
-      const img =
-        type === CELL.EMPTY ? SPR.empty :
-        type === CELL.COIN ? SPR.coin :
-        type === CELL.GEM ? SPR.gem :
-        type === CELL.BONUS ? SPR.bonus :
-        type === CELL.TRAP ? SPR.trap :
-        SPR.block;
-
-      if (img){
-        ctx.drawImage(img, x, y, cellPx, cellPx);
-        ctx.globalAlpha = 1;
-        return;
-      }
-    }
-
-    // fallback: color blocks + patterns
-    const r = Math.max(3, Math.floor(cellPx * 0.18));
-    drawRoundedRect(x+1, y+1, cellPx-2, cellPx-2, r);
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    ctx.fill();
-
-    if (type !== CELL.EMPTY){
-      // base
-      drawRoundedRect(x+2, y+2, cellPx-4, cellPx-4, r-1);
-      ctx.fillStyle = CELL_COLOR[type];
-      ctx.fill();
-
-      // extra style per type
-      if (type === CELL.BLOCK){
-        // stripes + pulse border
-        const p = 0.5 + 0.5*Math.sin(t*6.5);
-        ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
-        ctx.strokeStyle = `rgba(255,255,255,${0.15 + 0.25*p})`;
-        ctx.stroke();
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x+2, y+2, cellPx-4, cellPx-4);
-        ctx.clip();
-        ctx.globalAlpha = alpha * 0.75;
-        ctx.fillStyle = "rgba(0,0,0,0.25)";
-        for (let i=-cellPx;i<cellPx*2;i+=Math.floor(6*dpr)){
-          ctx.fillRect(x+i, y, Math.floor(3*dpr), cellPx);
-        }
-        ctx.restore();
-
-        // X
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = "rgba(20,0,0,0.55)";
-        ctx.lineWidth = Math.max(2, Math.floor(3*dpr));
-        ctx.beginPath();
-        ctx.moveTo(x+6*dpr, y+6*dpr);
-        ctx.lineTo(x+cellPx-6*dpr, y+cellPx-6*dpr);
-        ctx.moveTo(x+cellPx-6*dpr, y+6*dpr);
-        ctx.lineTo(x+6*dpr, y+cellPx-6*dpr);
-        ctx.stroke();
-      } else {
-        // subtle highlight
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = "rgba(255,255,255,0.10)";
-        drawRoundedRect(x+3, y+3, cellPx-6, cellPx*0.40, r-2);
-        ctx.fill();
-      }
-    }
-
-    ctx.globalAlpha = 1;
-  }
-
-  function drawPlayer(x, y, t){
-    // glow
-    const glow = 0.12 + pulse * 0.10;
-    ctx.save();
-    ctx.globalAlpha = 1;
-    ctx.shadowColor = `hsla(${hue}, 95%, 65%, ${glow})`;
-    ctx.shadowBlur = Math.floor(22 * dpr * settings.fx);
-
-    const r = Math.max(4, Math.floor(cellPx * 0.22));
-
-    // sprite
-    if (settings.useSprites && SPR.ok && SPR.player){
-      ctx.drawImage(SPR.player, x, y, cellPx * playerW, cellPx);
-      ctx.restore();
-      return;
-    }
-
-    // fallback
-    drawRoundedRect(x+2, y+2, cellPx*playerW-4, cellPx-4, r);
-    ctx.fillStyle = `hsla(${hue}, 90%, 60%, 0.92)`;
-    ctx.fill();
-    ctx.lineWidth = Math.max(1, Math.floor(2*dpr));
-    ctx.strokeStyle = "rgba(255,255,255,0.22)";
-    ctx.stroke();
-
-    // eye
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(0,0,0,0.30)";
-    ctx.fillRect(x + (cellPx*playerW)*0.62, y + cellPx*0.34, cellPx*0.16, cellPx*0.16);
-
-    ctx.restore();
-  }
-
-  function draw(){
-    const t = now();
-
-    // background hue drift
-    hue = lerp(hue, hueTarget, 0.04);
-
-    // clear
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.fillStyle = `hsl(${hue}, 28%, 8%)`;
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    // camera shake
-    const sh = shake * settings.fx;
-    const sx = (Math.random()*2-1) * sh * cellPx;
-    const sy = (Math.random()*2-1) * sh * cellPx;
-
-    ctx.save();
-    ctx.translate(sx, sy);
-
-    // board bg
-    const bgGrad = ctx.createLinearGradient(boardX, boardY, boardX, boardY+boardH);
-    bgGrad.addColorStop(0, "rgba(255,255,255,0.04)");
-    bgGrad.addColorStop(1, "rgba(255,255,255,0.02)");
-    ctx.fillStyle = bgGrad;
-    drawRoundedRect(boardX, boardY, boardW, boardH, Math.floor(18*dpr));
-    ctx.fill();
-
-    // band highlight (zona mov)
-    const bt = bandTop();
-    const bb = bandBottom();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "rgba(120,200,255,0.08)";
-    ctx.fillRect(boardX, boardY + bt*cellPx, boardW, (bb-bt+1)*cellPx);
-
-    // grid tiles
-    // y offset for scroll: tiles appear moved down by scrollPx
-    for (let r=0;r<H;r++){
-      for (let c=0;c<W;c++){
-        const type = grid[r][c];
-
-        const x = boardX + c*cellPx;
-        const y = boardY + r*cellPx + scrollPx;
-
-        // if offscreen skip
-        if (y < boardY - cellPx || y > boardY + boardH) continue;
-
-        // fade "past" rows below band
-        let a = 1.0;
-        if (r > bb + 1) a = 0.38;
-        else if (r < bt - 1) a = 0.65;
-
-        drawTile(x, y, type, a, t);
-      }
-    }
-
-    // player in fixed band coord (scroll affects world, so player y should subtract scroll)
-    // We render player using pRowF but in board coords we subtract scrollPx to keep him stable relative to board.
-    pColF = lerp(pColF, pCol, 0.24);
-    pRowF = lerp(pRowF, pRow, 0.24);
-
-    const px = boardX + pColF * cellPx;
-    const py = boardY + pRowF * cellPx + scrollPx;
-
-    drawPlayer(px, py, t);
-
-    // invul indicator
-    if (invulRows > 0 || shieldHits > 0){
-      ctx.globalAlpha = 0.85;
-      ctx.strokeStyle = invulRows > 0 ? "rgba(180,255,255,0.80)" : "rgba(200,255,255,0.60)";
-      ctx.lineWidth = Math.max(2, Math.floor(3*dpr));
-      drawRoundedRect(px+3, py+3, cellPx*playerW-6, cellPx-6, Math.floor(cellPx*0.24));
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-
-    // particles
-    for (const p of particles){
-      const life = 1 - (p.t / p.life);
-      ctx.globalAlpha = clamp(life, 0, 1);
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.s*dpr, 0, Math.PI*2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // float texts
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `${Math.floor(14*dpr)}px system-ui, -apple-system, Segoe UI, Roboto`;
-    for (const f of floatTexts){
-      const life = 1 - (f.t / f.life);
-      ctx.globalAlpha = clamp(life, 0, 1);
-      ctx.fillStyle = f.color;
-      ctx.fillText(f.text, f.x, f.y);
-    }
-    ctx.globalAlpha = 1;
-
-    ctx.restore();
-  }
-
-  // ───────────────────────── Tick loop ─────────────────────────
-  let lastT = 0;
-  function loop(ts){
-    if (!running){
-      // aun así, dibuja un poco para no “romper” si resize
-      lastT = ts;
-      requestAnimationFrame(loop);
-      return;
-    }
-
-    if (!lastT) lastT = ts;
-    let dt = (ts - lastT) / 1000;
-    lastT = ts;
-
-    dt = clamp(dt, 0, 0.05);
-
-    if (toastTimer > 0){
-      toastTimer -= dt;
-      if (toastTimer <= 0) hideToast();
-    }
-
-    if (deltaTimer > 0){
-      deltaTimer -= dt;
-      if (deltaTimer <= 0){
-        hudScoreDelta.classList.remove("show");
-        hudScoreDelta.textContent = "+0";
-      }
-    }
-
-    // timers buffs
-    if (buffX2T > 0) buffX2T = Math.max(0, buffX2T - dt);
-
-    // combo timer text
-    if (comboTarget){
-      comboTimer.textContent = `${Math.max(0, comboTarget.expires - now()).toFixed(0)}s`;
-    }
-
-    if (!paused && !gameOver && !inLevelUp){
-      runTime += dt;
-
-      // scroll
-      const speedRows = currentSpeedRowsPerSec();
-      pillSpeed.textContent = `Vel ${speedRows.toFixed(1)}×`;
-
-      scrollPx += speedRows * cellPx * dt;
-
-      while (scrollPx >= cellPx){
-        scrollPx -= cellPx;
-        stepRowAdvance();
-      }
-
-      // shake decay
-      shake = Math.max(0, shake - dt * 0.9);
-      pulse = Math.max(0, pulse - dt * 0.7);
-    }
-
-    draw();
-    requestAnimationFrame(loop);
   }
 
   // ───────────────────────── Input ─────────────────────────
+  function tryVibrate(ms){
+    try{
+      if (!settings.vibration) return;
+      if (navigator.vibrate) navigator.vibrate(ms);
+    } catch {}
+  }
+
+  function laneBounds(){
+    const half = Math.floor(laneRows/2);
+    const a = clamp(midRow - half, 0, ROWS-1);
+    const b = clamp(midRow + half, 0, ROWS-1);
+    return [a, b];
+  }
+
+  function move(dx, dy){
+    if (!running || paused || gameOver) return;
+
+    const [a,b] = laneBounds();
+
+    // horizontal
+    playerCol = clamp(playerCol + dx, 0, COLS - playerSpan);
+
+    // vertical dentro de banda
+    playerRow = clamp(playerRow + dy, a, b);
+
+    // small feedback
+    shake = Math.max(shake, 0.12 * settings.fx);
+  }
+
   function bindInputs(){
-    // quick left/right zones
-    zoneLeft.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(-1, 0); }, { passive:false });
-    zoneRight.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(+1, 0); }, { passive:false });
-
-    // dpad
-    btnUp.addEventListener("click", () => movePlayer(0, -1));
-    btnDown.addEventListener("click", () => movePlayer(0, +1));
-    btnLeft.addEventListener("click", () => movePlayer(-1, 0));
-    btnRight.addEventListener("click", () => movePlayer(+1, 0));
-
     // keyboard
     window.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") movePlayer(-1, 0);
-      if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") movePlayer(+1, 0);
-      if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") movePlayer(0, -1);
-      if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") movePlayer(0, +1);
-
-      if (e.key === " " || e.key === "Spacebar" || e.key === "p" || e.key === "P" || e.key === "Escape"){
-        if (running && !gameOver) setPaused(!paused);
-      }
-      if (e.key === "Enter"){
-        if (!overlayStart.hidden) startGame();
-        else if (!overlayGameOver.hidden) { resetRunState(); startGame(); }
+      if (e.key === "ArrowLeft" || e.key === "a") move(-1, 0);
+      else if (e.key === "ArrowRight" || e.key === "d") move(1, 0);
+      else if (e.key === "ArrowUp" || e.key === "w") move(0, -1);
+      else if (e.key === "ArrowDown" || e.key === "s") move(0, 1);
+      else if (e.key === " "){
+        togglePause();
       }
     });
 
-    // swipe 4 dirs
-    let sx0=0, sy0=0, st0=0;
-    canvas.addEventListener("pointerdown", (e) => {
-      sx0 = e.clientX; sy0 = e.clientY; st0 = performance.now();
+    // taps L/R
+    if (zoneLeft) zoneLeft.addEventListener("pointerdown", (e) => { e.preventDefault(); move(-1,0); }, { passive:false });
+    if (zoneRight) zoneRight.addEventListener("pointerdown", (e) => { e.preventDefault(); move(1,0); }, { passive:false });
+
+    // swipe (4 dirs) on stage
+    let sx=0, sy=0, st=0;
+    stage.addEventListener("touchstart", (e) => {
+      if (!e.touches || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      sx = t.clientX; sy = t.clientY; st = now();
     }, { passive:true });
 
-    canvas.addEventListener("pointerup", (e) => {
-      const dt = performance.now() - st0;
-      if (dt > 380) return;
+    stage.addEventListener("touchend", (e) => {
+      const dt = now() - st;
+      if (dt > 500) return;
+      const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : null;
+      if (!t) return;
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      const thr = 18;
 
-      const dx = e.clientX - sx0;
-      const dy = e.clientY - sy0;
+      if (adx < thr && ady < thr) return;
 
-      const ax = Math.abs(dx);
-      const ay = Math.abs(dy);
-      const min = 26;
-
-      if (ax < min && ay < min) return;
-
-      if (ax > ay){
-        movePlayer(dx > 0 ? +1 : -1, 0);
+      if (adx > ady){
+        move(dx > 0 ? 1 : -1, 0);
       } else {
-        movePlayer(0, dy > 0 ? +1 : -1);
+        move(0, dy > 0 ? 1 : -1);
       }
     }, { passive:true });
 
-    // pause on background
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden && running && !gameOver) setPaused(true, true);
-    });
+    // dpad
+    if (btnUp) btnUp.addEventListener("pointerdown", (e)=>{ e.preventDefault(); move(0,-1); }, { passive:false });
+    if (btnDown) btnDown.addEventListener("pointerdown", (e)=>{ e.preventDefault(); move(0,1); }, { passive:false });
+    if (btnLeft) btnLeft.addEventListener("pointerdown", (e)=>{ e.preventDefault(); move(-1,0); }, { passive:false });
+    if (btnRight) btnRight.addEventListener("pointerdown", (e)=>{ e.preventDefault(); move(1,0); }, { passive:false });
 
-    // prevent scroll on iOS while playing
+    // iOS: evitar scroll mientras juegas
     document.addEventListener("touchmove", (e) => {
       if (running) e.preventDefault();
     }, { passive:false });
   }
 
-  // ───────────────────────── UI buttons ─────────────────────────
-  function setPaused(v, silent=false){
+  // ───────────────────────── Buttons ─────────────────────────
+  function togglePause(){
     if (gameOver) return;
-    paused = !!v;
+    if (!running && !paused) return;
 
     if (paused){
-      if (!silent) overlayShow(overlayPaused);
+      paused = false;
+      running = true;
+      overlayHide(overlayPaused);
     } else {
-      overlayHide(overlayPaused, 160);
+      paused = true;
+      running = false;
+      overlayShow(overlayPaused);
     }
-  }
-
-  function startGame(){
-    if (gameOver) return;
-
-    const nm = (startName.value || "").trim().slice(0, 16);
-    if (!nm || nm.length < 2){
-      showToast("Pon un nombre (mín. 2).", 1100);
-      return;
-    }
-
-    playerName = nm;
-    localStorage.setItem(NAME_KEY, playerName);
-
-    pillPlayer.textContent = `👤 ${playerName}`;
-
-    overlayHide(overlayStart, 160);
-    overlayHide(overlayGameOver, 0);
-    overlayHide(overlayPaused, 0);
-    overlayHide(overlayUpgrades, 0);
-    overlayHide(overlayOptions, 0);
-
-    running = true;
-    paused = false;
-    gameOver = false;
-    inLevelUp = false;
-
-    lastT = 0;
-    showToast("¡Vamos! 🔥", 700);
-
-    // reset run y arranca
-    resetRunState();
-    updateHud(true);
   }
 
   function bindButtons(){
-    pillVersion.textContent = `v${APP_VERSION}`;
+    if (pillVersion) pillVersion.textContent = `v${APP_VERSION}`;
 
-    btnStart.addEventListener("click", startGame);
-    startName.addEventListener("input", () => {
-      btnStart.disabled = !((startName.value || "").trim().length >= 2);
-    });
-
-    btnResume.addEventListener("click", () => setPaused(false));
     btnPause.addEventListener("click", () => {
-      if (!running || gameOver) return;
-      setPaused(!paused);
+      togglePause();
     });
 
     btnRestart.addEventListener("click", () => {
-      if (!running) {
-        resetGame(true);
+      // reset rápido: vuelve al start si no hay run
+      if (!running && !paused){
+        overlayShow(overlayStart);
         return;
       }
-      resetRunState();
-      showToast("Reset ✅", 700);
-      updateHud(true);
-    });
-
-    btnPlayAgain.addEventListener("click", () => {
-      resetRunState();
-      overlayHide(overlayGameOver, 160);
-      running = true;
-      paused = false;
-      gameOver = false;
-      showToast("Otra 🔁", 650);
-    });
-
-    btnBackToStart.addEventListener("click", () => {
-      resetGame(true);
+      startRun();
     });
 
     btnOptions.addEventListener("click", () => {
       overlayShow(overlayOptions);
-      applySettingsToUI();
+      if (running){
+        paused = true; running = false;
+      }
     });
 
-    btnCloseOptions.addEventListener("click", () => overlayHide(overlayOptions, 160));
+    btnCloseOptions.addEventListener("click", () => {
+      overlayHide(overlayOptions);
+      if (paused && !gameOver && !overlayUpgrades.hidden){
+        // si estás en upgrades, no reanudes
+        return;
+      }
+      if (paused && !gameOver){
+        paused = false; running = true;
+      }
+    });
 
+    btnResume.addEventListener("click", () => {
+      paused = false; running = true;
+      overlayHide(overlayPaused);
+    });
+
+    btnPlayAgain.addEventListener("click", () => {
+      overlayHide(overlayGameOver);
+      startRun();
+    });
+
+    btnBackToStart.addEventListener("click", () => {
+      paused = false; running = false; gameOver = false;
+      overlayHide(overlayPaused);
+      overlayShow(overlayStart);
+      updateHud(true);
+    });
+
+    btnBackToStart2.addEventListener("click", () => {
+      paused = false; running = false; gameOver = false;
+      overlayHide(overlayGameOver);
+      overlayShow(overlayStart);
+      updateHud(true);
+    });
+
+    // start name
+    startName.addEventListener("input", () => {
+      const nm = (startName.value || "").trim().slice(0,16);
+      btnStart.disabled = !(nm.length >= 2);
+      pillPlayer.textContent = `👤 ${nm || "—"}`;
+    });
+
+    btnStart.addEventListener("click", () => {
+      const nm = (startName.value || "").trim().slice(0,16);
+      if (nm.length < 2) return;
+      playerName = nm;
+      try{ localStorage.setItem(NAME_KEY, playerName); } catch {}
+      pillPlayer.textContent = `👤 ${playerName}`;
+      startRun();
+    });
+
+    // options controls
     optSprites.addEventListener("change", () => {
       settings.useSprites = !!optSprites.checked;
       saveSettings();
       applySettingsToUI();
       draw();
-      showToast(settings.useSprites ? "Sprites ON ✅" : "Sprites OFF ✅", 800);
     });
 
     optVibration.addEventListener("change", () => {
       settings.vibration = !!optVibration.checked;
       saveSettings();
-      applySettingsToUI();
-      showToast("Guardado ✅", 650);
     });
 
     optDpad.addEventListener("change", () => {
       settings.showDpad = !!optDpad.checked;
       saveSettings();
       applySettingsToUI();
-      showToast("Guardado ✅", 650);
     });
 
     optFx.addEventListener("input", () => {
@@ -1580,15 +922,407 @@
     btnClearLocal.addEventListener("click", () => {
       localStorage.removeItem(BEST_KEY);
       localStorage.removeItem(RUNS_KEY);
-      best = 0;
       refreshStartStats();
-      updateHud(true);
       showToast("Datos local borrados ✅", 900);
+    });
+
+    // upgrades overlay
+    upg0.addEventListener("click", () => applyUpgrade(0));
+    upg1.addEventListener("click", () => applyUpgrade(1));
+    upg2.addEventListener("click", () => applyUpgrade(2));
+
+    btnReroll.addEventListener("click", () => {
+      if (rerolls <= 0) return;
+      rerolls -= 1;
+      if (rerollCount) rerollCount.textContent = String(rerolls);
+      showUpgradeChoices();
+      showToast("Reroll ✅", 650);
     });
   }
 
-  // ───────────────────────── PWA ─────────────────────────
+  // ───────────────────────── Gameplay tick ─────────────────────────
+  function screenPlayerX(){
+    return offX + (playerCol + (playerSpan*0.5)) * cellPx;
+  }
+  function screenPlayerY(){
+    return offY + (playerRow + 0.5) * cellPx + scroll * cellPx;
+  }
+
+  function applyCollision(tileType){
+    if (tileType === CELL.EMPTY) return;
+
+    // magnet: si activo, “aspira” monedas/gemas cercanas al pasar
+    // (se aplica en checkCell)
+  }
+
+  function checkCellAt(r, c){
+    const cell = grid[r]?.[c];
+    if (!cell) return;
+
+    let t = cell.t;
+    if (t === CELL.EMPTY) return;
+
+    // Magnet effect (solo coin/gem)
+    if (hasTimed("magnetUntil") && (t === CELL.COIN || t === CELL.GEM)){
+      // atrae automáticamente: cuenta como recogido
+    }
+
+    if (t === CELL.BLOCK){
+      if (shield > 0){
+        shield -= 1;
+        grid[r][c].t = CELL.EMPTY;
+        streak = Math.max(0, streak - 1);
+        addPop(screenPlayerX(), screenPlayerY(), "ESCUDO", "#ffffff");
+        showToast("Escudo 💥", 800);
+        tryVibrate(25);
+        shake = Math.max(shake, 0.9 * settings.fx);
+        return;
+      }
+      endRun("KO");
+      tryVibrate(70);
+      return;
+    }
+
+    if (t === CELL.TRAP){
+      const val = VALUE[CELL.TRAP];
+      score = Math.max(0, score + val);
+      xp += 6;
+
+      const guard = stacks.get("streakGuard") ? true : false;
+      if (!guard) streak = 0;
+
+      mult = Math.max(1, mult - 1);
+
+      grid[r][c].t = CELL.EMPTY;
+
+      addPop(screenPlayerX(), screenPlayerY(), `${val}`, BASE_COLOR[CELL.TRAP]);
+      tryVibrate(20);
+      shake = Math.max(shake, 0.7 * settings.fx);
+      return;
+    }
+
+    // COIN/GEM/BONUS
+    let add = VALUE[t] || 0;
+    if (hasTimed("x2Until")) add *= 2;
+    add = Math.round(add * mult);
+
+    score += add;
+    xp += (t === CELL.BONUS ? 18 : t === CELL.GEM ? 12 : 8);
+
+    streak += 1;
+    if (streak % 6 === 0) mult = clamp(mult + 1, 1, 12);
+
+    grid[r][c].t = CELL.EMPTY;
+
+    addPop(screenPlayerX(), screenPlayerY(), `+${add}`, BASE_COLOR[t]);
+    tryVibrate(t === CELL.BONUS ? 18 : 10);
+    shake = Math.max(shake, 0.45 * settings.fx);
+
+    onCollectForCombo(t);
+  }
+
+  function stepRows(n=1){
+    for (let k=0;k<n;k++){
+      // shift down
+      grid.pop();
+      grid.unshift(makeRow());
+
+      // progreso: puntos por avance
+      score += Math.round(2 * mult);
+      xp += 1;
+    }
+  }
+
+  function updateSpeed(dt){
+    const slow = hasTimed("slowUntil") ? 0.62 : 1.0;
+    const growDown = stacks.get("speedGrowDown") || 0;
+    const growMul = clamp(1.0 - growDown * 0.06, 0.65, 1.0);
+
+    const streakBoost = clamp(streak * 0.01, 0, 0.45);
+    const timeBoost = clamp(tAlive * 0.010, 0, 1.00);
+
+    speed = (baseSpeed + timeBoost + streakBoost) * growMul * slow;
+  }
+
+  function updateHud(force=false){
+    if (hudScore) hudScore.textContent = String(score);
+    if (hudStreak) hudStreak.textContent = String(streak);
+    if (hudMult) hudMult.textContent = String(mult);
+    if (hudLevel) hudLevel.textContent = String(level);
+    if (hudXp) hudXp.textContent = `${Math.floor(xp)} / ${nextXp}`;
+
+    if (pillSpeed) pillSpeed.textContent = `Vel ${ (speed/baseSpeed).toFixed(2) }×`;
+    if (pillLevel) pillLevel.textContent = `⭐ Lv ${level}`;
+
+    // barras
+    if (hudComboFill){
+      const per = clamp((streak % 6) / 6, 0, 1);
+      hudComboFill.style.width = `${Math.round(per*100)}%`;
+    }
+    if (hudComboText){
+      hudComboText.textContent = `Combo ${streak % 6}/6`;
+    }
+    if (hudLevelFill){
+      const per = clamp(xp / nextXp, 0, 1);
+      hudLevelFill.style.width = `${Math.round(per*100)}%`;
+    }
+  }
+
+  // ───────────────────────── Render ─────────────────────────
+  function drawBackground(){
+    // fondo suave: cambia con racha (sin quemar ojos)
+    const s = clamp(streak/20, 0, 1);
+    const r = Math.floor(18 + 40*s);
+    const g = Math.floor(18 + 20*s);
+    const b = Math.floor(38 + 60*s);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(0,0,cw,ch);
+  }
+
+  function drawGrid(){
+    const [a,b] = laneBounds();
+    const scrollPx = scroll * cellPx;
+
+    // shake
+    let sx = 0, sy = 0;
+    if (shake > 0.001){
+      const fx = settings.fx || 1;
+      shake = lerp(shake, 0, 0.08);
+      shakeX = (Math.random()*2-1) * 6 * shake * fx * dpr;
+      shakeY = (Math.random()*2-1) * 6 * shake * fx * dpr;
+      sx = shakeX; sy = shakeY;
+    } else {
+      shake = 0; shakeX = 0; shakeY = 0;
+    }
+
+    ctx.save();
+    ctx.translate(sx, sy);
+
+    // board area
+    const boardW = cellPx * COLS;
+    const boardH = cellPx * ROWS;
+
+    // subtle border
+    ctx.strokeStyle = "rgba(255,255,255,.10)";
+    ctx.lineWidth = Math.max(1, 1*dpr);
+    ctx.strokeRect(offX+0.5, offY+0.5, boardW-1, boardH-1);
+
+    for (let r=0;r<ROWS;r++){
+      const y = offY + r*cellPx + scrollPx;
+
+      // banda de movimiento (3 filas o más) resaltada
+      if (r >= a && r <= b){
+        ctx.fillStyle = "rgba(255,255,255,.055)";
+        ctx.fillRect(offX, y, boardW, cellPx);
+      }
+
+      const passed = (r > playerRow);
+      const alphaRow = passed ? 0.38 : 1.0;
+
+      for (let c=0;c<COLS;c++){
+        const x = offX + c*cellPx;
+
+        // cell bg
+        ctx.fillStyle = "rgba(0,0,0,.10)";
+        ctx.fillRect(x, y, cellPx, cellPx);
+
+        // content
+        const t = grid[r][c].t;
+
+        if (t !== CELL.EMPTY){
+          // KO muy visible
+          const pulse = (t === CELL.BLOCK) ? (0.65 + 0.35*Math.sin((now()/180))) : 1.0;
+
+          ctx.globalAlpha = alphaRow;
+
+          if (settings.useSprites && sprites.loaded){
+            const img = sprites.tiles.get(t);
+            if (img){
+              const pad = Math.floor(cellPx * 0.10);
+              ctx.drawImage(img, x+pad, y+pad, cellPx-pad*2, cellPx-pad*2);
+            } else {
+              ctx.fillStyle = BASE_COLOR[t];
+              ctx.globalAlpha = alphaRow * 0.85;
+              ctx.fillRect(x+2, y+2, cellPx-4, cellPx-4);
+            }
+          } else {
+            ctx.fillStyle = BASE_COLOR[t];
+            ctx.globalAlpha = alphaRow * 0.85;
+            ctx.fillRect(x+2, y+2, cellPx-4, cellPx-4);
+          }
+
+          // block extra
+          if (t === CELL.BLOCK){
+            ctx.globalAlpha = alphaRow * pulse;
+            ctx.strokeStyle = "rgba(255,255,255,.9)";
+            ctx.lineWidth = Math.max(2, 2*dpr);
+            ctx.strokeRect(x+2, y+2, cellPx-4, cellPx-4);
+
+            // X
+            ctx.strokeStyle = "rgba(0,0,0,.45)";
+            ctx.lineWidth = Math.max(3, 3*dpr);
+            ctx.beginPath();
+            ctx.moveTo(x+6, y+6);
+            ctx.lineTo(x+cellPx-6, y+cellPx-6);
+            ctx.moveTo(x+cellPx-6, y+6);
+            ctx.lineTo(x+6, y+cellPx-6);
+            ctx.stroke();
+          }
+
+          ctx.globalAlpha = 1.0;
+        }
+
+        // grid lines
+        ctx.strokeStyle = "rgba(255,255,255,.06)";
+        ctx.lineWidth = Math.max(1, 1*dpr);
+        ctx.strokeRect(x+0.5, y+0.5, cellPx-1, cellPx-1);
+      }
+    }
+
+    // player (centrado)
+    const px = offX + playerCol*cellPx;
+    const py = offY + playerRow*cellPx + scrollPx;
+
+    const spanW = playerSpan*cellPx;
+
+    // player base
+    ctx.globalAlpha = 1;
+    if (settings.useSprites && sprites.loaded && sprites.player){
+      const pad = Math.floor(cellPx * 0.10);
+      ctx.drawImage(sprites.player, px+pad, py+pad, spanW-pad*2, cellPx-pad*2);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,.95)";
+      ctx.fillRect(px+3, py+3, spanW-6, cellPx-6);
+      ctx.strokeStyle = "rgba(0,0,0,.35)";
+      ctx.lineWidth = Math.max(2, 2*dpr);
+      ctx.strokeRect(px+3, py+3, spanW-6, cellPx-6);
+    }
+
+    // shield indicator
+    if (shield > 0){
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = "rgba(105,168,255,.9)";
+      ctx.lineWidth = Math.max(2, 2*dpr);
+      ctx.strokeRect(px+1.5, py+1.5, spanW-3, cellPx-3);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
+  function drawPops(dt){
+    for (let i=pops.length-1;i>=0;i--){
+      const p = pops[i];
+      p.t += dt;
+      const t = clamp(p.t / p.life, 0, 1);
+      const a = 1 - t;
+      p.y += p.vy * dt;
+
+      const scale = 1 + 0.22 * (1 - t);
+
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.font = `${Math.floor(16*dpr*scale)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(p.text, p.x + shakeX*0.25, p.y + shakeY*0.25);
+      ctx.restore();
+
+      if (t >= 1) pops.splice(i,1);
+    }
+  }
+
+  function draw(){
+    drawBackground();
+    drawGrid();
+  }
+
+  // ───────────────────────── Loop ─────────────────────────
+  function loop(){
+    const t = now();
+    const dt = clamp(t - lastT, 0, 40); // ms
+    lastT = t;
+
+    tickCombo();
+
+    if (running && !paused && !gameOver){
+      tAlive += dt/1000;
+      updateSpeed(dt/1000);
+
+      // scroll
+      scroll += (speed * (dt/1000));
+      while (scroll >= 1){
+        scroll -= 1;
+        stepRows(1);
+
+        // check collision en la fila del player
+        for (let s=0;s<playerSpan;s++){
+          checkCellAt(playerRow, playerCol + s);
+          if (gameOver) break;
+        }
+
+        // magnet: recoger alrededor 1 celda (solo coin/gem)
+        if (!gameOver && hasTimed("magnetUntil")){
+          for (let rr=playerRow-1; rr<=playerRow+1; rr++){
+            if (rr < 0 || rr >= ROWS) continue;
+            for (let cc=playerCol-1; cc<=playerCol+playerSpan; cc++){
+              if (cc < 0 || cc >= COLS) continue;
+              const tt = grid[rr][cc].t;
+              if (tt === CELL.COIN || tt === CELL.GEM){
+                grid[rr][cc].t = CELL.EMPTY;
+                let add = VALUE[tt] || 0;
+                if (hasTimed("x2Until")) add *= 2;
+                add = Math.round(add * mult);
+                score += add;
+                xp += 6;
+                addPop(screenPlayerX(), screenPlayerY(), `+${add}`, BASE_COLOR[tt]);
+              }
+            }
+          }
+        }
+
+        // auto-centro si tienes laneNudge
+        if (stacks.get("laneNudge")){
+          const [a,b] = laneBounds();
+          playerRow = clamp(playerRow, a, b);
+        }
+
+        tryLevelUp();
+      }
+
+      updateHud();
+    }
+
+    // render
+    draw();
+    drawPops(dt);
+
+    // si hay update pendiente y ya no estás jugando => aplica
+    maybeApplyPendingUpdate();
+
+    requestAnimationFrame(loop);
+  }
+
+  // ───────────────────────── PWA (auto update) ─────────────────────────
+  const SW_TOAST_KEY = "grid_runner_sw_toast_v1";
+  let pendingWorker = null;
+  let reloadedOnce = false;
+
+  function maybeApplyPendingUpdate(){
+    if (!pendingWorker) return;
+    if (running && !gameOver) return; // no cortar run
+    try{
+      pendingWorker.postMessage({ type:"SKIP_WAITING" });
+      pendingWorker = null;
+      showToast("Actualizando…", 900);
+    } catch {
+      pendingWorker = null;
+    }
+  }
+
   function setupPWA(){
+    // online/offline
     const setNet = () => {
       const offline = !navigator.onLine;
       pillOffline.hidden = !offline;
@@ -1617,12 +1351,50 @@
       btnInstall.disabled = false;
     });
 
-    // SW register (GitHub Pages compatible)
+    // SW register + auto-update
     if ("serviceWorker" in navigator){
       window.addEventListener("load", async () => {
         try{
           const swUrl = new URL("./sw.js", location.href);
-          await navigator.serviceWorker.register(swUrl, { scope: "./" });
+          const reg = await navigator.serviceWorker.register(swUrl, { scope:"./" });
+
+          // reload al tomar el control el nuevo SW
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            if (reloadedOnce) return;
+            reloadedOnce = true;
+            location.reload();
+          });
+
+          const schedule = (worker) => {
+            pendingWorker = worker;
+            // si no estás jugando, aplica ya
+            if (!running) maybeApplyPendingUpdate();
+            else if (!sessionStorage.getItem(SW_TOAST_KEY)){
+              sessionStorage.setItem(SW_TOAST_KEY, "1");
+              showToast("Update lista ✅ Se aplicará al terminar la run", 1800);
+            }
+          };
+
+          // si ya había waiting
+          if (reg.waiting) schedule(reg.waiting);
+
+          reg.addEventListener("updatefound", () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener("statechange", () => {
+              if (nw.state === "installed" && navigator.serviceWorker.controller){
+                schedule(nw);
+              }
+            });
+          });
+
+          // checks periódicos
+          const safeUpdate = () => reg.update().catch(()=>{});
+          setInterval(safeUpdate, 15 * 60 * 1000);
+          document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") safeUpdate();
+          });
+
         } catch (err){
           console.warn("SW register failed:", err);
         }
@@ -1630,23 +1402,64 @@
     }
   }
 
-  // ───────────────────────── Boot ─────────────────────────
-  function boot(){
-    // nombre
-    const savedName = (localStorage.getItem(NAME_KEY) || "").trim();
-    if (savedName) playerName = savedName;
+  // ───────────────────────── Boot (loading >= 5s) ─────────────────────────
+  function syncNameUI(){
+    const saved = (localStorage.getItem(NAME_KEY) || "").trim();
+    if (saved) playerName = saved;
 
-    hudBest.textContent = String(best);
+    if (pillPlayer) pillPlayer.textContent = `👤 ${playerName || "—"}`;
+    if (startName) startName.value = playerName || "";
+
+    btnStart.disabled = !((startName.value || "").trim().length >= 2);
+  }
+
+  async function startLoadingSequence(){
+    overlayShow(overlayLoading);
+    overlayHide(overlayStart);
+    overlayHide(overlayPaused);
+    overlayHide(overlayGameOver);
+    overlayHide(overlayUpgrades);
+    overlayHide(overlayOptions);
+
+    if (loadingText) loadingText.textContent = "Cargando…";
+    if (loadingSub) loadingSub.textContent = "Preparando la cuadrícula";
+
+    const t0 = now();
+    const minMs = 5000;
+
+    // carga sprites en paralelo (no bloquea si faltan)
+    const pSprites = preloadSprites().catch(()=>{});
+
+    // espera mínimo 5s
+    const pMin = new Promise((r)=>setTimeout(r, minMs));
+
+    // y mientras: 2 “pasos” visuales
+    setTimeout(()=>{ if (loadingSub) loadingSub.textContent = "Cargando sprites (opcional)"; }, 900);
+    setTimeout(()=>{ if (loadingSub) loadingSub.textContent = "Casi listo…"; }, 2600);
+
+    await Promise.allSettled([pSprites, pMin]);
+
+    const waited = now() - t0;
+    if (waited < minMs) await new Promise(r => setTimeout(r, minMs - waited));
+
+    overlayHide(overlayLoading);
+    overlayShow(overlayStart);
+    showToast("Listo ✅", 700);
+  }
+
+  function boot(){
+    if (!ctx){
+      alert("Tu navegador no soporta Canvas 2D.");
+      return;
+    }
+
+    setDeviceAttr();
+
+    refreshStartStats();
+    syncNameUI();
 
     applySettingsToUI();
-    refreshStartStats();
-    syncStartNameUI();
 
-    // overlays
-    overlayShow(overlayStart);
-
-    // init
-    resetRunState();
     bindInputs();
     bindButtons();
     setupPWA();
@@ -1655,8 +1468,12 @@
     window.addEventListener("resize", () => resize(), { passive:true });
     window.addEventListener("orientationchange", () => setTimeout(resize, 80), { passive:true });
 
-    // sprites async (no bloquea)
-    loadSprites().then(() => draw());
+    // init game
+    resetRunState();
+    draw();
+
+    // loading >= 5s antes de mostrar start
+    startLoadingSequence();
 
     // loop siempre vivo (evita “se queda pillado”)
     requestAnimationFrame(loop);
