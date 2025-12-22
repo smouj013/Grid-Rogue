@@ -1,9 +1,10 @@
 /* app.js — Grid Runner (PWA) v0.1.1
    ✅ v0.1.1:
-   - Sin emojis: iconos Material Symbols (Google Fonts)
-   - Fix loading infinito: watchdog + no bloqueo por sprites + overlay error correcto
-   - Botón Instalar: solo web instalable, nunca en standalone/app
+   - Sin emojis (Material Symbols en HTML)
+   - Fix loading infinito: splash + watchdog + nunca bloquea por sprites
+   - Botón Instalar: solo web instalable, nunca standalone/app
    - auth.js: perfiles locales (crear/seleccionar), best por perfil
+   - Sprites opcionales: assets/sprites/tile_*.svg (fallback si faltan)
 */
 
 (() => {
@@ -12,22 +13,35 @@
   const APP_VERSION = (window.APP_VERSION || "0.1.1");
 
   // ───────────────────────── Utils ─────────────────────────
-  const now = () => performance.now();
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const randi = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
   const chance = (p) => Math.random() < p;
 
-  function must(id){
+  function must(id) {
     const el = document.getElementById(id);
     if (!el) throw new Error(`Missing element #${id}`);
     return el;
   }
 
+  function safeParse(raw, fallback) {
+    try { return JSON.parse(raw); } catch { return fallback; }
+  }
+
+  function overlayShow(el) { el.hidden = false; }
+  function overlayHide(el) { el.hidden = true; }
+
+  function setPill(el, value) {
+    if (!el) return;
+    const pv = el.querySelector?.(".pv");
+    if (pv) pv.textContent = String(value);
+    else el.textContent = String(value);
+  }
+
   // ───────────────────────── DOM ─────────────────────────
   const stage = must("stage");
   const canvas = must("gameCanvas");
-  const ctx = canvas.getContext("2d", { alpha:false });
+  const ctx = canvas.getContext("2d", { alpha: false });
 
   const brandSub = must("brandSub");
 
@@ -56,15 +70,11 @@
   const overlayOptions = must("overlayOptions");
   const overlayError = must("overlayError");
 
-  const startTitle = must("startTitle");
-  const startSub = must("startSub");
   const btnStart = must("btnStart");
-
   const profileSelect = document.getElementById("profileSelect");
   const btnNewProfile = document.getElementById("btnNewProfile");
   const newProfileWrap = document.getElementById("newProfileWrap");
   const startName = document.getElementById("startName");
-  const profileHint = document.getElementById("profileHint");
 
   const btnResume = must("btnResume");
   const btnQuitToStart = must("btnQuitToStart");
@@ -74,7 +84,6 @@
   const upgradeChoices = must("upgradeChoices");
   const btnReroll = must("btnReroll");
   const btnSkipUpgrade = must("btnSkipUpgrade");
-  const upgradeHint = must("upgradeHint");
 
   const goStats = must("goStats");
   const btnBackToStart = must("btnBackToStart");
@@ -93,7 +102,6 @@
   const btnErrReload = must("btnErrReload");
 
   const comboSeq = must("comboSeq");
-  const comboTimer = must("comboTimer");
   const comboTimerVal = document.getElementById("comboTimerVal");
   const comboHint = must("comboHint");
   const toast = must("toast");
@@ -104,7 +112,7 @@
   const btnLeft = must("btnLeft");
   const btnRight = must("btnRight");
 
-  pillVersion.textContent = `v${APP_VERSION}`;
+  setPill(pillVersion, `v${APP_VERSION}`);
 
   // ───────────────────────── Storage keys ─────────────────────────
   const BEST_KEY = "gridrunner_best_v1";
@@ -121,25 +129,22 @@
   });
 
   let settings = (() => {
-    try{
-      const raw = localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return defaultSettings();
-      const s = JSON.parse(raw);
-      return {
-        ...defaultSettings(),
-        ...s,
-        fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
-      };
-    } catch {
-      return defaultSettings();
-    }
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return defaultSettings();
+    const s = safeParse(raw, null);
+    if (!s) return defaultSettings();
+    return {
+      ...defaultSettings(),
+      ...s,
+      fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
+    };
   })();
 
-  function saveSettings(){
+  function saveSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
-  function applySettingsToUI(){
+  function applySettingsToUI() {
     optSprites.checked = !!settings.useSprites;
     optVibration.checked = !!settings.vibration;
     optDpad.checked = !!settings.showDpad;
@@ -150,31 +155,37 @@
     dpad.hidden = !(isCoarse && settings.showDpad);
   }
 
-  // ───────────────────────── Auth (profiles) ─────────────────────────
-  const Auth = window.Auth || null;
-  let playerName = "";
-  let best = 0;
-  let activeProfileId = null;
-
-  function syncFromAuth(){
-    if (!Auth) return;
-    const p = Auth.getActiveProfile?.();
-    if (p){
-      activeProfileId = p.id;
-      playerName = (p.name || "").trim().slice(0,16);
-      best = Auth.getBestForActive?.() ?? 0;
-      localStorage.setItem(NAME_KEY, playerName);
-      localStorage.setItem(BEST_KEY, String(best)); // compat
-    }
+  function vibrate(ms) {
+    if (!settings.vibration) return;
+    if (!("vibrate" in navigator)) return;
+    try { navigator.vibrate(ms); } catch {}
   }
 
-  function initAuthUI(){
+  // ───────────────────────── Auth (profiles) ─────────────────────────
+  const Auth = window.Auth || null;
+  let activeProfileId = null;
+  let playerName = (localStorage.getItem(NAME_KEY) || "").trim().slice(0, 16);
+  let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
+  if (playerName.length < 2) playerName = "Jugador";
+
+  function syncFromAuth() {
+    if (!Auth) return;
+    const p = Auth.getActiveProfile?.();
+    if (!p) return;
+    activeProfileId = p.id;
+    playerName = (p.name || "Jugador").trim().slice(0, 16) || "Jugador";
+    best = (Auth.getBestForActive?.() ?? best) | 0;
+    localStorage.setItem(NAME_KEY, playerName);
+    localStorage.setItem(BEST_KEY, String(best));
+  }
+
+  function initAuthUI() {
     if (!Auth || !profileSelect) return;
 
-    const list = Auth.listProfiles();
+    const list = Auth.listProfiles?.() || [];
     profileSelect.innerHTML = "";
 
-    for (const p of list){
+    for (const p of list) {
       const opt = document.createElement("option");
       opt.value = p.id;
       opt.textContent = p.name;
@@ -186,12 +197,13 @@
     optNew.textContent = "Crear nuevo…";
     profileSelect.appendChild(optNew);
 
-    const ap = Auth.getActiveProfile();
-    if (ap && list.some(x => x.id === ap.id)){
+    const ap = Auth.getActiveProfile?.();
+    if (ap && list.some(x => x.id === ap.id)) {
       profileSelect.value = ap.id;
-    } else if (list.length){
+    } else if (list.length) {
       profileSelect.value = list[0].id;
-      Auth.setActiveProfile(list[0].id);
+      Auth.setActiveProfile?.(list[0].id);
+      syncFromAuth();
     } else {
       profileSelect.value = "__new__";
     }
@@ -199,12 +211,13 @@
     const refreshNewWrap = () => {
       const isNew = profileSelect.value === "__new__";
       if (newProfileWrap) newProfileWrap.hidden = !isNew;
-      btnStart.disabled = isNew && (!startName || (startName.value.trim().length < 2));
+      const ok = !isNew || ((startName?.value || "").trim().length >= 2);
+      btnStart.disabled = !ok;
     };
 
     profileSelect.addEventListener("change", () => {
-      if (profileSelect.value !== "__new__"){
-        Auth.setActiveProfile(profileSelect.value);
+      if (profileSelect.value !== "__new__") {
+        Auth.setActiveProfile?.(profileSelect.value);
         syncFromAuth();
         updatePills();
       }
@@ -219,8 +232,162 @@
 
     startName?.addEventListener("input", refreshNewWrap);
 
-    profileHint && (profileHint.textContent = "Tus datos se guardan en este dispositivo.");
     refreshNewWrap();
+  }
+
+  // ───────────────────────── PWA / SW / Install ─────────────────────────
+  let deferredPrompt = null;
+  let swReg = null;
+  let pendingReload = false;
+
+  function isStandalone() {
+    return (window.matchMedia?.("(display-mode: standalone)")?.matches) ||
+      (window.navigator.standalone === true) ||
+      document.referrer.includes("android-app://");
+  }
+
+  function setOfflinePill() {
+    pillOffline.hidden = navigator.onLine;
+  }
+
+  function requestAppReload() {
+    // si está en partida, esperamos
+    if (running && !gameOver) {
+      pendingReload = true;
+      pillUpdate.hidden = false;
+      setPill(pillUpdate, "Actualizar");
+      showToast("Update listo: se aplicará al terminar.", 1200);
+      return;
+    }
+    location.reload();
+  }
+
+  async function setupPWA() {
+    setOfflinePill();
+    window.addEventListener("online", setOfflinePill, { passive: true });
+    window.addEventListener("offline", setOfflinePill, { passive: true });
+
+    // install solo si web instalable y NO standalone
+    btnInstall.hidden = true;
+    if (!isStandalone()) {
+      window.addEventListener("beforeinstallprompt", (e) => {
+        if (isStandalone()) return;
+        e.preventDefault();
+        deferredPrompt = e;
+        btnInstall.hidden = false;
+      });
+
+      window.addEventListener("appinstalled", () => {
+        deferredPrompt = null;
+        btnInstall.hidden = true;
+      });
+
+      btnInstall.addEventListener("click", async () => {
+        if (!deferredPrompt) return;
+        btnInstall.disabled = true;
+        try {
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+        } catch {}
+        deferredPrompt = null;
+        btnInstall.hidden = true;
+        btnInstall.disabled = false;
+      });
+    }
+
+    // update pill
+    pillUpdate.addEventListener("click", requestAppReload);
+
+    // SW
+    if ("serviceWorker" in navigator) {
+      try {
+        const url = new URL("./sw.js", location.href);
+        swReg = await navigator.serviceWorker.register(url, {
+          scope: new URL("./", location.href).pathname
+        });
+
+        swReg.addEventListener("updatefound", () => {
+          const nw = swReg.installing;
+          if (!nw) return;
+          nw.addEventListener("statechange", () => {
+            if (nw.state === "installed" && navigator.serviceWorker.controller) {
+              pillUpdate.hidden = false;
+              setPill(pillUpdate, "Actualizar");
+              showToast("Actualización disponible.", 1100);
+            }
+          });
+        });
+
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          requestAppReload();
+        });
+      } catch (e) {
+        console.warn("SW register failed:", e);
+      }
+    }
+  }
+
+  // ───────────────────────── Sprites optional (SVGs) ─────────────────────────
+  const sprites = {
+    ready: false,
+    map: new Map(), // key->Image
+  };
+
+  function spriteUrl(name) {
+    return new URL(`./assets/sprites/${name}`, location.href).toString();
+  }
+
+  function loadImage(url) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error("img missing"));
+      img.src = url;
+    });
+  }
+
+  async function preloadSpritesWithTimeout(timeoutMs = 900) {
+    // NO BLOQUEA NUNCA: si falla, sprites.ready=false y ya.
+    const keys = [
+      ["coin", "tile_coin.svg"],
+      ["gem", "tile_gem.svg"],
+      ["bonus", "tile_bonus.svg"],
+      ["trap", "tile_trap.svg"],
+      ["block", "tile_block.svg"],
+      // player: si tienes alguno, ponlo aquí. Si no, fallback.
+      // ["player", "player.svg"],
+    ];
+
+    const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
+
+    try {
+      const tasks = keys.map(async ([k, file]) => {
+        const img = await loadImage(spriteUrl(file));
+        sprites.map.set(k, img);
+      });
+
+      const result = await Promise.race([Promise.all(tasks), timeout]);
+      if (result === "timeout") {
+        sprites.ready = sprites.map.size > 0;
+        return;
+      }
+      sprites.ready = sprites.map.size > 0;
+    } catch {
+      sprites.ready = sprites.map.size > 0;
+    }
+  }
+
+  function drawSprite(key, x, y, w, h, alpha = 1) {
+    if (!settings.useSprites) return false;
+    if (!sprites.ready) return false;
+    const img = sprites.map.get(key);
+    if (!img) return false;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, x, y, w, h);
+    ctx.restore();
+    return true;
   }
 
   // ───────────────────────── Game constants ─────────────────────────
@@ -229,94 +396,74 @@
 
   const CellType = Object.freeze({
     Empty: 0,
-    Coin:  1,
-    Gem:   2,
+    Coin: 1,
+    Gem: 2,
     Bonus: 3,
-    Trap:  4,
+    Trap: 4,
     Block: 5,
   });
 
   const CELL_COLORS = {
     [CellType.Empty]: "rgba(0,0,0,0)",
-    [CellType.Coin]:  "#2ee59d",
-    [CellType.Gem]:   "#69a8ff",
+    [CellType.Coin]: "#2ee59d",
+    [CellType.Gem]: "#69a8ff",
     [CellType.Bonus]: "#ffd35a",
-    [CellType.Trap]:  "#ff7b2e",
+    [CellType.Trap]: "#ff7b2e",
     [CellType.Block]: "#7b8296",
   };
 
   // ───────────────────────── Runtime state ─────────────────────────
-  best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
-  playerName = (localStorage.getItem(NAME_KEY) || "").trim().slice(0,16);
-  if (playerName.length < 2) playerName = "";
-
   let running = false;
   let paused = false;
   let gameOver = false;
   let inLevelUp = false;
 
-  let grid = [];
-  let consumed = [];
-
-  // render geometry
-  let dpr = 1;
-  let stageW = 0;
-  let stageH = 0;
-  let cellPx = 18;
-  let gridW = 0;
-  let gridH = 0;
-  let offX = 0;
-  let offY = 0;
-
-  // scroll
-  let scrollPx = 0;
-  let runTime = 0;
-
-  // zone/player
-  let zoneRowsBase = 3;
-  let zoneExtra = 0;
-  let zoneY0 = 0;
-  let zoneH = 3;
-
-  let playerCol = 0;
-  let playerRowInZone = 0;
-  let targetCol = 0;
-  let targetRowInZone = 0;
-  let playerColF = 0;
-  let playerRowF = 0;
-
-  // score
   let score = 0;
   let streak = 0;
   let mult = 1.0;
-
-  // level
   let level = 1;
-  let nextLevelScore = 180;
+  let nextLevelAt = 220;
 
-  // generation knobs
-  let genDensityMul = 1.0;
-  let genBlockMul = 1.0;
-  let genGoodMul = 1.0;
-  let genBonusMul = 1.0;
-  let startSlow = false;
+  // grid
+  let grid = [];
+  let consumed = [];
 
-  // survivability/specials
+  // render geom
+  let dpr = 1;
+  let stageW = 0, stageH = 0;
+  let cellPx = 18;
+  let gridW = 0, gridH = 0;
+  let offX = 0, offY = 0;
+
+  // scrolling
+  let scrollPx = 0;
+  let runTime = 0;
+
+  // player zone
+  let zoneBase = 3;
+  let zoneExtra = 0;
+  let zoneH = 3;
+  let zoneY0 = 0;
+
+  let targetCol = 3;
+  let targetRow = 1; // dentro de zona
+  let colF = 3;
+  let rowF = 1;
+
+  // upgrades/effects
   let shields = 0;
-  let magnetLv = 0;
-  let flatScorePerRow = 1;
-  let multHold = 0;
+  let magnet = 0;     // 0..2
+  let scoreBoost = 0; // 0.. (porcentaje)
+  let trapResist = 0; // 0..4
+  let rerolls = 0;
 
-  // reroll
-  let rerollCharges = 0;
+  // values
+  let coinValue = 10;
+  let gemValue = 30;
+  let bonusValue = 60;
 
-  // fx
-  let toastTimer = 0;
-  let bgHue = 220;
-  let bgHueTarget = 220;
-
-  // combo system
-  const COMBOS = [
+  // combo
+  const COMBO_POOL = [
     [CellType.Coin, CellType.Coin, CellType.Gem],
     [CellType.Gem, CellType.Coin, CellType.Bonus],
     [CellType.Coin, CellType.Gem, CellType.Gem],
@@ -325,957 +472,486 @@
   ];
   let combo = [];
   let comboIdx = 0;
-  let comboEndsAt = 0;
+  let comboTimeMax = 6.0;
+  let comboTime = 6.0;
 
-  // particles
-  let pops = [];
+  // fx
+  let toastT = 0;
 
-  // sprites optional
-  const sprites = {
-    ready: false,
-    img: null,
-    map: {},
-  };
-
-  // ───────────────────────── Overlays ─────────────────────────
-  function overlayShow(el){ el.hidden = false; }
-  function overlayHide(el){ el.hidden = true; }
-
-  function setPaused(v){ paused = !!v; }
-
-  function showToast(msg, ms=900){
+  // ───────────────────────── UI helpers ─────────────────────────
+  function showToast(msg, ms = 900) {
     toast.textContent = msg;
     toast.hidden = false;
-    toastTimer = ms;
+    toastT = ms;
   }
-  function hideToast(){
+
+  function hideToast() {
     toast.hidden = true;
-    toastTimer = 0;
+    toastT = 0;
   }
 
-  // ───────────────────────── PWA / SW update ─────────────────────────
-  let deferredPrompt = null;
-  let swReg = null;
-  let pendingReload = false;
-
-  const isStandalone = () =>
-    window.matchMedia?.("(display-mode: standalone)")?.matches ||
-    window.navigator.standalone === true;
-
-  function setOfflinePill(){
-    pillOffline.hidden = navigator.onLine;
-  }
-
-  function requestAppReload(){
-    if (running && !gameOver){
-      pendingReload = true;
-      pillUpdate.hidden = false;
-      pillUpdate.querySelector(".pv")?.textContent && (pillUpdate.querySelector(".pv").textContent = "Actualizar");
-      showToast("Update listo (al terminar).", 1200);
-      return;
-    }
-    location.reload();
-  }
-
-  async function setupPWA(){
+  function updatePills() {
+    setPill(pillScore, score | 0);
+    setPill(pillBest, best | 0);
+    setPill(pillStreak, streak | 0);
+    setPill(pillMult, mult.toFixed(2));
+    setPill(pillLevel, `Lv ${level}`);
+    setPill(pillSpeed, `${speedRowsPerSec().toFixed(1)}x`);
+    setPill(pillPlayer, playerName || "Jugador");
     setOfflinePill();
-    window.addEventListener("online", setOfflinePill, { passive:true });
-    window.addEventListener("offline", setOfflinePill, { passive:true });
-
-    // Install solo si NO es standalone/app
-    btnInstall.hidden = true;
-    if (isStandalone()){
-      btnInstall.hidden = true;
-    }
-
-    window.addEventListener("beforeinstallprompt", (e) => {
-      if (isStandalone()) return;
-      e.preventDefault();
-      deferredPrompt = e;
-      btnInstall.hidden = false;
-    });
-
-    window.addEventListener("appinstalled", () => {
-      deferredPrompt = null;
-      btnInstall.hidden = true;
-    });
-
-    btnInstall.addEventListener("click", async () => {
-      if (!deferredPrompt) return;
-      btnInstall.disabled = true;
-      try{
-        deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-      } catch {}
-      deferredPrompt = null;
-      btnInstall.hidden = true;
-      btnInstall.disabled = false;
-    });
-
-    pillUpdate.addEventListener("click", () => requestAppReload());
-
-    if ("serviceWorker" in navigator){
-      try{
-        const url = new URL("./sw.js", location.href);
-        swReg = await navigator.serviceWorker.register(url, { scope: new URL("./", location.href).pathname });
-
-        // Cuando haya update, mostramos pillUpdate
-        swReg.addEventListener("updatefound", () => {
-          const nw = swReg.installing;
-          if (!nw) return;
-          nw.addEventListener("statechange", () => {
-            if (nw.state === "installed"){
-              if (navigator.serviceWorker.controller){
-                pillUpdate.hidden = false;
-                showToast("Actualización disponible.", 1100);
-              }
-            }
-          });
-        });
-
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
-          requestAppReload();
-        });
-      } catch (e){
-        console.warn("SW register failed:", e);
-      }
-    }
   }
 
-  // ───────────────────────── Sprites optional (NO BLOQUEA) ─────────────────────────
-  async function preloadSpritesWithTimeout(timeoutMs=1400){
-    const ac = ("AbortController" in window) ? new AbortController() : null;
-    const t = setTimeout(() => ac?.abort(), timeoutMs);
+  // ───────────────────────── Grid ─────────────────────────
+  function recomputeZone() {
+    zoneH = clamp(zoneBase + zoneExtra, 3, 9);
+    zoneY0 = (ROWS - zoneH) - 2; // zona cerca de abajo
+    zoneY0 = clamp(zoneY0, 0, ROWS - zoneH);
 
-    try{
-      const atlasUrl = new URL("./assets/sprites/atlas.png", location.href).toString();
-      const jsonUrl  = new URL("./assets/sprites/atlas.json", location.href).toString();
-
-      const img = new Image();
-      img.decoding = "async";
-
-      const imgPromise = new Promise((res, rej) => {
-        img.onload = () => res(img);
-        img.onerror = () => rej(new Error("atlas.png missing"));
-      });
-      img.src = atlasUrl;
-
-      const jsonRes = await fetch(jsonUrl, { cache: "no-store", signal: ac?.signal }).catch(() => null);
-      if (!jsonRes || !jsonRes.ok) throw new Error("atlas.json missing");
-      const map = await jsonRes.json();
-
-      await imgPromise;
-
-      sprites.img = img;
-      sprites.map = map || {};
-      sprites.ready = true;
-    } catch {
-      sprites.ready = false;
-    } finally {
-      clearTimeout(t);
-    }
+    targetRow = clamp(targetRow, 0, zoneH - 1);
+    rowF = clamp(rowF, 0, zoneH - 1);
   }
 
-  function drawSprite(key, x, y, w, h, alpha=1){
-    if (!settings.useSprites || !sprites.ready) return false;
-    const r = sprites.map[key];
-    if (!r || !sprites.img) return false;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(sprites.img, r.x, r.y, r.w, r.h, x, y, w, h);
-    ctx.restore();
-    return true;
-  }
-
-  // ───────────────────────── Generation ─────────────────────────
-  function initGrid(){
+  function makeGrid() {
     grid = new Array(ROWS);
     consumed = new Array(ROWS);
-    for (let r=0;r<ROWS;r++){
-      grid[r] = new Array(COLS).fill(CellType.Empty);
-      consumed[r] = new Array(COLS).fill(false);
-    }
-    for (let r=0;r<ROWS;r++){
-      grid[r] = genRow(r);
+    for (let r = 0; r < ROWS; r++) {
+      grid[r] = genRow();
       consumed[r] = new Array(COLS).fill(false);
     }
   }
 
-  function genRow(){
-    const baseDensity = 0.28;
-    const density = clamp(baseDensity * genDensityMul, 0.12, 0.55);
+  function genRow() {
+    const density = clamp(0.28 + (level - 1) * 0.005, 0.18, 0.52);
     const out = new Array(COLS).fill(CellType.Empty);
 
-    for (let c=0;c<COLS;c++){
+    for (let c = 0; c < COLS; c++) {
       if (!chance(density)) continue;
 
-      const wGood = 0.62 * genGoodMul;
+      const wGood = 0.64;
       const wTrap = 0.18;
-      const wBlock = 0.20 * genBlockMul;
+      const wBlock = 0.18;
 
-      const t = Math.random() * (wGood + wTrap + wBlock);
-      let type = CellType.Coin;
-
-      if (t < wGood){
+      let roll = Math.random() * (wGood + wTrap + wBlock);
+      if (roll < wGood) {
         const g = Math.random();
-        if (g < 0.68) type = CellType.Coin;
-        else if (g < 0.92) type = CellType.Gem;
-        else type = chance(0.45 * genBonusMul) ? CellType.Bonus : CellType.Gem;
-      } else if (t < wGood + wTrap){
-        type = CellType.Trap;
+        out[c] = (g < 0.68) ? CellType.Coin : (g < 0.92) ? CellType.Gem : CellType.Bonus;
+      } else if (roll < wGood + wTrap) {
+        out[c] = CellType.Trap;
       } else {
-        type = CellType.Block;
+        out[c] = CellType.Block;
       }
-      out[c] = type;
     }
 
-    const blockCount = out.reduce((a,v)=>a+(v===CellType.Block?1:0),0);
-    if (blockCount >= 5){
-      for (let c=0;c<COLS;c++){
+    // evita filas imposibles
+    const blocks = out.reduce((a, v) => a + (v === CellType.Block ? 1 : 0), 0);
+    if (blocks >= 5) {
+      for (let c = 0; c < COLS; c++) {
         if (out[c] === CellType.Block && chance(0.55)) out[c] = CellType.Empty;
       }
     }
+
     return out;
   }
 
-  function shiftRows(){
-    for (let r=ROWS-1;r>=1;r--){
-      grid[r] = grid[r-1];
-      consumed[r] = consumed[r-1];
+  function shiftRows() {
+    for (let r = ROWS - 1; r >= 1; r--) {
+      grid[r] = grid[r - 1];
+      consumed[r] = consumed[r - 1];
     }
-    grid[0] = genRow(0);
+    grid[0] = genRow();
     consumed[0] = new Array(COLS).fill(false);
   }
 
-  // ───────────────────────── Speed ─────────────────────────
-  function speedRowsPerSec(){
+  // ───────────────────────── Gameplay ─────────────────────────
+  function speedRowsPerSec() {
     const t = runTime;
-    const start = 1.05;
-    const byTime = 0.030 * t;
-    const byLevel = 0.065 * (level - 1);
+    const base = 1.05;
+    const byTime = 0.03 * t;
+    const byLevel = 0.07 * (level - 1);
+    return clamp(base + byTime + byLevel, 0.85, 6.25);
+  }
 
-    let s = start + byTime + byLevel;
-    if (startSlow && t < 12){
-      s -= 0.35 * (1 - t/12);
+  function playerAbsRow() {
+    return zoneY0 + Math.round(rowF);
+  }
+
+  function scoreFor(type) {
+    if (type === CellType.Coin) return coinValue;
+    if (type === CellType.Gem) return gemValue;
+    if (type === CellType.Bonus) return bonusValue;
+    if (type === CellType.Trap) {
+      const base = 25;
+      const reduced = base * (1 - 0.10 * trapResist);
+      return -Math.round(reduced);
     }
-    s = clamp(s, 0.85, 6.25);
-    return s;
+    return 0;
   }
 
-  // ───────────────────────── Score / combo / level ─────────────────────────
-  function setPill(el, value){
-    const pv = el.querySelector(".pv");
-    if (pv) pv.textContent = value;
-    else el.textContent = value;
-  }
-
-  function updatePills(){
-    setPill(pillScore, String(score));
-    setPill(pillBest, String(best));
-    setPill(pillStreak, String(streak));
-    setPill(pillMult, mult.toFixed(1));
-    setPill(pillLevel, `Lv ${level}`);
-    setPill(pillSpeed, `${speedRowsPerSec().toFixed(1)}x`);
-    setPill(pillPlayer, playerName || "—");
-  }
-
-  function addScore(base, color="#fff"){
-    const add = Math.round(base * mult);
-    score += add;
-
-    if (add !== 0 && settings.fx > 0.45){
-      pops.push({
-        x: offX + (playerCol + 0.5) * cellPx,
-        y: offY + (playerAbsRow() + 0.5) * cellPx,
-        text: (add>0?`+${add}`:`${add}`),
-        t: 0,
-        color,
-      });
-    }
-  }
-
-  function playerAbsRow(){
-    return zoneY0 + Math.round(playerRowF);
-  }
-
-  function nextLevelThreshold(lv){
-    return Math.round(180 + Math.pow(lv, 1.35) * 115);
-  }
-
-  function ensureCombo(){
-    if (combo.length && now() < comboEndsAt) return;
-    combo = COMBOS[randi(0, COMBOS.length-1)].slice();
-    comboIdx = 0;
-    comboEndsAt = now() + 18_000;
-    renderCombo();
-  }
-
-  function renderCombo(){
-    comboSeq.innerHTML = "";
-    for (let i=0;i<combo.length;i++){
-      const t = combo[i];
-      const chip = document.createElement("span");
-      chip.className = "comboChip" + (i < comboIdx ? " done" : (i===comboIdx ? " now" : ""));
-      const dot = document.createElement("span");
-      dot.className = "comboDot";
-      dot.style.background = CELL_COLORS[t] || "#fff";
-      const txt = document.createElement("span");
-      txt.textContent = (t===CellType.Coin?"Coin":t===CellType.Gem?"Gem":t===CellType.Bonus?"BONUS":t===CellType.Trap?"Trap":"KO");
-      chip.appendChild(dot);
-      chip.appendChild(txt);
-      comboSeq.appendChild(chip);
-    }
-    const secs = Math.max(0, Math.ceil((comboEndsAt - now())/1000));
-    if (comboTimerVal) comboTimerVal.textContent = `${secs}s`;
-    else comboTimer.textContent = `${secs}s`;
-  }
-
-  function comboOnCollect(type){
-    if (!combo.length) return;
-
-    if (type === combo[comboIdx]){
-      comboIdx++;
-      renderCombo();
-
-      if (comboIdx >= combo.length){
-        const bonus = 120 + 30 * combo.length + 10 * streak;
-        addScore(bonus, "#ffd35a");
-        showToast(`COMBO +${Math.round(bonus*mult)}`, 900);
-
-        multHold = Math.max(multHold, 3.5);
-        mult = clamp(mult + 0.2, 1.0, 3.0);
-
-        combo = [];
-        comboIdx = 0;
-        comboEndsAt = 0;
-        ensureCombo();
+  function applyMagnetAround(r, c) {
+    if (magnet <= 0) return;
+    const rad = magnet; // 1 o 2
+    for (let rr = r - rad; rr <= r + rad; rr++) {
+      for (let cc = c - rad; cc <= c + rad; cc++) {
+        if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS) continue;
+        if (consumed[rr][cc]) continue;
+        const t = grid[rr][cc];
+        if (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus) {
+          consumed[rr][cc] = true;
+          grid[rr][cc] = CellType.Empty;
+          applyCollect(t, false); // no combo chain extra
+        }
       }
-    } else if (type === CellType.Coin || type === CellType.Gem || type === CellType.Bonus){
-      comboIdx = 0;
-      renderCombo();
-      showToast("Combo reiniciado", 650);
     }
   }
 
-  // ───────────────────────── Upgrades (20+) ─────────────────────────
-  const upgradeLv = {}; // id->level
+  function applyCollect(t, checkCombo = true) {
+    const v = scoreFor(t);
+    const add = Math.round(v * mult * (1 + scoreBoost));
+    score = Math.max(0, score + add);
 
-  const UPGRADES = [
-    { id:"zone_plus1", name:"+1 fila de movimiento", max:3, w: 1.0,
-      desc:"Aumenta la altura de tu zona de movimiento.",
-      apply(){ zoneExtra += 1; }
-    },
-    { id:"shield", name:"Escudo", max:6, w: 1.0,
-      desc:"Ganas 1 escudo. Un KO consume 1 escudo en vez de morir.",
-      apply(){ shields += 1; }
-    },
-    { id:"less_ko", name:"Menos KO", max:6, w: 0.9,
-      desc:"Reduce ligeramente la probabilidad de KO.",
-      apply(){ genBlockMul *= 0.90; }
-    },
-    { id:"more_good", name:"Más premios", max:6, w: 0.9,
-      desc:"Aumenta la probabilidad de premios.",
-      apply(){ genGoodMul *= 1.08; }
-    },
-    { id:"more_bonus", name:"Más BONUS", max:5, w: 0.8,
-      desc:"Aumenta la probabilidad de BONUS.",
-      apply(){ genBonusMul *= 1.15; }
-    },
-    { id:"slow_start", name:"Inicio más lento", max:2, w: 0.8,
-      desc:"Arrancas más lento durante unos segundos.",
-      apply(){ startSlow = true; }
-    },
-    { id:"reroll", name:"Reroll", max:2, w: 0.75,
-      desc:"Permite rerollear mejoras (gana cargas al subir de nivel).",
-      apply(){ rerollCharges += 1; }
-    },
-    { id:"density_up", name:"Más densidad", max:6, w: 0.6,
-      desc:"Más casillas en general (más riesgo, más reward).",
-      apply(){ genDensityMul *= 1.12; }
-    },
-    { id:"magnet1", name:"Imán +1", max:3, w: 0.85,
-      desc:"Recoges también premios adyacentes (nivel aumenta alcance).",
-      apply(){ magnetLv = clamp(magnetLv + 1, 0, 3); }
-    },
-    { id:"row_score", name:"+Puntos por avanzar", max:5, w: 0.9,
-      desc:"Ganas más puntos por cada fila avanzando.",
-      apply(){ flatScorePerRow += 1; }
-    },
-    { id:"mult_up", name:"Multiplicador base +0.1", max:10, w: 0.65,
-      desc:"Aumenta tu multiplicador base un poco.",
-      apply(){ mult = clamp(mult + 0.1, 1.0, 3.0); }
-    },
-    { id:"trap_soft", name:"Trampas menos duras", max:4, w: 0.85,
-      desc:"Reduce la penalización de trampas.",
-      apply(){ /* runtime */ }
-    },
-    { id:"combo_bonus", name:"Bonus de combo +", max:5, w: 0.8,
-      desc:"Los combos dan más puntos.",
-      apply(){ /* runtime */ }
-    },
-    { id:"streak_guard", name:"Racha protegida", max:2, w: 0.6,
-      desc:"Las trampas no rompen la racha (a veces).",
-      apply(){ /* runtime */ }
-    },
-    { id:"double_time", name:"X2 temporal", max:6, w: 0.7,
-      desc:"Al subir de nivel, ganas un X2 durante unos segundos.",
-      apply(){ /* runtime */ }
-    },
-    { id:"score_burst", name:"Burst de puntos", max:5, w: 0.65,
-      desc:"Al coger BONUS, estalla puntos extra.",
-      apply(){ /* runtime */ }
-    },
-    { id:"anti_ko", name:"Anti-KO (1 vez)", max:2, w: 0.55,
-      desc:"La primera vez que tocarías KO, sobrevives y limpias la casilla.",
-      apply(){ /* runtime */ }
-    },
-    { id:"smooth_move", name:"Movimiento más suave", max:2, w: 0.8,
-      desc:"Aumenta la suavidad/velocidad de ajuste del player.",
-      apply(){ /* runtime */ }
-    },
-    { id:"combo_time", name:"Más tiempo de combo", max:3, w: 0.8,
-      desc:"Los combos duran más antes de cambiar.",
-      apply(){ /* runtime */ }
-    },
-    { id:"lucky", name:"Suerte", max:4, w: 0.75,
-      desc:"Mejora ligeramente la calidad de premios (más gem/bonus).",
-      apply(){ /* runtime */ }
-    },
-    { id:"fade_clarity", name:"Claridad", max:1, w: 0.7,
-      desc:"Mejora la lectura: casillas consumidas más apagadas.",
-      apply(){ /* runtime */ }
-    },
-  ];
+    if (t === CellType.Trap) {
+      streak = 0;
+      mult = clamp(mult * 0.92, 1.0, 4.0);
+      vibrate(15);
+      failCombo();
+      showToast("Trampa", 650);
+      return;
+    }
 
-  function getUpLv(id){ return upgradeLv[id] || 0; }
-  function canTake(u){ return getUpLv(u.id) < u.max; }
+    streak++;
+    vibrate(10);
 
-  function pickChoices(n=3){
-    const pool = UPGRADES.filter(canTake);
-    if (pool.length === 0) return [];
-
-    const out = [];
-    const taken = new Set();
-    for (let i=0;i<n;i++){
-      let totalW = 0;
-      for (const u of pool) if (!taken.has(u.id)) totalW += (u.w || 1);
-      if (totalW <= 0) break;
-
-      let roll = Math.random() * totalW;
-      let chosen = null;
-      for (const u of pool){
-        if (taken.has(u.id)) continue;
-        roll -= (u.w || 1);
-        if (roll <= 0){ chosen = u; break; }
+    if (checkCombo) {
+      if (combo[comboIdx] === t) {
+        comboIdx++;
+        if (comboIdx >= combo.length) {
+          mult = clamp(mult + 0.15, 1.0, 4.0);
+          showToast("Combo completado: +MULT", 900);
+          rerollCombo();
+        } else {
+          comboTime = comboTimeMax;
+          renderComboUI();
+        }
+      } else {
+        failCombo();
       }
-      if (!chosen) chosen = pool[0];
-      taken.add(chosen.id);
-      out.push(chosen);
-    }
-    return out;
-  }
-
-  let currentChoices = [];
-
-  function openLevelUp(){
-    inLevelUp = true;
-    setPaused(true);
-
-    upTitle.textContent = `Nivel ${level}`;
-    upSub.textContent = "Elige 1 mejora";
-    upgradeHint.textContent = "Las mejoras se acumulan. Algunas tienen límite.";
-
-    showUpgradeChoices();
-    overlayShow(overlayUpgrades);
-  }
-
-  function closeLevelUp(){
-    overlayHide(overlayUpgrades);
-    inLevelUp = false;
-    setPaused(false);
-  }
-
-  function showUpgradeChoices(){
-    currentChoices = pickChoices(3);
-    upgradeChoices.innerHTML = "";
-
-    for (const u of currentChoices){
-      const lv = getUpLv(u.id);
-
-      const card = document.createElement("div");
-      card.className = "upCard";
-      card.innerHTML = `
-        <div class="upName">${u.name}</div>
-        <div class="upDesc">${u.desc}</div>
-        <div class="upMeta"><span>Nivel: ${lv}/${u.max}</span><span>+1</span></div>
-      `;
-      card.addEventListener("click", () => takeUpgrade(u));
-      upgradeChoices.appendChild(card);
     }
 
-    const rr = getUpLv("reroll");
-    btnReroll.hidden = !(rr > 0);
-    btnReroll.disabled = !(rr > 0 && rerollCharges > 0);
-
-    btnSkipUpgrade.hidden = !(level >= 4);
+    if (!inLevelUp && score >= nextLevelAt) {
+      openUpgrade();
+    }
   }
 
-  function takeUpgrade(u){
-    upgradeLv[u.id] = getUpLv(u.id) + 1;
-    try{ u.apply(); } catch (e){ console.warn("upgrade apply failed", e); }
+  function stepAdvance() {
+    shiftRows();
 
-    showToast(`Mejora: ${u.name}`, 900);
-    closeLevelUp();
+    // puntos por avanzar
+    score += 1;
+
+    const r = playerAbsRow();
+    const c = Math.round(colF);
+    const t = grid[r][c];
+
+    // magnet: antes de aplicar la casilla, atraer
+    applyMagnetAround(r, c);
+
+    if (!consumed[r][c] && t !== CellType.Empty) {
+      consumed[r][c] = true;
+      grid[r][c] = CellType.Empty;
+
+      if (t === CellType.Block) {
+        if (shields > 0) {
+          shields--;
+          showToast("Shield salvó un KO", 900);
+          vibrate(20);
+        } else {
+          gameOverNow("KO");
+        }
+        return;
+      }
+
+      applyCollect(t, true);
+    }
   }
 
-  function upgradeHas(id){ return getUpLv(id) > 0; }
-
-  // ───────────────────────── Run lifecycle ─────────────────────────
-  function recomputeZone(){
-    zoneH = clamp(zoneRowsBase + zoneExtra, 3, 9);
-    zoneY0 = Math.floor(ROWS/2) - Math.floor(zoneH/2);
-
-    targetRowInZone = clamp(targetRowInZone, 0, zoneH-1);
-    playerRowF = clamp(playerRowF, 0, zoneH-1);
-  }
-
-  function resetRun(toStartMenu=false){
+  function gameOverNow(reason) {
     running = false;
-    paused = false;
-    gameOver = false;
-    inLevelUp = false;
-
-    score = 0;
-    streak = 0;
-    mult = 1.0;
-
-    level = 1;
-    nextLevelScore = nextLevelThreshold(level);
-
-    genDensityMul = 1.0;
-    genBlockMul = 1.0;
-    genGoodMul = 1.0;
-    genBonusMul = 1.0;
-    startSlow = false;
-
-    shields = 0;
-    magnetLv = 0;
-    flatScorePerRow = 1;
-    multHold = 0;
-
-    rerollCharges = 0;
-    for (const k of Object.keys(upgradeLv)) delete upgradeLv[k];
-
-    runTime = 0;
-    scrollPx = 0;
-    pops = [];
-
-    zoneRowsBase = 3;
-    zoneExtra = 0;
-    recomputeZone();
-
-    playerCol = Math.floor(COLS/2);
-    playerRowInZone = Math.floor(zoneH/2);
-    targetCol = playerCol;
-    targetRowInZone = playerRowInZone;
-    playerColF = playerCol;
-    playerRowF = playerRowInZone;
-
-    initGrid();
-    ensureCombo();
-    renderCombo();
-
-    updatePills();
-    draw();
-
-    if (toStartMenu){
-      overlayShow(overlayStart);
-    }
-  }
-
-  function startRun(){
-    overlayHide(overlayStart);
-    overlayHide(overlayGameOver);
-    overlayHide(overlayPaused);
-    overlayHide(overlayOptions);
-    overlayHide(overlayUpgrades);
-
-    running = true;
-    paused = false;
-    gameOver = false;
-
-    runTime = 0;
-    scrollPx = 0;
-    ensureCombo();
-
-    updatePills();
-    draw();
-  }
-
-  function endRun(){
-    running = false;
-    gameOver = true;
     paused = true;
+    gameOver = true;
+    inLevelUp = false;
 
-    if (score > best){
+    if (score > best) {
       best = score;
       localStorage.setItem(BEST_KEY, String(best));
       Auth?.setBestForActive?.(best);
     }
 
-    try{
+    // historial
+    try {
       const raw = localStorage.getItem(RUNS_KEY);
-      const arr = raw ? JSON.parse(raw) : [];
-      const entry = { ts: Date.now(), profileId: activeProfileId || null, name: playerName || "Anon", score, level };
-      arr.unshift(entry);
+      const arr = raw ? safeParse(raw, []) : [];
+      arr.unshift({ ts: Date.now(), profileId: activeProfileId, name: playerName, score, level });
       arr.length = Math.min(arr.length, 30);
       localStorage.setItem(RUNS_KEY, JSON.stringify(arr));
     } catch {}
 
-    goStats.textContent = `Score ${score} — Nivel ${level}`;
+    goStats.innerHTML = `
+      <div class="line"><span>Motivo</span><span>${reason}</span></div>
+      <div class="line"><span>Score</span><span>${score}</span></div>
+      <div class="line"><span>Nivel</span><span>${level}</span></div>
+      <div class="line"><span>Mejor</span><span>${best}</span></div>
+    `;
+
     overlayShow(overlayGameOver);
 
-    if (pendingReload){
+    if (pendingReload) {
       pendingReload = false;
       requestAppReload();
     }
   }
 
-  // ───────────────────────── Movement / input ─────────────────────────
-  let moveSmoothK = 14.0;
-
-  function move(dx, dy){
-    if (!running || paused || gameOver || inLevelUp) return;
-
-    targetCol = clamp(targetCol + dx, 0, COLS - 1);
-    targetRowInZone = clamp(targetRowInZone + dy, 0, zoneH - 1);
-
-    if (settings.vibration && navigator.vibrate){
-      navigator.vibrate(10);
-    }
+  // ───────────────────────── Combo UI ─────────────────────────
+  function iconForType(t) {
+    if (t === CellType.Coin) return "paid";
+    if (t === CellType.Gem) return "diamond";
+    if (t === CellType.Bonus) return "workspace_premium";
+    return "help";
   }
 
-  function bindInputs(){
-    window.addEventListener("keydown", (e) => {
-      const k = e.key;
-      if (k === "ArrowLeft" || k === "a" || k === "A") move(-1, 0);
-      if (k === "ArrowRight" || k === "d" || k === "D") move(+1, 0);
-      if (k === "ArrowUp" || k === "w" || k === "W") move(0, -1);
-      if (k === "ArrowDown" || k === "s" || k === "S") move(0, +1);
-      if (k === "Escape") togglePause();
-    }, { passive:true });
-
-    btnLeft.addEventListener("click", () => move(-1,0));
-    btnRight.addEventListener("click", () => move(+1,0));
-    btnUp.addEventListener("click", () => move(0,-1));
-    btnDown.addEventListener("click", () => move(0,+1));
-
-    let sx=0, sy=0, st=0, active=false;
-
-    canvas.addEventListener("pointerdown", (e) => {
-      if (!running || paused) return;
-      active = true;
-      sx = e.clientX;
-      sy = e.clientY;
-      st = now();
-      canvas.setPointerCapture?.(e.pointerId);
-    });
-
-    canvas.addEventListener("pointerup", (e) => {
-      if (!active) return;
-      active = false;
-
-      const dx = e.clientX - sx;
-      const dy = e.clientY - sy;
-      const dt = now() - st;
-
-      const adx = Math.abs(dx), ady = Math.abs(dy);
-      if (dt < 600 && (adx > 22 || ady > 22)){
-        if (adx > ady) move(dx > 0 ? +1 : -1, 0);
-        else move(0, dy > 0 ? +1 : -1);
-      }
-    }, { passive:true });
+  function nameForType(t) {
+    if (t === CellType.Coin) return "Coin";
+    if (t === CellType.Gem) return "Gem";
+    if (t === CellType.Bonus) return "Bonus";
+    return "—";
   }
 
-  // ───────────────────────── Apply cell effects ─────────────────────────
-  let antiKoCharges = 0;
-
-  function applyCell(type, r, c){
-    if (type === CellType.Empty) return;
-
-    // magnet: recoge premios cercanos
-    if (magnetLv > 0 && (type === CellType.Coin || type === CellType.Gem || type === CellType.Bonus)){
-      for (let rr = r - magnetLv; rr <= r + magnetLv; rr++){
-        for (let cc = c - magnetLv; cc <= c + magnetLv; cc++){
-          if (rr<0||rr>=ROWS||cc<0||cc>=COLS) continue;
-          if (consumed[rr][cc]) continue;
-          const t2 = grid[rr][cc];
-          if (t2 === CellType.Coin || t2 === CellType.Gem || t2 === CellType.Bonus){
-            consumed[rr][cc] = true;
-            scoreForType(t2);
-            comboOnCollect(t2);
-          }
-        }
-      }
-    }
-
-    consumed[r][c] = true;
-
-    if (type === CellType.Block){
-      if (upgradeHas("anti_ko") && antiKoCharges < getUpLv("anti_ko")){
-        antiKoCharges += 1;
-        showToast("Anti-KO activado", 900);
-        streak = Math.max(0, streak-1);
-        return;
-      }
-
-      if (shields > 0){
-        shields -= 1;
-        showToast("Escudo -1", 900);
-        streak = 0;
-        return;
-      }
-
-      endRun();
-      return;
-    }
-
-    if (type === CellType.Trap){
-      const soft = getUpLv("trap_soft");
-      const base = 25;
-      const dmg = Math.round(base * (1 - 0.10 * soft));
-      addScore(-dmg, "#ff7b2e");
-
-      const guard = getUpLv("streak_guard");
-      if (!(guard > 0 && chance(0.30 + 0.15*guard))){
-        streak = 0;
-      }
-
-      if (settings.vibration && navigator.vibrate) navigator.vibrate([20, 40, 20]);
-      return;
-    }
-
-    // good
-    scoreForType(type);
-    streak += 1;
-
-    comboOnCollect(type);
-
-    if (streak > 0 && streak % 10 === 0){
-      addScore(40 + streak, "#ffd35a");
-      showToast(`Racha ${streak}`, 900);
-      mult = clamp(mult + 0.1, 1.0, 3.0);
-    }
+  function rerollCombo() {
+    combo = COMBO_POOL[randi(0, COMBO_POOL.length - 1)].slice();
+    comboIdx = 0;
+    comboTimeMax = clamp(6.2 - (level * 0.06), 3.8, 7.0);
+    comboTime = comboTimeMax;
+    renderComboUI();
   }
 
-  function scoreForType(type){
-    if (type === CellType.Coin){
-      addScore(10, "#2ee59d");
-    } else if (type === CellType.Gem){
-      addScore(30, "#69a8ff");
-    } else if (type === CellType.Bonus){
-      addScore(60, "#ffd35a");
-      if (upgradeHas("score_burst")){
-        const lv = getUpLv("score_burst");
-        addScore(12*lv, "#ffd35a");
-      }
+  function renderComboUI() {
+    comboSeq.innerHTML = "";
+    for (let i = 0; i < combo.length; i++) {
+      const t = combo[i];
+      const chip = document.createElement("div");
+      chip.className = "chip";
+      const ic = document.createElement("span");
+      ic.className = "ms";
+      ic.textContent = iconForType(t);
+      const tx = document.createElement("span");
+      tx.textContent = nameForType(t);
+      chip.appendChild(ic);
+      chip.appendChild(tx);
+
+      if (i < comboIdx) chip.style.opacity = "0.55";
+      if (i === comboIdx) chip.style.borderColor = "rgba(255,255,255,0.22)";
+
+      comboSeq.appendChild(chip);
     }
+    comboHint.textContent = "Completa la secuencia para subir multiplicador.";
   }
 
-  // ───────────────────────── Step / update ─────────────────────────
-  function stepAdvance(){
-    shiftRows();
-    addScore(flatScorePerRow, "#a7a7b8");
-
-    const r = playerAbsRow();
-    const c = Math.round(playerColF);
-    const t = grid[r][c];
-    if (!consumed[r][c]) applyCell(t, r, c);
-
-    if (!inLevelUp && score >= nextLevelScore){
-      level += 1;
-      nextLevelScore += nextLevelThreshold(level);
-
-      if (upgradeHas("double_time")){
-        multHold = Math.max(multHold, 3.0 + 0.9*getUpLv("double_time"));
-        mult = clamp(mult + 0.2, 1.0, 3.0);
-      }
-
-      if (upgradeHas("reroll")){
-        rerollCharges += 1;
-      }
-
-      recomputeZone();
-      openLevelUp();
-    }
+  function failCombo() {
+    comboIdx = 0;
+    comboTime = comboTimeMax;
+    renderComboUI();
   }
 
-  function update(dt){
-    if (toastTimer > 0){
-      toastTimer -= dt;
-      if (toastTimer <= 0) hideToast();
+  // ───────────────────────── Upgrades ─────────────────────────
+  const Upgrades = [
+    { id: "shield", name: "Shield", desc: "Bloquea 1 KO (se consume).", tag: "Defensa", max: 6, apply() { shields++; } },
+    { id: "mag1", name: "Imán I", desc: "Atrae premios cercanos (radio 1).", tag: "QoL", max: 1, apply() { magnet = Math.max(magnet, 1); } },
+    { id: "mag2", name: "Imán II", desc: "Imán mejorado (radio 2).", tag: "QoL", max: 1, apply() { magnet = 2; } },
+    { id: "boost", name: "Score +", desc: "Más puntos (+8%).", tag: "Puntos", max: 10, apply() { scoreBoost += 0.08; } },
+    { id: "trap", name: "Resistencia trampas", desc: "Reduce penalización de trampas.", tag: "Defensa", max: 4, apply() { trapResist++; } },
+    { id: "zone", name: "Zona +", desc: "Zona de movimiento más alta (+1 fila).", tag: "Movilidad", max: 3, apply() { zoneExtra++; recomputeZone(); } },
+    { id: "coin", name: "Coin +", desc: "Coin vale más (+2).", tag: "Puntos", max: 8, apply() { coinValue += 2; } },
+    { id: "gem", name: "Gem +", desc: "Gem vale más (+6).", tag: "Puntos", max: 6, apply() { gemValue += 6; } },
+    { id: "bonus", name: "Bonus +", desc: "Bonus vale más (+10).", tag: "Puntos", max: 6, apply() { bonusValue += 10; } },
+    { id: "reroll", name: "Reroll +", desc: "Ganas 1 reroll extra.", tag: "Upgrades", max: 5, apply() { rerolls++; } },
+    { id: "mult", name: "Mult +", desc: "Sube multiplicador base (+0.10).", tag: "Combo", max: 10, apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
+  ];
+
+  const pickedCount = new Map();
+  function canPick(u) {
+    const c = pickedCount.get(u.id) || 0;
+    return c < (u.max ?? 999);
+  }
+  function markPick(u) {
+    const c = pickedCount.get(u.id) || 0;
+    pickedCount.set(u.id, c + 1);
+  }
+
+  function chooseUpgrades(n = 3) {
+    const pool = Upgrades.filter(canPick);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      if (!pool.length) break;
+      const idx = randi(0, pool.length - 1);
+      out.push(pool.splice(idx, 1)[0]);
     }
+    return out;
+  }
 
-    if (combo.length){
-      const secs = Math.max(0, Math.ceil((comboEndsAt - now())/1000));
-      if (comboTimerVal) comboTimerVal.textContent = `${secs}s`;
-      if (now() >= comboEndsAt){
-        combo = [];
-        comboIdx = 0;
-        ensureCombo();
-      }
-    } else {
-      ensureCombo();
-    }
+  let currentUpgradeChoices = [];
 
-    bgHueTarget = 220 + clamp(streak, 0, 40) * 2.2;
-    bgHue = lerp(bgHue, bgHueTarget, clamp(dt/900, 0.02, 0.18));
-    document.documentElement.style.setProperty("--hue", String(Math.round(bgHue)));
+  function openUpgrade() {
+    if (inLevelUp || gameOver) return;
+    inLevelUp = true;
+    paused = true;
 
-    if (multHold > 0){
-      multHold -= dt/1000;
-      if (multHold <= 0){
-        mult = clamp(mult - 0.2, 1.0, 3.0);
-      }
-    }
+    level++;
+    nextLevelAt = score + Math.round(240 + level * 150);
 
-    const smoothLv = getUpLv("smooth_move");
-    const k = moveSmoothK + 5*smoothLv;
+    upTitle.textContent = `Nivel ${level}`;
+    upSub.textContent = "Elige una mejora";
 
-    playerColF = lerp(playerColF, targetCol, clamp(dt/1000 * (k/12), 0.06, 0.35));
-    playerRowF = lerp(playerRowF, targetRowInZone, clamp(dt/1000 * (k/12), 0.06, 0.35));
-
-    runTime += dt/1000;
-    const sp = speedRowsPerSec();
-    scrollPx += (sp * cellPx) * (dt/1000);
-
-    while (scrollPx >= cellPx && running && !paused && !gameOver && !inLevelUp){
-      scrollPx -= cellPx;
-      stepAdvance();
-      ensureCombo();
-    }
-
-    for (let i=pops.length-1;i>=0;i--){
-      pops[i].t += dt/1000;
-      if (pops[i].t > 0.85) pops.splice(i,1);
-    }
-
+    renderUpgradeChoices();
+    overlayShow(overlayUpgrades);
     updatePills();
   }
 
-  // ───────────────────────── Draw ─────────────────────────
-  function draw(){
+  function closeUpgrade() {
+    overlayHide(overlayUpgrades);
+    inLevelUp = false;
+    paused = false;
+  }
+
+  function renderUpgradeChoices() {
+    currentUpgradeChoices = chooseUpgrades(3);
+    upgradeChoices.innerHTML = "";
+
+    for (const u of currentUpgradeChoices) {
+      const card = document.createElement("div");
+      card.className = "upCard";
+      card.innerHTML = `
+        <div class="upTitle">${u.name}</div>
+        <div class="upDesc">${u.desc}</div>
+        <div class="upMeta">
+          <span class="badge">${u.tag}</span>
+          <span class="badge">Lv ${(pickedCount.get(u.id) || 0) + 1}/${u.max}</span>
+        </div>
+      `;
+      card.addEventListener("click", () => {
+        markPick(u);
+        u.apply();
+        showToast(`Mejora: ${u.name}`, 950);
+        closeUpgrade();
+      });
+      upgradeChoices.appendChild(card);
+    }
+
+    btnReroll.disabled = !(rerolls > 0);
+    btnSkipUpgrade.hidden = (level < 4);
+  }
+
+  function rerollUpgrades() {
+    if (rerolls <= 0) return;
+    rerolls--;
+    renderUpgradeChoices();
+    showToast("Reroll", 650);
+  }
+
+  // ───────────────────────── Rendering ─────────────────────────
+  function draw() {
     ctx.save();
-    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.fillStyle = "#050507";
-    ctx.fillRect(0,0,stageW,stageH);
+    ctx.fillRect(0, 0, stageW, stageH);
 
+    // background board
     ctx.fillStyle = "rgba(255,255,255,0.03)";
     ctx.fillRect(offX, offY, gridW, gridH);
 
+    // zone highlight
     const zTop = offY + zoneY0 * cellPx;
     ctx.fillStyle = "rgba(105,168,255,0.08)";
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
-    const fadeStart = ROWS - 6;
-    for (let r=0;r<ROWS;r++){
+    // cells
+    for (let r = 0; r < ROWS; r++) {
       const y = offY + r * cellPx + scrollPx;
-      const fade = (r >= fadeStart) ? clamp(1 - (r - fadeStart) / 6, 0.25, 1) : 1;
-
-      for (let c=0;c<COLS;c++){
-        const x = offX + c * cellPx;
+      for (let c = 0; c < COLS; c++) {
         const t = grid[r][c];
         if (t === CellType.Empty) continue;
 
         const used = consumed[r][c];
-        const a = used ? 0.22 : 0.92;
-        const alpha = a * fade;
+        const alpha = used ? 0.22 : 0.92;
 
-        const key = (t===CellType.Coin?"coin":t===CellType.Gem?"gem":t===CellType.Bonus?"bonus":t===CellType.Trap?"trap":"block");
-        const drawn = drawSprite(key, x+2, y+2, cellPx-4, cellPx-4, alpha);
+        const x = offX + c * cellPx;
+        const key =
+          (t === CellType.Coin) ? "coin" :
+          (t === CellType.Gem) ? "gem" :
+          (t === CellType.Bonus) ? "bonus" :
+          (t === CellType.Trap) ? "trap" : "block";
 
-        if (!drawn){
+        const ok = drawSprite(key, x + 2, y + 2, cellPx - 4, cellPx - 4, alpha);
+        if (!ok) {
           ctx.globalAlpha = alpha;
           ctx.fillStyle = CELL_COLORS[t];
-          ctx.fillRect(x+2, y+2, cellPx-4, cellPx-4);
-
-          if (t === CellType.Block){
-            ctx.globalAlpha = alpha;
-            ctx.strokeStyle = "rgba(0,0,0,0.35)";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x+3, y+3, cellPx-6, cellPx-6);
-          }
+          ctx.fillRect(x + 2, y + 2, cellPx - 4, cellPx - 4);
           ctx.globalAlpha = 1;
         }
       }
     }
 
-    ctx.globalAlpha = 0.35;
+    // grid lines
+    ctx.globalAlpha = 0.25;
     ctx.strokeStyle = "rgba(255,255,255,0.07)";
     ctx.lineWidth = 1;
-    for (let c=0;c<=COLS;c++){
-      const x = offX + c*cellPx;
+    for (let c = 0; c <= COLS; c++) {
+      const x = offX + c * cellPx;
       ctx.beginPath();
       ctx.moveTo(x, offY);
-      ctx.lineTo(x, offY+gridH);
+      ctx.lineTo(x, offY + gridH);
       ctx.stroke();
     }
-    for (let r=0;r<=ROWS;r++){
-      const y = offY + r*cellPx;
+    for (let r = 0; r <= ROWS; r++) {
+      const y = offY + r * cellPx;
       ctx.beginPath();
       ctx.moveTo(offX, y);
-      ctx.lineTo(offX+gridW, y);
+      ctx.lineTo(offX + gridW, y);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
 
     // player
-    const px = offX + playerColF*cellPx;
-    const py = offY + (zoneY0 + playerRowF)*cellPx;
-    const ok = drawSprite("player", px+2, py+2, cellPx-4, cellPx-4, 1);
-    if (!ok){
+    const px = offX + colF * cellPx;
+    const py = offY + (zoneY0 + rowF) * cellPx;
+    const okP = drawSprite("player", px + 2, py + 2, cellPx - 4, cellPx - 4, 1);
+    if (!okP) {
       ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.fillRect(px+2, py+2, cellPx-4, cellPx-4);
+      ctx.fillRect(px + 2, py + 2, cellPx - 4, cellPx - 4);
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
       ctx.lineWidth = 2;
-      ctx.strokeRect(px+3, py+3, cellPx-6, cellPx-6);
+      ctx.strokeRect(px + 3, py + 3, cellPx - 6, cellPx - 6);
     }
 
-    if (shields > 0){
-      ctx.fillStyle = "rgba(105,168,255,0.9)";
-      ctx.font = `900 ${Math.max(11, Math.floor(cellPx*0.38))}px system-ui`;
+    // shield count
+    if (shields > 0) {
+      ctx.fillStyle = "rgba(105,168,255,0.95)";
+      ctx.font = `900 ${Math.max(11, Math.floor(cellPx * 0.38))}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(shields), px + cellPx - 10, py + 12);
-    }
-
-    if (settings.fx > 0.45){
-      for (const p of pops){
-        const t = p.t;
-        const a = clamp(1 - t/0.85, 0, 1);
-        const y = p.y - t*28;
-        ctx.globalAlpha = a;
-        ctx.fillStyle = p.color || "#fff";
-        ctx.font = `900 14px system-ui`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(p.text, p.x, y);
-        ctx.globalAlpha = 1;
-      }
     }
 
     ctx.restore();
   }
 
   // ───────────────────────── Resize ─────────────────────────
-  function resize(){
+  function resize() {
     const r = stage.getBoundingClientRect();
     stageW = Math.max(240, Math.floor(r.width));
     stageH = Math.max(240, Math.floor(r.height));
 
     dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-    canvas.width  = Math.floor(stageW * dpr);
+    canvas.width = Math.floor(stageW * dpr);
     canvas.height = Math.floor(stageH * dpr);
 
     cellPx = Math.floor(Math.min(stageW / COLS, stageH / ROWS));
@@ -1290,70 +966,205 @@
     draw();
   }
 
-  // ───────────────────────── Buttons / UI ─────────────────────────
-  function togglePause(){
+  // ───────────────────────── Input ─────────────────────────
+  function canControl() {
+    return running && !paused && !gameOver && !inLevelUp;
+  }
+
+  function move(dx, dy) {
+    if (!canControl()) return;
+    targetCol = clamp(targetCol + dx, 0, COLS - 1);
+    targetRow = clamp(targetRow + dy, 0, zoneH - 1);
+    vibrate(10);
+  }
+
+  function bindInputs() {
+    window.addEventListener("keydown", (e) => {
+      const k = e.key;
+      if (k === "ArrowLeft" || k === "a" || k === "A") move(-1, 0);
+      if (k === "ArrowRight" || k === "d" || k === "D") move(+1, 0);
+      if (k === "ArrowUp" || k === "w" || k === "W") move(0, -1);
+      if (k === "ArrowDown" || k === "s" || k === "S") move(0, +1);
+      if (k === "Escape") togglePause();
+    }, { passive: true });
+
+    btnLeft.addEventListener("click", () => move(-1, 0));
+    btnRight.addEventListener("click", () => move(+1, 0));
+    btnUp.addEventListener("click", () => move(0, -1));
+    btnDown.addEventListener("click", () => move(0, +1));
+
+    let sx = 0, sy = 0, st = 0, active = false;
+
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!canControl()) return;
+      active = true;
+      sx = e.clientX;
+      sy = e.clientY;
+      st = performance.now();
+      canvas.setPointerCapture?.(e.pointerId);
+    });
+
+    canvas.addEventListener("pointerup", (e) => {
+      if (!active) return;
+      active = false;
+
+      const dx = e.clientX - sx;
+      const dy = e.clientY - sy;
+      const dt = performance.now() - st;
+
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      if (dt < 650 && (adx > 22 || ady > 22)) {
+        if (adx > ady) move(dx > 0 ? +1 : -1, 0);
+        else move(0, dy > 0 ? +1 : -1);
+      }
+    }, { passive: true });
+  }
+
+  // ───────────────────────── UI / buttons ─────────────────────────
+  function togglePause() {
     if (!running || gameOver) return;
-
-    if (!paused){
-      setPaused(true);
-      overlayShow(overlayPaused);
-    } else {
-      overlayHide(overlayPaused);
-      setPaused(false);
-    }
+    paused = !paused;
+    if (paused) overlayShow(overlayPaused);
+    else overlayHide(overlayPaused);
   }
 
-  function showOptions(){
+  function showOptions() {
     overlayShow(overlayOptions);
-    setPaused(true);
+    if (running && !gameOver) paused = true;
   }
 
-  function hideOptions(){
+  function hideOptions() {
     overlayHide(overlayOptions);
-    if (running && !gameOver && !inLevelUp) setPaused(false);
+    if (running && !gameOver && !inLevelUp) paused = false;
+  }
+
+  // ───────────────────────── Run lifecycle ─────────────────────────
+  function resetRun(showMenu) {
+    running = false;
+    paused = false;
+    gameOver = false;
+    inLevelUp = false;
+
+    score = 0;
+    streak = 0;
+    mult = 1.0;
+    level = 1;
+    nextLevelAt = 220;
+
+    shields = 0;
+    magnet = 0;
+    scoreBoost = 0;
+    trapResist = 0;
+    rerolls = 0;
+
+    zoneExtra = 0;
+    recomputeZone();
+
+    targetCol = Math.floor(COLS / 2);
+    targetRow = Math.floor(zoneH / 2);
+    colF = targetCol;
+    rowF = targetRow;
+
+    makeGrid();
+    rerollCombo();
+
+    overlayHide(overlayPaused);
+    overlayHide(overlayUpgrades);
+    overlayHide(overlayGameOver);
+    if (showMenu) overlayShow(overlayStart);
+    else overlayHide(overlayStart);
+
+    updatePills();
+    draw();
+  }
+
+  function startRun() {
+    overlayHide(overlayStart);
+    overlayHide(overlayGameOver);
+    overlayHide(overlayPaused);
+    overlayHide(overlayOptions);
+    overlayHide(overlayUpgrades);
+
+    running = true;
+    paused = false;
+    gameOver = false;
+    inLevelUp = false;
+
+    runTime = 0;
+    scrollPx = 0;
+
+    updatePills();
+    draw();
   }
 
   // ───────────────────────── Main loop ─────────────────────────
   let lastT = 0;
-  function frame(t){
+
+  function update(dtMs) {
+    // toast
+    if (toastT > 0) {
+      toastT -= dtMs;
+      if (toastT <= 0) hideToast();
+    }
+
+    // combo time
+    comboTime -= dtMs / 1000;
+    if (comboTimerVal) comboTimerVal.textContent = `${Math.max(0, comboTime).toFixed(1)}s`;
+    if (comboTime <= 0) {
+      failCombo();
+      comboTime = comboTimeMax;
+    }
+
+    // smooth player
+    const k = 14;
+    colF = lerp(colF, targetCol, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
+    rowF = lerp(rowF, targetRow, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
+
+    // scroll
+    runTime += dtMs / 1000;
+    const sp = speedRowsPerSec();
+    scrollPx += (sp * cellPx) * (dtMs / 1000);
+
+    while (scrollPx >= cellPx && running && !paused && !gameOver && !inLevelUp) {
+      scrollPx -= cellPx;
+      stepAdvance();
+    }
+
+    updatePills();
+  }
+
+  function frame(t) {
     const dt = Math.min(40, t - lastT);
     lastT = t;
 
-    if (running && !paused && !gameOver && !inLevelUp){
-      update(dt);
-    } else {
-      // mantenemos UI viva (combo timer / toast)
-      update(dt * 0.35);
-    }
+    if (running && !paused && !gameOver && !inLevelUp) update(dt);
+    else update(dt * 0.25); // UI viva sin “gastar” partida
 
     draw();
     requestAnimationFrame(frame);
   }
 
   // ───────────────────────── Boot ─────────────────────────
-  async function boot(){
-    try{
-      loadingSub.textContent = "Preparando UI";
+  async function boot() {
+    try {
+      loadingSub.textContent = "Preparando UI…";
       applySettingsToUI();
+      resize();
+      window.addEventListener("resize", resize, { passive: true });
 
-      // Auth
+      // auth
       syncFromAuth();
       initAuthUI();
 
-      // UI
+      // inputs
       bindInputs();
-      resize();
-      window.addEventListener("resize", resize, { passive:true });
 
-      // Start run state
-      resetRun(true);
-
-      // Buttons
+      // UI listeners
       btnPause.addEventListener("click", togglePause);
       btnRestart.addEventListener("click", () => { resetRun(false); startRun(); });
       btnOptions.addEventListener("click", showOptions);
 
-      btnResume.addEventListener("click", () => { overlayHide(overlayPaused); setPaused(false); });
+      btnResume.addEventListener("click", () => { overlayHide(overlayPaused); paused = false; });
       btnQuitToStart.addEventListener("click", () => { overlayHide(overlayPaused); resetRun(true); });
 
       btnRetry.addEventListener("click", () => { resetRun(false); startRun(); });
@@ -1365,7 +1176,11 @@
       optSprites.addEventListener("change", () => { settings.useSprites = !!optSprites.checked; saveSettings(); });
       optVibration.addEventListener("change", () => { settings.vibration = !!optVibration.checked; saveSettings(); });
       optDpad.addEventListener("change", () => { settings.showDpad = !!optDpad.checked; applySettingsToUI(); saveSettings(); });
-      optFx.addEventListener("input", () => { settings.fx = clamp(parseFloat(optFx.value||"1"), 0.4, 1.25); optFxValue.textContent = settings.fx.toFixed(2); saveSettings(); });
+      optFx.addEventListener("input", () => {
+        settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
+        optFxValue.textContent = settings.fx.toFixed(2);
+        saveSettings();
+      });
 
       btnClearLocal.addEventListener("click", () => {
         const ok = confirm("¿Borrar datos locales? (Perfiles, settings, runs)");
@@ -1377,74 +1192,71 @@
       btnErrClose.addEventListener("click", () => overlayHide(overlayError));
       btnErrReload.addEventListener("click", () => location.reload());
 
-      // Perfil pill abre menú directamente
-      pillPlayer.addEventListener("click", () => { resetRun(true); });
+      btnReroll.addEventListener("click", rerollUpgrades);
+      btnSkipUpgrade.addEventListener("click", () => { closeUpgrade(); showToast("Saltar", 650); });
 
-      // Start button: perfiles
+      // Start button (perfil)
       btnStart.addEventListener("click", () => {
-        if (Auth && profileSelect){
-          if (profileSelect.value === "__new__"){
+        if (Auth && profileSelect) {
+          if (profileSelect.value === "__new__") {
             const nm = (startName?.value || "").trim();
-            const p = Auth.createProfile(nm);
-            if (!p){
-              showToast("Nombre demasiado corto", 900);
-              return;
-            }
+            const p = Auth.createProfile?.(nm);
+            if (!p) { showToast("Nombre mínimo 2 letras", 900); return; }
             syncFromAuth();
             initAuthUI();
           } else {
-            Auth.setActiveProfile(profileSelect.value);
+            Auth.setActiveProfile?.(profileSelect.value);
             syncFromAuth();
           }
         } else {
-          // fallback legacy
-          const nm = (startName?.value || "").trim().slice(0,16);
-          if (nm.length >= 2){
+          const nm = (startName?.value || "").trim().slice(0, 16);
+          if (nm.length >= 2) {
             playerName = nm;
             localStorage.setItem(NAME_KEY, playerName);
           }
         }
-
         updatePills();
         startRun();
       });
 
-      // PWA + SW
-      loadingSub.textContent = "Preparando PWA";
+      // pill player -> menú
+      pillPlayer.addEventListener("click", () => resetRun(true));
+
+      // PWA
+      loadingSub.textContent = "Preparando PWA…";
       setupPWA();
 
-      // NO BLOQUEAR POR SPRITES
-      loadingSub.textContent = "Preparando tablero";
-      preloadSpritesWithTimeout(1400);
+      // sprites (no bloquea)
+      loadingSub.textContent = "Preparando sprites…";
+      preloadSpritesWithTimeout(900);
 
-      // Loop arrancando ya (para que nunca “se congele”)
+      // estado inicial
+      resetRun(true);
+
+      // loop
       lastT = performance.now();
       requestAnimationFrame(frame);
 
-      // Watchdog: si algo va mal, desbloquea igualmente
+      // splash + watchdog
       const watchdog = setTimeout(() => {
-        if (!overlayLoading.hidden){
-          overlayLoading.classList.add("leaving");
-          setTimeout(() => { overlayHide(overlayLoading); overlayShow(overlayStart); }, 180);
+        if (!overlayLoading.hidden) {
+          overlayHide(overlayLoading);
+          overlayShow(overlayStart);
         }
       }, 6500);
 
-      // Splash mínimo (animación)
-      await new Promise(res => setTimeout(res, 1200));
+      await new Promise(res => setTimeout(res, 1100));
       clearTimeout(watchdog);
 
-      overlayLoading.classList.add("leaving");
-      setTimeout(() => {
-        overlayHide(overlayLoading);
-        overlayShow(overlayStart);
-      }, 180);
+      overlayHide(overlayLoading);
+      overlayShow(overlayStart);
 
       brandSub.textContent = "Listo";
       updatePills();
-    } catch (e){
+    } catch (e) {
       console.error(e);
       overlayHide(overlayLoading);
-      errMsg.textContent = (e && e.message) ? e.message : "Error desconocido";
+      errMsg.textContent = e?.message ? e.message : "Error desconocido";
       overlayShow(overlayError);
     }
   }

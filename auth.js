@@ -32,13 +32,11 @@
   }
 
   function ensureMigration(st){
-    // Si ya hay perfiles, no tocamos nada.
     if (st.profiles.length > 0) return st;
 
     const legacyName = normalizeName(localStorage.getItem(LEGACY_NAME_KEY) || "");
     const legacyBest = parseInt(localStorage.getItem(LEGACY_BEST_KEY) || "0", 10) || 0;
 
-    // Si no había nada, creamos un perfil por defecto.
     const name = legacyName.length >= 2 ? legacyName : "Jugador";
     const id = uid();
 
@@ -102,6 +100,7 @@
     const p = state.profiles.find(x => x.id === id);
     if (!p) return false;
     p.name = nm;
+    p.lastLoginAt = now();
     saveState(state);
     return true;
   }
@@ -113,12 +112,17 @@
 
   function setBestForActive(best){
     const p = getActiveProfile();
-    if (!p) return;
-    p.best = Math.max(p.best|0, best|0);
-    saveState(state);
+    if (!p) return false;
+    const b = Math.max(0, best|0);
+    if (b > (p.best|0)){
+      p.best = b;
+      p.lastLoginAt = now();
+      saveState(state);
+      return true;
+    }
+    return false;
   }
 
-  // Exponemos API simple
   window.Auth = {
     listProfiles,
     getActiveProfile,
@@ -128,6 +132,5 @@
     renameProfile,
     getBestForActive,
     setBestForActive,
-    _state: state,
   };
 })();

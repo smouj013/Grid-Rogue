@@ -18,8 +18,12 @@ const CORE_ASSETS = [
   new URL("./app.js", self.location).toString(),
   new URL("./auth.js", self.location).toString(),
   new URL("./manifest.webmanifest", self.location).toString(),
-  new URL("./assets/icon-192.png", self.location).toString(),
-  new URL("./assets/icon-512.png", self.location).toString(),
+
+  // ICONS (tu estructura real)
+  new URL("./assets/icons/icon-192.png", self.location).toString(),
+  new URL("./assets/icons/icon-512.png", self.location).toString(),
+  new URL("./assets/icons/apple-touch-icon-180.png", self.location).toString(),
+  new URL("./assets/icons/favicon-32.png", self.location).toString(),
 ];
 
 self.addEventListener("install", (event) => {
@@ -51,7 +55,6 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
@@ -60,8 +63,9 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   // Navegación: fallback a APP_SHELL
-  const isNav = (req.mode === "navigate") ||
-    (req.destination === "document") ||
+  const isNav =
+    req.mode === "navigate" ||
+    req.destination === "document" ||
     (req.headers.get("accept") || "").includes("text/html");
 
   if (isNav){
@@ -88,7 +92,7 @@ self.addEventListener("fetch", (event) => {
 
     const fetchPromise = fetch(req).then((res) => {
       if (res && res.ok){
-        cache.put(req, res.clone());
+        cache.put(req, res.clone()).catch(()=>{});
       }
       return res;
     }).catch(() => cached);
