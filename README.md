@@ -1,16 +1,18 @@
-# Grid Runner — PWA
+# Grid Runner — PWA (v0.0.2)
 
 Juego móvil PWA tipo runner en cuadrícula (8x24).
 - Tap izquierda/derecha o swipe
-- Bloques bloqueantes + items (moneda/gema/bonus/trampa)
-- Racha + multiplicador + combo
+- Bloques + items (moneda/gema/bonus/trampa)
+- Racha + multiplicador + combos
+- Juicy: partículas, shake suave, HUD bump, overlay fade
+- Fondo dinámico según racha (suave)
 - Offline con Service Worker
 - Listo para GitHub Pages
 
 ## Ejecutar en local
-Opción rápida (VSCode):
-- Instala la extensión **Live Server**
-- Click derecho en `index.html` → "Open with Live Server"
+VSCode:
+- Instala **Live Server**
+- Click derecho `index.html` → "Open with Live Server"
 
 O con Node:
 ```bash

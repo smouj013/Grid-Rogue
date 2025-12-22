@@ -1,8 +1,9 @@
-/* sw.js — Grid Runner PWA (v1.0.0)
-   - App shell cache + navegación offline devolviendo index.html
+/* sw.js — Grid Runner PWA (v0.0.2)
+   - App shell precache + navegación offline (index)
    - Stale-while-revalidate para assets
+   - Precache robusto (no rompe si falla 1 asset)
 */
-const VERSION = "v1.0.0";
+const VERSION = "v0.0.2";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
@@ -19,7 +20,15 @@ const CORE_ASSETS = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CORE_CACHE);
-    await cache.addAll(CORE_ASSETS);
+
+    // addAll puede fallar por 1 archivo; aquí lo hacemos robusto
+    await Promise.allSettled(CORE_ASSETS.map(async (u) => {
+      try {
+        const res = await fetch(u, { cache: "no-cache" });
+        if (res.ok) await cache.put(u, res);
+      } catch {}
+    }));
+
     self.skipWaiting();
   })());
 });
@@ -36,23 +45,20 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-// Offline navigation fallback
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Only handle same-origin
   if (url.origin !== self.location.origin) return;
 
-  // Navigations: return index.html for SPA-like navigation
+  // navegación
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       const cache = await caches.open(CORE_CACHE);
       const cached = await cache.match("./index.html");
       try {
         const net = await fetch(req);
-        // Optionally update index in cache
-        cache.put("./index.html", net.clone());
+        if (net && net.ok) cache.put("./index.html", net.clone());
         return net;
       } catch {
         return cached || Response.error();
@@ -61,12 +67,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Assets: stale-while-revalidate
+  // assets
   event.respondWith((async () => {
     const cache = await caches.open(RUNTIME_CACHE);
     const cached = await cache.match(req);
+
     const fetchPromise = fetch(req).then((net) => {
-      cache.put(req, net.clone());
+      if (net && net.ok) cache.put(req, net.clone());
       return net;
     }).catch(() => null);
 

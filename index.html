@@ -7,6 +7,11 @@
   <meta name="theme-color" content="#e60012" />
   <meta name="format-detection" content="telephone=no" />
 
+  <!-- iOS PWA-ish -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Grid Runner" />
+
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="./assets/icon.svg" />
@@ -16,11 +21,18 @@
 </head>
 
 <body>
+  <noscript>
+    <div style="padding:16px;color:#fff;background:#000">
+      Este juego necesita JavaScript activado.
+    </div>
+  </noscript>
+
   <header class="topbar">
     <div class="brand">
       <span class="dot"></span>
       <span class="title">Grid Runner</span>
       <span class="pill" id="pillOffline" hidden>Offline</span>
+      <span class="pill subtle" id="pillVersion">v0.0.2</span>
     </div>
 
     <div class="hud">
@@ -52,7 +64,7 @@
   <main class="gameWrap">
     <canvas id="game" aria-label="Juego Grid Runner" role="img"></canvas>
 
-    <!-- Zonas táctiles (no molestan visualmente) -->
+    <!-- Zonas táctiles (tap izquierda/derecha) -->
     <div class="touchZones" aria-hidden="true">
       <div class="zone left" id="zoneLeft"></div>
       <div class="zone right" id="zoneRight"></div>
@@ -60,7 +72,7 @@
 
     <div class="toast" id="toast" hidden></div>
 
-    <!-- Pantallas -->
+    <!-- START -->
     <div class="overlay" id="overlayStart">
       <div class="panel">
         <h1>Grid Runner</h1>
@@ -68,10 +80,11 @@
           Avanza hacia arriba. Evita los bloques. Pisa celdas para ganar puntos.
           Encadena buenas para subir multiplicador.
         </p>
+
         <ul class="legend">
           <li><span class="chip cCoin"></span> Moneda (+10)</li>
           <li><span class="chip cGem"></span> Gema (+30)</li>
-          <li><span class="chip cBonus"></span> Bonus (+60 + racha)</li>
+          <li><span class="chip cBonus"></span> Bonus (+60 + combo)</li>
           <li><span class="chip cTrap"></span> Trampa (-25 y resetea racha)</li>
           <li><span class="chip cBlock"></span> Bloque (Game Over)</li>
         </ul>
@@ -79,12 +92,14 @@
         <div class="row">
           <button class="btn primary big" id="btnStart">Jugar</button>
         </div>
+
         <div class="row hint">
-          <span>Control: swipe o tap izquierda/derecha</span>
+          <span>Control: swipe o tap izquierda/derecha (PC: ← → / A D)</span>
         </div>
       </div>
     </div>
 
+    <!-- GAME OVER -->
     <div class="overlay" id="overlayGameOver" hidden>
       <div class="panel">
         <h1>Game Over</h1>
@@ -95,10 +110,11 @@
       </div>
     </div>
 
+    <!-- PAUSE -->
     <div class="overlay" id="overlayPaused" hidden>
       <div class="panel">
         <h1>Pausa</h1>
-        <p>Toque o pulsa ⏸ para volver.</p>
+        <p>Toque o pulsa ⏸ / Espacio para volver.</p>
         <div class="row">
           <button class="btn primary big" id="btnResume">Continuar</button>
         </div>
