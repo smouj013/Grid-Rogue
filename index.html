@@ -58,7 +58,6 @@
   />
 
   <link rel="manifest" href="./manifest.webmanifest?v=0.1.4" />
-
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
@@ -160,7 +159,7 @@
     <main class="stage" id="stage" role="main">
       <div class="canvasWrap" id="canvasWrap">
 
-        <!-- ✅ HUD FUERA del grid (no tapa el canvas) -->
+        <!-- ✅ HUD FUERA del grid (y con altura FIJA en CSS para NO mover el canvas) -->
         <div class="hud" id="hud" aria-hidden="true">
           <div class="combo">
             <div class="comboTop">
@@ -173,7 +172,6 @@
 
             <div class="comboHint" id="comboHint">Completa la secuencia para subir multiplicador.</div>
 
-            <!-- ✅ Level progress bar -->
             <div class="levelProg" id="levelProg">
               <div class="levelRow">
                 <div class="left">
@@ -191,7 +189,7 @@
           <div class="toast" id="toast" hidden aria-live="polite"></div>
         </div>
 
-        <!-- ✅ Área de juego (para medir tamaño y bloquear scroll/zoom) -->
+        <!-- ✅ Área de juego (bloquea scroll/zoom y ocupa TODO el espacio restante) -->
         <div class="gameArea" id="gameArea">
           <canvas id="gameCanvas" width="640" height="960" aria-label="Juego"></canvas>
 
@@ -214,7 +212,7 @@
           </div>
         </div>
 
-        <!-- LOADING (Splash real) -->
+        <!-- LOADING -->
         <section class="overlay" id="overlayLoading">
           <div class="panel">
             <div class="splash">
@@ -410,7 +408,7 @@
     </main>
   </div>
 
-  <!-- ✅ Failsafe inline: ajustado para splash mínimo 5s -->
+  <!-- ✅ Failsafe inline -->
   <script>
     (function(){
       const $ = (id)=>document.getElementById(id);

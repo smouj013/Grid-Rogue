@@ -29,9 +29,11 @@
 
   --focus: 0 0 0 3px rgba(105,168,255,0.25);
 
+  /* 🎨 wallpaper */
   --glowA: rgba(80,120,255,0.16);
   --glowB: rgba(255,170,60,0.12);
 
+  /* HUD accent */
   --coin: #2ef2a0;
   --gem:  #6ab0ff;
   --bonus:#ffd35a;
@@ -39,6 +41,9 @@
   --block:#7f8aa8;
 
   --overlayBack: rgba(0,0,0,0.44);
+
+  /* ✅ HUD height fija (evita que empuje el canvas y cause “saltos”) */
+  --hudH: 122px;
 }
 
 *{ box-sizing:border-box; }
@@ -54,10 +59,14 @@ body{
     radial-gradient(900px 520px at 40% 90%, rgba(120,255,180,0.06), transparent 65%),
     linear-gradient(180deg, var(--bg0), var(--bg1));
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+  /* ✅ NO scroll */
   overflow:hidden;
+
   -webkit-text-size-adjust:100%;
   touch-action:manipulation;
   -webkit-tap-highlight-color:transparent;
+  user-select:none;
 }
 
 button, input, select{
@@ -67,7 +76,6 @@ button, input, select{
 button{ user-select:none; }
 a{ color:inherit; }
 
-/* ───────────────── Material Symbols ───────────────── */
 .ms{
   font-family:"Material Symbols Rounded";
   font-weight:600;
@@ -83,10 +91,10 @@ a{ color:inherit; }
 
 /* ───────────────── App layout ───────────────── */
 #app{
-  height:100dvh;
+  height:100svh;
+  min-height:100dvh;
   display:flex;
   flex-direction:column;
-  min-height:0;
 }
 
 /* ───────────────── Topbar ───────────────── */
@@ -205,25 +213,6 @@ a{ color:inherit; }
   #pillSpeed{ display:none; }
 }
 
-/* ✅ Gameplay en móvil: header ultra-compacto (no “come” pantalla) */
-@media (max-width:720px){
-  body[data-state="playing"] .topbar{
-    padding:
-      calc(6px + env(safe-area-inset-top))
-      8px
-      6px
-      8px;
-    grid-template-columns: 1fr auto;
-    grid-template-areas: "pills actions";
-    gap:8px;
-  }
-  body[data-state="playing"] .brand{ display:none; }
-  body[data-state="playing"] #pillBest{ display:none; }
-  body[data-state="playing"] #pillSpeed{ display:none; }
-  body[data-state="playing"] #pillPlayer{ display:none; }
-  body[data-state="playing"] #pillVersion{ display:none; }
-}
-
 /* ───────────────── Stage ───────────────── */
 .stage{
   position:relative;
@@ -231,83 +220,47 @@ a{ color:inherit; }
   flex:1;
   min-height:0;
 
+  /* ✅ cero padding: más espacio real para el juego */
+  padding: 0;
+
   display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:flex-start;
-  gap: var(--pad);
-
-  padding: var(--pad);
-  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-}
-
-@media (max-width:720px){
-  .stage{
-    padding: 8px;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom));
-    gap: 8px;
-  }
 }
 
 .canvasWrap{
   position:relative;
   width:100%;
-  flex:1;
-  min-height:0;
+  height:100%;
 
   display:flex;
   flex-direction:column;
-  align-items:center;
-  justify-content:flex-start;
-  gap: var(--pad);
+  gap: 8px;
+
+  padding:
+    8px
+    8px
+    calc(8px + env(safe-area-inset-bottom))
+    8px;
 }
 
-/* ✅ HUD fuera del canvas */
+/* ───────────────── HUD (altura fija, sin reflow) ───────────────── */
 .hud{
-  width: min(720px, 100%);
-  pointer-events:none;
-}
-
-/* Área de juego */
-.gameArea{
-  width:100%;
-  flex:1;
-  min-height:0;
-  display:grid;
-  place-items:center;
   position:relative;
+  z-index:12;
+  pointer-events:none;
 
-  /* ✅ evita scroll/zoom/arrastre dentro del juego */
-  touch-action: none;
-  overscroll-behavior: none;
+  height: var(--hudH);
+  min-height: var(--hudH);
+  max-height: var(--hudH);
+  overflow:hidden; /* ✅ evita que el HUD cambie alto */
+
+  display:flex;
+  justify-content: space-between;
+  gap:10px;
 }
 
-/* ✅ Canvas SIN DISTORSIÓN: ratio 8/24 */
-#gameCanvas{
-  width:min(720px, 100%);
-  height:auto;
-  max-height:100%;
-  aspect-ratio: 8 / 24;
-
-  border-radius: var(--r);
-  border:1px solid rgba(255,255,255,0.12);
-
-  background:
-    radial-gradient(900px 520px at 50% 20%, rgba(255,255,255,0.06), transparent 62%),
-    linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45));
-
-  box-shadow: var(--shadow);
-
-  /* ✅ importantísimo para no mover “cámara” del navegador */
-  touch-action:none;
-  user-select:none;
-
-  image-rendering: pixelated;
-}
-
-/* ───────────────── HUD ───────────────── */
 .combo{
-  max-width: 100%;
+  width: 100%;
+  max-width: 860px;
   padding: 10px 12px;
   border-radius: var(--r2);
   background: var(--glass);
@@ -326,7 +279,9 @@ a{ color:inherit; }
 .comboSeq{
   display:flex;
   gap:6px;
-  flex-wrap:wrap;
+  flex-wrap:nowrap;        /* ✅ NO wrap => no cambia alto */
+  overflow:hidden;         /* ✅ */
+  min-width:0;
 }
 
 .comboSeq .chip{
@@ -340,6 +295,7 @@ a{ color:inherit; }
   border:1px solid color-mix(in oklab, var(--chipc) 36%, rgba(255,255,255,0.10));
   font-size:12px;
   color: rgba(255,255,255,0.90);
+  white-space:nowrap;
 }
 .comboSeq .chip .ms{
   font-size:16px;
@@ -360,9 +316,11 @@ a{ color:inherit; }
   margin-top:6px;
   font-size:12px;
   color: rgba(255,255,255,0.62);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
-/* Level progress */
 .levelProg{
   margin-top: 10px;
   padding-top: 8px;
@@ -381,6 +339,12 @@ a{ color:inherit; }
   display:flex;
   align-items:center;
   gap:8px;
+  min-width:0;
+}
+#levelProgText{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 .progBar{
   height: 10px;
@@ -398,10 +362,12 @@ a{ color:inherit; }
   transition: width .10s linear;
 }
 
-/* Toast debajo del HUD (no tapa el grid) */
+/* toast no afecta layout */
 .toast{
-  margin-top: 10px;
-  width: 100%;
+  pointer-events:none;
+  position:absolute;
+  top: 8px;
+  right: 8px;
   padding: 10px 12px;
   border-radius: var(--r2);
   background: rgba(10,10,14,0.78);
@@ -417,12 +383,52 @@ a{ color:inherit; }
 }
 .toast.show{ transform: translateY(0px); opacity:1; }
 
+/* Mobile: HUD más compacto (más espacio al canvas) */
+@media (max-width:520px){
+  :root{ --hudH: 108px; }
+  .combo{ padding: 9px 10px; }
+  .comboSeq .chip span:not(.ms){ display:none; } /* ✅ solo iconos */
+  .comboHint{ display:none; }                    /* ✅ aún más estable */
+}
+
+/* ───────────────── GameArea ───────────────── */
+.gameArea{
+  position:relative;
+  flex:1;
+  min-height:0;
+  width:100%;
+
+  display:grid;
+  place-items:center;
+
+  /* ✅ anti-scroll/anti-zoom */
+  overflow:hidden;
+  overscroll-behavior:none;
+  touch-action:none;
+}
+
+/* canvas lo controla JS al 100% (sin límites 720px) */
+#gameCanvas{
+  display:block;
+  border-radius: var(--r);
+  border:1px solid rgba(255,255,255,0.12);
+  background:
+    radial-gradient(900px 520px at 50% 20%, rgba(255,255,255,0.06), transparent 62%),
+    linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45));
+  box-shadow: var(--shadow);
+
+  /* ✅ estabilidad */
+  will-change: transform;
+  transform: translateZ(0);
+  image-rendering: pixelated;
+}
+
 /* ───────────────── Dpad ───────────────── */
 .dpad{
   position:absolute;
   z-index:20;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  right: calc(10px + env(safe-area-inset-right));
   display:flex;
   flex-direction:column;
   align-items:center;
@@ -444,7 +450,7 @@ a{ color:inherit; }
 .dpadBtn:hover{ border-color: rgba(255,255,255,0.20); background: rgba(0,0,0,0.50); }
 .dpadBtn:active{ transform: translateY(1px) scale(0.99); }
 
-/* ───────────────── Overlays (FULLSCREEN encima del header) ───────────────── */
+/* ───────────────── Overlays ───────────────── */
 .overlay{
   position:fixed;
   z-index: 140;
@@ -505,7 +511,6 @@ a{ color:inherit; }
   margin-top:12px;
 }
 
-/* Splash / Loading */
 .splash{
   display:flex;
   align-items:center;
@@ -566,7 +571,6 @@ a{ color:inherit; }
   100%{ transform: translateX(-70%); }
 }
 
-/* Form */
 .form{ display:flex; flex-direction:column; gap:10px; }
 .label{ font-size:12px; color: rgba(255,255,255,0.74); }
 .row{ display:flex; gap:10px; align-items:center; }
@@ -580,7 +584,7 @@ a{ color:inherit; }
   background: rgba(0,0,0,0.25);
   color: rgba(255,255,255,0.92);
   outline:none;
-  font-size:16px; /* evita zoom iOS */
+  font-size:16px;
 }
 .select{ cursor:pointer; }
 
@@ -608,7 +612,6 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.94);
 }
 
-/* Upgrades list */
 .upgradeChoices{
   display:grid;
   grid-template-columns:1fr;
@@ -649,7 +652,6 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.82);
 }
 
-/* Options */
 .options{ display:flex; flex-direction:column; gap:10px; }
 .optRow{
   display:flex;
@@ -669,7 +671,6 @@ a{ color:inherit; }
   background: rgba(255,59,89,0.07);
 }
 
-/* Stats */
 .stats{
   display:flex;
   flex-direction:column;
@@ -686,7 +687,6 @@ a{ color:inherit; }
   border:1px solid rgba(255,255,255,0.08);
 }
 
-/* GameOver “big score” */
 .goBig{
   display:flex;
   align-items:flex-end;
@@ -731,7 +731,6 @@ a{ color:inherit; }
   white-space: pre-wrap;
 }
 
-/* Reduce motion */
 @media (prefers-reduced-motion: reduce){
   *{ transition:none !important; animation:none !important; }
 }
