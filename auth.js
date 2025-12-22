@@ -1,0 +1,133 @@
+/* auth.js — Grid Runner (PWA) v0.1.1
+   - Perfiles locales (sin servidor): crear / seleccionar
+   - Migra desde gridrunner_name_v1 si existe
+*/
+(() => {
+  "use strict";
+
+  const AUTH_KEY = "gridrunner_auth_v1";
+  const LEGACY_NAME_KEY = "gridrunner_name_v1";
+  const LEGACY_BEST_KEY = "gridrunner_best_v1";
+
+  const now = () => Date.now();
+  const uid = () => "p_" + Math.random().toString(16).slice(2) + "_" + Math.random().toString(16).slice(2);
+
+  function safeParse(raw, fallback){
+    try{ return JSON.parse(raw); } catch { return fallback; }
+  }
+
+  function loadState(){
+    const raw = localStorage.getItem(AUTH_KEY);
+    const st = raw ? safeParse(raw, null) : null;
+    if (st && typeof st === "object" && Array.isArray(st.profiles)) return st;
+    return { activeId: null, profiles: [] };
+  }
+
+  function saveState(st){
+    localStorage.setItem(AUTH_KEY, JSON.stringify(st));
+  }
+
+  function normalizeName(name){
+    return String(name || "").trim().slice(0, 16);
+  }
+
+  function ensureMigration(st){
+    // Si ya hay perfiles, no tocamos nada.
+    if (st.profiles.length > 0) return st;
+
+    const legacyName = normalizeName(localStorage.getItem(LEGACY_NAME_KEY) || "");
+    const legacyBest = parseInt(localStorage.getItem(LEGACY_BEST_KEY) || "0", 10) || 0;
+
+    // Si no había nada, creamos un perfil por defecto.
+    const name = legacyName.length >= 2 ? legacyName : "Jugador";
+    const id = uid();
+
+    st.profiles.push({
+      id,
+      name,
+      createdAt: now(),
+      lastLoginAt: now(),
+      best: legacyBest,
+    });
+    st.activeId = id;
+    saveState(st);
+    return st;
+  }
+
+  const state = ensureMigration(loadState());
+
+  function listProfiles(){
+    return state.profiles.slice().sort((a,b) => (b.lastLoginAt||0) - (a.lastLoginAt||0));
+  }
+
+  function getActiveProfile(){
+    return state.profiles.find(p => p.id === state.activeId) || null;
+  }
+
+  function setActiveProfile(id){
+    const p = state.profiles.find(x => x.id === id);
+    if (!p) return null;
+    state.activeId = id;
+    p.lastLoginAt = now();
+    saveState(state);
+    return p;
+  }
+
+  function createProfile(name){
+    const nm = normalizeName(name);
+    if (nm.length < 2) return null;
+
+    const id = uid();
+    const p = { id, name: nm, createdAt: now(), lastLoginAt: now(), best: 0 };
+    state.profiles.push(p);
+    state.activeId = id;
+    saveState(state);
+    return p;
+  }
+
+  function deleteProfile(id){
+    const idx = state.profiles.findIndex(p => p.id === id);
+    if (idx < 0) return false;
+    state.profiles.splice(idx, 1);
+    if (state.activeId === id){
+      state.activeId = state.profiles[0]?.id || null;
+    }
+    saveState(state);
+    return true;
+  }
+
+  function renameProfile(id, name){
+    const nm = normalizeName(name);
+    if (nm.length < 2) return false;
+    const p = state.profiles.find(x => x.id === id);
+    if (!p) return false;
+    p.name = nm;
+    saveState(state);
+    return true;
+  }
+
+  function getBestForActive(){
+    const p = getActiveProfile();
+    return p ? (p.best|0) : 0;
+  }
+
+  function setBestForActive(best){
+    const p = getActiveProfile();
+    if (!p) return;
+    p.best = Math.max(p.best|0, best|0);
+    saveState(state);
+  }
+
+  // Exponemos API simple
+  window.Auth = {
+    listProfiles,
+    getActiveProfile,
+    setActiveProfile,
+    createProfile,
+    deleteProfile,
+    renameProfile,
+    getBestForActive,
+    setBestForActive,
+    _state: state,
+  };
+})();

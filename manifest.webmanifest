@@ -1,26 +1,13 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
-  "description": "Endless grid runner con combos y mejoras roguelike.",
-  "start_url": "./?v=0.1.0",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#07070b",
-  "theme_color": "#e60012",
-  "orientation": "portrait",
-  "categories": ["games", "entertainment"],
+  "background_color": "#0b0b10",
+  "theme_color": "#0b0b10",
   "icons": [
-    {
-      "src": "./assets/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "./assets/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "./assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./assets/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
