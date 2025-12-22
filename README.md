@@ -1,181 +1,156 @@
-# Grid Runner — PWA (v0.1.1)
+# Grid Runner (PWA) — v0.1.2
 
-Juego arcade **rápido y adictivo** para móvil y desktop: controlas un “runner” en una cuadrícula que **se desplaza constantemente**. Debes moverte dentro de tu **zona de movimiento** para recoger premios, encadenar **combos**, subir de nivel y elegir **mejoras**. Si pisas un **KO** sin escudo… se termina la run.
-
-> **Modo PWA**: funciona online/offline, se puede instalar (cuando el navegador lo permite) y se actualiza mediante Service Worker.
+Arcade grid runner con **perfiles locales**, **upgrades**, **combos**, **PWA instalable**, **offline**, y (lo más importante) **anti-freeze**: si algo falla, **siempre** tienes salida (Recargar / Reparar PWA).
 
 ---
 
-## 🕹️ Cómo se juega
+## ✅ Cambios v0.1.2 (respecto a 0.1.1)
 
-### Objetivo
-- **Sobrevive** el máximo tiempo posible.
-- Consigue la mayor **puntuación**.
-- Mantén la **racha** (streak) y sube el **multiplicador** (mult).
-- Completa **combos** para obtener bonus y/o mejoras de multiplicador (según configuración del juego).
+### Estabilidad / “no se queda congelado”
+- **Failsafe inline en `index.html`** (no depende de `app.js`):
+  - Si pasados ~4.5s sigue “Cargando”, aparecen:
+    - **Recargar**
+    - **Reparar PWA** (desregistra Service Worker + borra caches + recarga)
+- `app.js` añade **captura global de errores**:
+  - `window.onerror` + `unhandledrejection`
+  - Si algo revienta, se oculta loading y se muestra overlay de error.
+- `app.js` fuerza un **arranque robusto**:
+  - Nunca deja `overlayLoading` bloqueando sin salida.
+  - `requestAnimationFrame` protegido con try/catch.
 
-### Controles
-**Desktop**
-- Mover: `WASD` o `Flechas`
-- Pausa: `Esc`
-
-**Móvil**
-- **Desliza** en el canvas para moverte (arriba/abajo/izquierda/derecha)
-- Opcional: **D-Pad** en pantalla (si está activado y el dispositivo es táctil)
-
-### Tipos de casillas (tiles)
-- **Coin**: puntos básicos.
-- **Gem**: puntos superiores.
-- **BONUS**: recompensa grande (y puede disparar efectos extra según mejoras).
-- **Trap**: penalización (pierdes puntos y normalmente racha).
-- **KO / Block**: si lo pisas, **muere** la run (a menos que tengas escudo).
-
-> Nota: los nombres pueden variar en UI, pero el comportamiento general es el anterior.
+### PWA / Updates más fiables
+- `register("./sw.js?v=0.1.2")` para evitar SW viejo.
+- `reg.update()` al iniciar para buscar actualización al momento.
+- Pill **“Actualizar”** se activa al detectar `waiting` o `installed` con controller.
 
 ---
 
-## 🧩 Sistema de progreso (Run)
+## 📁 Estructura de archivos (root del repo)
 
-### Subida de nivel
-A medida que aumentas tu puntuación:
-- **Subes de nivel**
-- Se abre un panel para elegir **1 mejora**
-- Algunas mejoras tienen **límite** (máximo)
+```
+index.html
+styles.css
+app.js
+auth.js
+sw.js
+manifest.webmanifest
+assets/
+icons/
+favicon-32.png
+icon-192.png
+icon-512.png
+apple-touch-icon-180.png
+sprites/ (opcional)
+tile_coin.svg (opcional)
+tile_gem.svg
+tile_bonus.svg
+tile_trap.svg
+tile_block.svg
+```
 
-### Mejoras (Upgrades)
-El juego incluye un set amplio de mejoras (ejemplos):
-- **+Zona de movimiento**: más filas disponibles para esquivar.
-- **Escudo**: evita una muerte por KO.
-- **Imán**: recoge premios cercanos automáticamente.
-- **Más puntos por avanzar**: recompensa por tiempo/supervivencia.
-- **Mejoras de multiplicador**: acelera la escalada de score.
-- **Reroll**: permite volver a tirar opciones de mejoras (si tienes cargas).
 
----
-
-## 👤 Perfiles (auth.js)
-
-Grid Runner incluye un sistema de perfiles **local** (sin servidor):
-- Crear y seleccionar perfil.
-- Guarda **best score por perfil**.
-- El nombre del jugador se muestra en el HUD (pillPlayer).
-
-### Migración / compatibilidad
-- Si vienes de una versión anterior, se migra automáticamente desde:
-  - `gridrunner_name_v1`
-  - `gridrunner_best_v1` (compatibilidad)
-
-> Todo se guarda en **localStorage** del dispositivo.
+> Si `assets/sprites` no existe o faltan sprites, el juego funciona igual (fallback a colores).
 
 ---
 
-## ⚙️ Opciones
+## 🚀 Deploy en GitHub Pages (paso a paso)
 
-Desde el panel de opciones:
-- **Sprites ON/OFF** (si existen assets de sprites, si no: fallback a colores)
-- **Vibración ON/OFF**
-- **D-Pad ON/OFF** (solo relevante en móvil / pointer coarse)
-- **FX** (intensidad de efectos visuales)
-- **Borrar datos locales** (resetea perfiles, runs, settings)
-
----
-
-## 📦 Estructura del proyecto (esperada)
-
-Tal cual tu repo (root):
-
-GRID-RUNNER-PWA/
-├─ index.html
-├─ styles.css
-├─ app.js
-├─ auth.js
-├─ sw.js
-├─ manifest.webmanifest
-├─ assets/
-│ ├─ icons/
-│ │ ├─ icon-192.png
-│ │ ├─ icon-512.png
-│ │ ├─ ... (maskable / apple touch)
-│ └─ sprites/
-│ ├─ tile_block.svg
-│ ├─ tile_bonus.svg
-│ ├─ tile_coin.svg
-│ ├─ tile_gem.svg
-│ ├─ tile_trap.svg
-│ └─ (opcional) player.svg / atlas, etc.
-└─ .nojekyll
-
+1. **Crea un repo** en GitHub (público o privado).
+2. Sube **todos los archivos** al **root** del repo (misma carpeta).
+3. Ve a: **Settings → Pages**
+4. En **Build and deployment**:
+   - **Source:** Deploy from a branch
+   - **Branch:** `main`
+   - **Folder:** `/ (root)`
+5. Guarda y abre la URL que te da GitHub Pages.
 
 ---
 
-## 🌐 PWA (Instalación / Offline / Actualizaciones)
+## ✅ Checklist rápido (para evitar problemas típicos)
 
-### Instalación (botón “Instalar” inteligente)
-- Solo aparece si:
-  - El navegador soporta instalación (evento `beforeinstallprompt`)
-  - Y **NO** estás ya en modo app/standalone
-- En modo app/standalone:
-  - **Nunca** se muestra el botón “Instalar”
+### 1) La app no actualiza
+- Pulsa **Actualizar** (pill en la topbar) si aparece.
+- Si sigue raro: abre la PWA → ve a “Cargando” → pulsa **Reparar PWA**.
 
-### Offline
-- El Service Worker cachea el **app shell**
-- El juego funciona sin conexión una vez cargado al menos una vez
+### 2) Se queda “Cargando…” y no puedes tocar nada
+En v0.1.2 **no debería pasar sin salida**:
+- espera 4–5 segundos → deben aparecer los botones:
+  - **Recargar**
+  - **Reparar PWA**
 
-### Actualizaciones
-- Cuando hay nueva versión:
-  - aparece una pill en el HUD: **“Actualizar”**
-- En partida:
-  - la actualización se aplica al terminar la run (o reiniciar)
-- Fuera de partida:
-  - recarga inmediatamente
+### 3) “Los botones no funcionan”
+Casi siempre es:
+- JS viejo cacheado por SW
+- o un error JS que aborta el arranque
 
----
-
-## ✅ Cambios v0.1.1 (release notes)
-
-- Iconos **Material Symbols** (Google Fonts) en lugar de emojis.
-- Fix “loading infinito”:
-  - Splash + transición al menú
-  - Watchdog anti-bloqueo
-  - Carga de sprites **no bloqueante**
-- Botón “Instalar” inteligente (solo web instalable).
-- `auth.js` (perfiles locales):
-  - Crear / seleccionar
-  - Best score por perfil
-  - Migración de nombre desde claves antiguas
+Solución:
+- **Reparar PWA** (lo hace automático)
+- o manual: borrar datos del sitio + recargar
 
 ---
 
-## 🚀 Deploy en GitHub Pages
+## 🧩 Cómo funciona el “Reparar PWA”
+Cuando lo pulsas:
+1. Desregistra todos los Service Workers del origen.
+2. Borra todas las caches del navegador (`caches.delete(...)`).
+3. Recarga la página.
 
-1. Sube todo al repo (carpeta raíz).
-2. GitHub → **Settings → Pages**
-3. Build and deployment:
-   - **Source**: Deploy from a branch
-   - **Branch**: `main` / `(root)`
-4. Abre tu URL de GitHub Pages.
-
----
-
-## 🧪 Debug rápido (si “no cambia nada” o se queda raro)
-
-Esto casi siempre es **cache del Service Worker**.
-
-### Opción A (rápida)
-- Abre la web y pulsa **“Actualizar”** si aparece en la pill del HUD.
-
-### Opción B (DevTools)
-- DevTools → Application → Service Workers → **Unregister**
-- Application → Storage → **Clear site data**
-- Recarga (Ctrl+F5)
+Esto fuerza a descargar de cero `index.html`, `app.js`, `styles.css`, etc.
 
 ---
 
-## 📄 Licencia
-Uso personal / prototipo. (Ajusta esta sección si vas a publicar open-source.)
+## 🎮 Controles
+- PC: **WASD** / **Flechas**
+- Móvil: **Swipe**
+- Opcional: **Cruceta (D-pad)** en Opciones (si activada)
 
 ---
 
-## ✉️ Créditos
-- UI icons: **Material Symbols** (Google Fonts)
-- PWA: Manifest + Service Worker (app shell caching)
+## ⚙️ Opciones (overlay Opciones)
+- **Usar sprites** (si existen en `assets/sprites`)
+- **Vibración** (móvil)
+- **Mostrar cruceta** (móvil)
+- **FX** (multiplicador visual/feedback)
+- **Borrar datos locales** (perfiles + settings + runs)
+
+---
+
+## 🧠 Datos locales (sin servidor)
+Se guardan en `localStorage`:
+- Perfiles: `gridrunner_auth_v1`
+- Settings: `gridrunner_settings_v1`
+- Runs recientes: `gridrunner_runs_v1`
+- Legacy (migración): `gridrunner_name_v1`, `gridrunner_best_v1`
+
+---
+
+## 🔄 Actualizar versión
+Para sacar v0.1.3, etc.:
+1. Cambia `window.APP_VERSION` en `index.html`.
+2. Cambia `VERSION` en `sw.js`.
+3. Actualiza los `?v=` de:
+   - `styles.css?v=...`
+   - `auth.js?v=...`
+   - `app.js?v=...`
+   - `manifest.webmanifest?v=...`
+4. Deploy en GitHub Pages.
+
+---
+
+## 🛠️ Debug rápido (si algo falla)
+- Abre **DevTools → Console** y mira errores.
+- Pruébalo en incógnito para descartar cache.
+- Si es iOS:
+  - Instala de nuevo desde Safari (Share → Add to Home Screen).
+  - Si se queda raro: “Reparar PWA” desde la web y vuelve a abrir.
+
+---
+
+## 📌 Notas importantes
+- Si tu repo está en subcarpeta de GH Pages (`usuario.github.io/repo/`), el `sw.js` usa `registration.scope`, así que funciona igual.
+- Google Fonts (Material Symbols) es cross-origin y no se cachea por el SW (normal).
+
+---
+
+## Licencia
+Uso libre para tu proyecto.

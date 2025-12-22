@@ -1,14 +1,14 @@
-/* app.js — Grid Runner (PWA) v0.1.1 (WORKING)
-   ✅ Boot robusto (DOM ready, no depende de defer)
-   ✅ Fix CRÍTICO: resize() NO dibuja si el grid aún no está listo (evita crash y “botones muertos”)
-   ✅ UI completa: Start/Pause/Options/Upgrades/GameOver
-   ✅ PWA: install + update real (waiting -> SKIP_WAITING -> controllerchange -> reload)
+/* app.js — Grid Runner (PWA) v0.1.2
+   ✅ Anti-freeze total: errores globales + nunca deja overlayLoading sin salida
+   ✅ Botones siempre: bind seguro + no depende de orden raro
+   ✅ PWA update real: sw.js?v=APP_VERSION + reg.update() + pillActualizar fiable
 */
 
 (() => {
   "use strict";
 
-  const APP_VERSION = (window.APP_VERSION || "0.1.1");
+  const APP_VERSION = (window.APP_VERSION || "0.1.2");
+  window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -68,7 +68,7 @@
     try { navigator.vibrate(ms); } catch {}
   }
 
-  // ───────────────────────── Auth (profiles) ─────────────────────────
+  // ───────────────────────── Auth ─────────────────────────
   const Auth = window.Auth || null;
 
   let activeProfileId = null;
@@ -111,7 +111,6 @@
       ["bonus", "tile_bonus.svg"],
       ["trap", "tile_trap.svg"],
       ["block", "tile_block.svg"],
-      // ["player", "player.svg"], // opcional
     ];
 
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
@@ -121,8 +120,8 @@
         const img = await loadImage(spriteUrl(file));
         sprites.map.set(k, img);
       });
-      const result = await Promise.race([Promise.all(tasks), timeout]);
-      sprites.ready = (sprites.map.size > 0) && (result === "timeout" || result !== "timeout");
+      await Promise.race([Promise.all(tasks), timeout]);
+      sprites.ready = sprites.map.size > 0;
     } catch {
       sprites.ready = sprites.map.size > 0;
     }
@@ -162,23 +161,19 @@
   let level = 1;
   let nextLevelAt = 220;
 
-  // grid
   let grid = [];
   let consumed = [];
-  let gridReady = false; // ✅ FIX: evita draw/resize crash al inicio
+  let gridReady = false;
 
-  // render geom
   let dpr = 1;
   let stageW = 0, stageH = 0;
   let cellPx = 18;
   let gridW = 0, gridH = 0;
   let offX = 0, offY = 0;
 
-  // scrolling
   let scrollPx = 0;
   let runTime = 0;
 
-  // player zone
   let zoneBase = 3;
   let zoneExtra = 0;
   let zoneH = 3;
@@ -189,19 +184,16 @@
   let colF = 3;
   let rowF = 1;
 
-  // upgrades/effects
   let shields = 0;
   let magnet = 0;
   let scoreBoost = 0;
   let trapResist = 0;
   let rerolls = 0;
 
-  // values
   let coinValue = 10;
   let gemValue = 30;
   let bonusValue = 60;
 
-  // combo
   const COMBO_POOL = [
     [CellType.Coin, CellType.Coin, CellType.Gem],
     [CellType.Gem, CellType.Coin, CellType.Bonus],
@@ -214,7 +206,6 @@
   let comboTimeMax = 6.0;
   let comboTime = 6.0;
 
-  // toast
   let toastT = 0;
 
   // ───────────────────────── DOM refs ─────────────────────────
@@ -242,6 +233,29 @@
   let comboSeq, comboTimerVal, comboHint, toast;
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
+
+  // ───────────────────────── Error handling global ─────────────────────────
+  function showFatal(err) {
+    try {
+      console.error(err);
+
+      if (overlayLoading) overlayLoading.hidden = true;
+
+      if (errMsg) errMsg.textContent = (err && err.message) ? err.message : String(err || "Error desconocido");
+      if (overlayError) overlayError.hidden = false;
+
+      // Si overlayError no existe por cualquier razón
+      if (!overlayError) alert((err && err.message) ? err.message : "Error desconocido");
+    } catch {}
+  }
+
+  window.addEventListener("error", (e) => {
+    showFatal(e?.error || new Error(e?.message || "Error"));
+  });
+
+  window.addEventListener("unhandledrejection", (e) => {
+    showFatal(e?.reason || new Error("Promise rejection"));
+  });
 
   // ───────────────────────── UI helpers ─────────────────────────
   function showToast(msg, ms = 900) {
@@ -480,16 +494,20 @@
       const t = combo[i];
       const chip = document.createElement("div");
       chip.className = "chip";
+
       const ic = document.createElement("span");
       ic.className = "ms";
       ic.textContent = iconForType(t);
+
       const tx = document.createElement("span");
       tx.textContent = nameForType(t);
+
       chip.appendChild(ic);
       chip.appendChild(tx);
 
       if (i < comboIdx) chip.style.opacity = "0.55";
       if (i === comboIdx) chip.style.borderColor = "rgba(255,255,255,0.22)";
+
       comboSeq.appendChild(chip);
     }
     comboHint.textContent = "Completa la secuencia para subir multiplicador.";
@@ -614,29 +632,22 @@
 
   function draw() {
     if (!ctx) return;
-    if (!gridReady || grid.length !== ROWS) { // ✅ FIX: evita crash en boot/resize temprano
-      clearScreen();
-      return;
-    }
+    if (!gridReady || grid.length !== ROWS) { clearScreen(); return; }
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
 
-    // bg
     ctx.fillStyle = "#050507";
     ctx.fillRect(0, 0, stageW, stageH);
 
-    // grid bg
     ctx.fillStyle = "rgba(255,255,255,0.03)";
     ctx.fillRect(offX, offY, gridW, gridH);
 
-    // zone highlight
     const zTop = offY + zoneY0 * cellPx;
     ctx.fillStyle = "rgba(105,168,255,0.08)";
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
-    // cells
     for (let r = 0; r < ROWS; r++) {
       const y = offY + r * cellPx + scrollPx;
       for (let c = 0; c < COLS; c++) {
@@ -663,7 +674,6 @@
       }
     }
 
-    // grid lines
     ctx.globalAlpha = 0.25;
     ctx.strokeStyle = "rgba(255,255,255,0.07)";
     ctx.lineWidth = 1;
@@ -683,7 +693,6 @@
     }
     ctx.globalAlpha = 1;
 
-    // player
     const px = offX + colF * cellPx;
     const py = offY + (zoneY0 + rowF) * cellPx;
 
@@ -696,7 +705,6 @@
       ctx.strokeRect(px + 3, py + 3, cellPx - 6, cellPx - 6);
     }
 
-    // shield count
     if (shields > 0) {
       ctx.fillStyle = "rgba(105,168,255,0.95)";
       ctx.font = `900 ${Math.max(11, Math.floor(cellPx * 0.38))}px system-ui`;
@@ -729,7 +737,6 @@
     offX = Math.floor((stageW - gridW) / 2);
     offY = Math.floor((stageH - gridH) / 2);
 
-    // ✅ NO dibujar si grid no listo (evita crash)
     draw();
   }
 
@@ -770,6 +777,8 @@
       sx = e.clientX;
       sy = e.clientY;
       st = performance.now();
+      // NO capturamos si hay overlays (evita “me quedé pillado tocando”)
+      if (!overlayStart?.hidden || !overlayOptions?.hidden || !overlayUpgrades?.hidden || !overlayPaused?.hidden || !overlayGameOver?.hidden) return;
       canvas.setPointerCapture?.(e.pointerId);
     });
 
@@ -792,7 +801,7 @@
     canvas.addEventListener("pointercancel", () => { active = false; }, { passive: true });
   }
 
-  // ───────────────────────── UI / buttons ─────────────────────────
+  // ───────────────────────── UI ─────────────────────────
   function togglePause() {
     if (!running || gameOver) return;
     paused = !paused;
@@ -945,13 +954,17 @@
   }
 
   function frame(t) {
-    const dt = Math.min(40, t - lastT);
-    lastT = t;
+    try {
+      const dt = Math.min(40, t - lastT);
+      lastT = t;
 
-    if (running && !paused && !gameOver && !inLevelUp) update(dt);
-    else update(dt * 0.25);
+      if (running && !paused && !gameOver && !inLevelUp) update(dt);
+      else update(dt * 0.25);
 
-    draw();
+      draw();
+    } catch (e) {
+      showFatal(e);
+    }
     requestAnimationFrame(frame);
   }
 
@@ -985,13 +998,14 @@
   async function applySWUpdateNow() {
     if (swReg?.waiting) {
       try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {}
+    } else {
+      try { await swReg?.update?.(); } catch {}
     }
 
-    // fallback anti-loop
     const k = "gridrunner_sw_reload_once";
     if (sessionStorage.getItem(k) !== "1") {
       sessionStorage.setItem(k, "1");
-      setTimeout(() => location.reload(), 700);
+      setTimeout(() => location.reload(), 650);
     } else {
       location.reload();
     }
@@ -1041,13 +1055,13 @@
 
     if ("serviceWorker" in navigator) {
       try {
-        // query para forzar fetch correcto en GH Pages si cachea agresivo
         const swUrl = new URL(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`, location.href);
         swReg = await navigator.serviceWorker.register(swUrl);
 
-        if (swReg.waiting) {
-          markUpdateAvailable("Actualizar");
-        }
+        // fuerza check de update ahora (no esperar horas)
+        try { await swReg.update(); } catch {}
+
+        if (swReg.waiting) markUpdateAvailable("Actualizar");
 
         swReg.addEventListener("updatefound", () => {
           const nw = swReg.installing;
@@ -1080,7 +1094,6 @@
   function initAuthUI() {
     if (!profileSelect) return;
 
-    // Si no hay Auth (o falla), dejamos modo simple.
     if (!Auth) {
       if (newProfileWrap) newProfileWrap.hidden = false;
       if (btnStart) btnStart.disabled = false;
@@ -1140,14 +1153,6 @@
   }
 
   // ───────────────────────── Boot ─────────────────────────
-  function showFatal(err) {
-    console.error(err);
-    overlayHide(overlayLoading);
-    if (errMsg) errMsg.textContent = (err && err.message) ? err.message : "Error desconocido";
-    overlayShow(overlayError);
-    if (!overlayError) alert((err && err.message) ? err.message : "Error desconocido");
-  }
-
   function cacheDOM() {
     stage = $("stage");
     canvas = $("gameCanvas");
@@ -1231,31 +1236,29 @@
     try {
       cacheDOM();
 
+      window.__GRIDRUNNER_BOOTED = true;
+
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
 
       if (loadingSub) loadingSub.textContent = "Iniciando…";
 
-      // 1) Auth
       syncFromAuth();
 
-      // 2) Estado base (IMPORTANTE: grid antes de draw/resize)
+      // estado base antes de dibujar
       recomputeZone();
       makeGrid();
       rerollCombo();
 
-      // 3) UI base
       initAuthUI();
       applySettingsToUI();
 
-      // 4) Layout
       resize();
       window.addEventListener("resize", resize, { passive: true });
 
-      // 5) Inputs
       bindInputs();
 
-      // 6) Botones UI
+      // UI listeners
       btnPause?.addEventListener("click", togglePause);
       btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
       btnOptions?.addEventListener("click", showOptions);
@@ -1291,7 +1294,6 @@
       btnReroll?.addEventListener("click", rerollUpgrades);
       btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast("Saltar", 650); });
 
-      // Start
       btnStart?.addEventListener("click", () => {
         if (Auth && profileSelect) {
           if (profileSelect.value === "__new__") {
@@ -1315,40 +1317,30 @@
         startRun();
       });
 
-      // pillPlayer: volver al menú
       pillPlayer?.addEventListener("click", () => resetRun(true));
       pillPlayer?.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") resetRun(true);
       });
 
-      // 7) PWA + Sprites (no bloquea)
       if (loadingSub) loadingSub.textContent = "PWA…";
       setupPWA();
+
       preloadSpritesWithTimeout(900);
 
-      // 8) Estado inicial
+      // estado inicial
       resetRun(true);
 
-      // Loop
+      // loop
       lastT = performance.now();
       requestAnimationFrame(frame);
 
-      // Watchdog + transición
-      const watchdog = setTimeout(() => {
-        if (overlayLoading && !overlayLoading.hidden) {
-          overlayHide(overlayLoading);
-          overlayShow(overlayStart);
-        }
-      }, 6500);
-
-      await new Promise(res => setTimeout(res, 650));
-      clearTimeout(watchdog);
-
-      overlayHide(overlayLoading);
-      overlayShow(overlayStart);
-
-      if (brandSub) brandSub.textContent = "Listo";
-      updatePills();
+      // quitar loading
+      setTimeout(() => {
+        overlayHide(overlayLoading);
+        overlayShow(overlayStart);
+        if (brandSub) brandSub.textContent = "Listo";
+        updatePills();
+      }, 650);
 
       document.addEventListener("visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {
@@ -1362,7 +1354,6 @@
     }
   }
 
-  // ───────────────────────── DOM ready ─────────────────────────
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot, { once: true });
   } else {

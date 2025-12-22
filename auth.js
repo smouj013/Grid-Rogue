@@ -1,4 +1,4 @@
-/* auth.js — Grid Runner (PWA) v0.1.1 (FIXED)
+/* auth.js — Grid Runner (PWA) v0.1.2
    - Perfiles locales (sin servidor): crear / seleccionar
    - Migra desde gridrunner_name_v1 + gridrunner_best_v1 si existe
    - Estado robusto (si se corrompe, se repara)
@@ -29,7 +29,6 @@
     if (!st || typeof st !== "object") return { activeId: null, profiles: [] };
     if (!Array.isArray(st.profiles)) return { activeId: null, profiles: [] };
 
-    // sanea perfiles
     st.profiles = st.profiles
       .filter(p => p && typeof p === "object" && typeof p.id === "string")
       .map(p => ({
@@ -40,7 +39,6 @@
         best: Math.max(0, (p.best | 0)),
       }));
 
-    // si activeId apunta a nada, lo arreglamos
     if (st.activeId && !st.profiles.some(p => p.id === st.activeId)) {
       st.activeId = st.profiles[0]?.id || null;
     }

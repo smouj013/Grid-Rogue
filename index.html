@@ -12,12 +12,11 @@
 
   <title>Grid Runner</title>
 
-  <!-- Versión global -->
   <script>
-    window.APP_VERSION = "0.1.1";
+    window.APP_VERSION = "0.1.2";
   </script>
 
-  <!-- Material Symbols (Google Fonts) -->
+  <!-- Material Symbols -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -25,14 +24,13 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.1.1" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.1.2" />
 
-  <!-- ICONS -->
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.1.1" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.2" />
 </head>
 
 <body>
@@ -56,40 +54,40 @@
       <div class="pills" aria-label="Estado">
         <span class="pill" id="pillScore" title="Score">
           <span class="ms" aria-hidden="true">flag</span>
-          <span class="pv" data-pv="score">0</span>
+          <span class="pv">0</span>
         </span>
 
         <span class="pill" id="pillBest" title="Mejor">
           <span class="ms" aria-hidden="true">emoji_events</span>
-          <span class="pv" data-pv="best">0</span>
+          <span class="pv">0</span>
         </span>
 
         <span class="pill" id="pillStreak" title="Racha">
           <span class="ms" aria-hidden="true">local_fire_department</span>
-          <span class="pv" data-pv="streak">0</span>
+          <span class="pv">0</span>
         </span>
 
         <span class="pill" id="pillMult" title="Multiplicador">
           <span class="ms" aria-hidden="true">close</span>
-          <span class="pv" data-pv="mult">1.0</span>
+          <span class="pv">1.00</span>
         </span>
 
         <span class="pill" id="pillLevel" title="Nivel">
           <span class="ms" aria-hidden="true">stars</span>
-          <span class="pv" data-pv="level">Lv 1</span>
+          <span class="pv">Lv 1</span>
         </span>
 
         <span class="pill" id="pillSpeed" title="Velocidad">
           <span class="ms" aria-hidden="true">speed</span>
-          <span class="pv" data-pv="speed">0.0</span>
+          <span class="pv">0.0</span>
         </span>
 
         <span class="pill pillBtn subtle" id="pillPlayer" title="Abrir menú" role="button" tabindex="0">
           <span class="ms" aria-hidden="true">person</span>
-          <span class="pv" data-pv="player">Jugador</span>
+          <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle" id="pillVersion" title="Versión">v0.1.1</span>
+        <span class="pill subtle" id="pillVersion" title="Versión">v0.1.2</span>
 
         <span class="pill subtle" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -173,7 +171,16 @@
           <div class="loadingBar">
             <div class="loadingBarFill"></div>
           </div>
-          <div class="muted tiny">Si tarda, se desbloquea solo (watchdog).</div>
+
+          <div class="tiny muted" id="loadingHint">
+            Si tarda, se desbloquea solo (failsafe).
+          </div>
+
+          <!-- ✅ Failsafe sin app.js: aparecen si se atasca -->
+          <div class="panelActions" style="justify-content:flex-start; margin-top:10px;">
+            <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
+            <button class="btn danger" id="btnEmergencyRepair" type="button" hidden>Reparar PWA</button>
+          </div>
         </div>
       </section>
 
@@ -314,8 +321,53 @@
     </main>
   </div>
 
-  <!-- ✅ CLAVE: defer + orden (auth primero, app después) -->
-  <script src="./auth.js?v=0.1.1" defer></script>
-  <script src="./app.js?v=0.1.1" defer></script>
+  <!-- ✅ Failsafe inline: SI app.js no arranca, NO te quedas bloqueado -->
+  <script>
+    (function(){
+      const $ = (id)=>document.getElementById(id);
+      const overlayLoading = $("overlayLoading");
+      const overlayStart = $("overlayStart");
+      const loadingSub = $("loadingSub");
+      const btnReload = $("btnEmergencyReload");
+      const btnRepair = $("btnEmergencyRepair");
+
+      function showFailsafe(){
+        if (loadingSub) loadingSub.textContent = "Se atascó el arranque. Puedes recargar o reparar la PWA.";
+        if (btnReload) btnReload.hidden = false;
+        if (btnRepair) btnRepair.hidden = false;
+      }
+
+      if (btnReload) btnReload.addEventListener("click", ()=>location.reload());
+      if (btnRepair) btnRepair.addEventListener("click", async ()=>{
+        try{
+          if ("serviceWorker" in navigator){
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r=>r.unregister()));
+          }
+          if (window.caches && caches.keys){
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k=>caches.delete(k)));
+          }
+        }catch(e){}
+        location.reload();
+      });
+
+      // si en 4.5s no ha marcado “booted”, mostramos salida
+      setTimeout(()=>{
+        if (!window.__GRIDRUNNER_BOOTED){
+          showFailsafe();
+          // opcional: desbloquea UI visual aunque falle
+          try{
+            if (overlayLoading) overlayLoading.hidden = false;
+            if (overlayStart) overlayStart.hidden = false;
+          }catch(e){}
+        }
+      }, 4500);
+    })();
+  </script>
+
+  <!-- ✅ CLAVE: defer + orden -->
+  <script src="./auth.js?v=0.1.2" defer></script>
+  <script src="./app.js?v=0.1.2" defer></script>
 </body>
 </html>
