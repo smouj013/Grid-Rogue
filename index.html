@@ -26,15 +26,16 @@
     </div>
   </noscript>
 
-  <header class="topbar">
+  <header class="topbar" id="topbar">
     <div class="brand">
       <span class="dot"></span>
       <div class="brandText">
         <div class="title">Grid Runner</div>
         <div class="subline">
           <span class="pill" id="pillOffline" hidden>Offline</span>
-          <span class="pill subtle" id="pillVersion">v0.0.3</span>
+          <span class="pill subtle" id="pillVersion">v0.0.4</span>
           <span class="pill subtle" id="pillSpeed">Vel 1.0×</span>
+          <span class="pill subtle" id="pillPlayer">👤 —</span>
         </div>
       </div>
     </div>
@@ -71,6 +72,9 @@
       <button class="iconBtn ghost" id="btnLeaderboard" aria-label="Ranking mundial">
         <span class="ico">🏆</span><span class="lbl">Ranking</span>
       </button>
+      <button class="iconBtn ghost" id="btnOptions" aria-label="Opciones">
+        <span class="ico">⚙️</span><span class="lbl">Opciones</span>
+      </button>
       <button class="iconBtn ghost" id="btnPause" aria-label="Pausar o reanudar">
         <span class="ico">⏸</span><span class="lbl">Pausa</span>
       </button>
@@ -84,98 +88,186 @@
   </header>
 
   <main class="gameWrap">
-    <canvas id="game" aria-label="Juego Grid Runner" role="img"></canvas>
+    <div class="stage">
+      <canvas id="game" aria-label="Juego Grid Runner" role="img"></canvas>
 
-    <div class="touchZones" aria-hidden="true">
-      <div class="zone left" id="zoneLeft"></div>
-      <div class="zone right" id="zoneRight"></div>
-    </div>
+      <!-- Tap-zones (rápido para móvil) -->
+      <div class="touchZones" aria-hidden="true">
+        <div class="zone left" id="zoneLeft"></div>
+        <div class="zone right" id="zoneRight"></div>
+      </div>
 
-    <div class="toast" id="toast" hidden></div>
+      <!-- D-Pad (4 direcciones) -->
+      <div class="dpad" id="dpad" aria-label="Controles">
+        <button class="dpadBtn up" id="btnUp" aria-label="Arriba">▲</button>
+        <button class="dpadBtn left" id="btnLeft" aria-label="Izquierda">◀</button>
+        <button class="dpadBtn right" id="btnRight" aria-label="Derecha">▶</button>
+        <button class="dpadBtn down" id="btnDown" aria-label="Abajo">▼</button>
+      </div>
 
-    <!-- Leyenda SIEMPRE visible -->
-    <div class="legendBar" id="legendBar" aria-label="Leyenda de casillas">
-      <div class="legendItem"><span class="chip cCoin"></span><span class="txt">+10</span></div>
-      <div class="legendItem"><span class="chip cGem"></span><span class="txt">+30</span></div>
-      <div class="legendItem"><span class="chip cBonus"></span><span class="txt">+60</span></div>
-      <div class="legendItem"><span class="chip cTrap"></span><span class="txt">-25</span></div>
-      <div class="legendItem"><span class="chip cBlock"></span><span class="txt">KO</span></div>
-      <div class="legendHint">Tap izq/der o swipe</div>
-    </div>
+      <div class="toast" id="toast" hidden></div>
 
-    <!-- START -->
-    <div class="overlay" id="overlayStart">
-      <div class="panel">
-        <h1>Grid Runner</h1>
-        <p>
-          Avanza hacia arriba. Evita los bloques. Pisa celdas para ganar puntos.
-          Encadena buenas para subir multiplicador y activar combos.
-        </p>
+      <!-- Leyenda SIEMPRE visible -->
+      <div class="legendBar" id="legendBar" aria-label="Leyenda de casillas">
+        <div class="legendItem"><span class="chip cCoin"></span><span class="txt">+10</span></div>
+        <div class="legendItem"><span class="chip cGem"></span><span class="txt">+30</span></div>
+        <div class="legendItem"><span class="chip cBonus"></span><span class="txt">+60</span></div>
+        <div class="legendItem"><span class="chip cTrap"></span><span class="txt">-25</span></div>
+        <div class="legendItem"><span class="chip cBlock"></span><span class="txt">KO</span></div>
+        <div class="legendHint">Swipe / D-Pad · Tap izq/der</div>
+      </div>
 
-        <ul class="legend">
-          <li><span class="chip cCoin"></span> Moneda (+10 × mult)</li>
-          <li><span class="chip cGem"></span> Gema (+30 × mult)</li>
-          <li><span class="chip cBonus"></span> Bonus (+60 × mult)</li>
-          <li><span class="chip cTrap"></span> Trampa (-25 y resetea racha)</li>
-          <li><span class="chip cBlock"></span> Bloque (Game Over)</li>
-        </ul>
+      <!-- START / BIENVENIDA -->
+      <div class="overlay" id="overlayStart">
+        <div class="panel">
+          <h1>Grid Runner</h1>
+          <p>
+            Te mueves en <b>4 direcciones</b> dentro de la banda central (3 filas marcadas).
+            Las casillas “pasadas” se atenúan (ya no te afectan).
+          </p>
 
-        <div class="row">
-          <button class="btn primary big" id="btnStart">Jugar</button>
-        </div>
+          <div class="formRow">
+            <label class="fieldLabel" for="startName">Nombre</label>
+            <input id="startName" class="fieldInput" maxlength="16" placeholder="Tu nombre (se guarda)" />
+          </div>
 
-        <div class="row hint">
-          <span>PC: ← → / A D · Pausa: Espacio</span>
+          <div class="miniStats">
+            <div class="miniCard">
+              <div class="miniLabel">Mejor local</div>
+              <div class="miniValue" id="startBest">0</div>
+            </div>
+            <div class="miniCard">
+              <div class="miniLabel">Últimos</div>
+              <div class="miniValue" id="startRuns">—</div>
+            </div>
+          </div>
+
+          <ul class="legend">
+            <li><span class="chip cCoin"></span> Moneda (+10 × mult)</li>
+            <li><span class="chip cGem"></span> Gema (+30 × mult)</li>
+            <li><span class="chip cBonus"></span> Bonus (+60 × mult)</li>
+            <li><span class="chip cTrap"></span> Trampa (-25 y resetea racha)</li>
+            <li><span class="chip cBlock"></span> Bloque (Game Over)</li>
+          </ul>
+
+          <div class="row">
+            <button class="btn primary big" id="btnStart" disabled>Jugar</button>
+          </div>
+
+          <div class="row hint">
+            <span>PC: ← → ↑ ↓ / WASD · Pausa: Espacio</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- GAME OVER -->
-    <div class="overlay" id="overlayGameOver" hidden>
-      <div class="panel">
-        <h1>Game Over</h1>
-        <p id="finalLine">Has hecho 0 puntos.</p>
-        <div class="row">
-          <button class="btn primary big" id="btnPlayAgain">Reintentar</button>
+      <!-- GAME OVER -->
+      <div class="overlay" id="overlayGameOver" hidden>
+        <div class="panel">
+          <h1>Game Over</h1>
+          <p id="finalLine">Has hecho 0 puntos.</p>
+          <div class="row">
+            <button class="btn primary big" id="btnPlayAgain">Reintentar</button>
+          </div>
+          <div class="row">
+            <button class="btn" id="btnBackToStart">Volver</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- PAUSE -->
-    <div class="overlay" id="overlayPaused" hidden>
-      <div class="panel">
-        <h1>Pausa</h1>
-        <p>Toque o pulsa ⏸ / Espacio para volver.</p>
-        <div class="row">
-          <button class="btn primary big" id="btnResume">Continuar</button>
+      <!-- PAUSE -->
+      <div class="overlay" id="overlayPaused" hidden>
+        <div class="panel">
+          <h1>Pausa</h1>
+          <p>Toque o pulsa ⏸ / Espacio para volver.</p>
+          <div class="row">
+            <button class="btn primary big" id="btnResume">Continuar</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- LEADERBOARD -->
-    <div class="overlay" id="overlayLeaderboard" hidden>
-      <div class="panel leaderboard">
-        <div class="leaderTop">
-          <h1>Ranking mundial</h1>
-          <button class="iconBtn ghost" id="btnCloseLeaderboard" aria-label="Cerrar ranking">
-            <span class="ico">✕</span><span class="lbl">Cerrar</span>
-          </button>
+      <!-- OPTIONS -->
+      <div class="overlay" id="overlayOptions" hidden>
+        <div class="panel options">
+          <div class="leaderTop">
+            <h1>Opciones</h1>
+            <button class="iconBtn ghost" id="btnCloseOptions" aria-label="Cerrar opciones">
+              <span class="ico">✕</span><span class="lbl">Cerrar</span>
+            </button>
+          </div>
+
+          <div class="optGrid">
+            <div class="optRow">
+              <div class="optLeft">
+                <div class="optTitle">Vibración</div>
+                <div class="optDesc">Feedback al tocar casillas.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="optVibration" />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="optRow">
+              <div class="optLeft">
+                <div class="optTitle">D-Pad</div>
+                <div class="optDesc">Muestra botones de dirección.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="optDpad" />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="optRow">
+              <div class="optLeft">
+                <div class="optTitle">Intensidad efectos</div>
+                <div class="optDesc">Partículas, números y shake.</div>
+              </div>
+              <input type="range" id="optFx" min="0.4" max="1.25" step="0.05" />
+              <div class="optValue" id="optFxValue">1.00</div>
+            </div>
+
+            <div class="optRow">
+              <div class="optLeft">
+                <div class="optTitle">Borrar historial local</div>
+                <div class="optDesc">Elimina runs guardados en el móvil.</div>
+              </div>
+              <button class="btn" id="btnClearLocal">Borrar</button>
+            </div>
+          </div>
+
+          <p class="muted small">
+            Nombre y mejores se guardan automáticamente en tu dispositivo.
+          </p>
         </div>
-
-        <p class="muted" id="lbStatus">Cargando…</p>
-
-        <div class="lbRow">
-          <label class="lbLabel" for="playerName">Nombre</label>
-          <input id="playerName" class="lbInput" maxlength="16" placeholder="Tu nombre (para enviar score)" />
-          <button class="btn primary" id="btnSubmitScore">Enviar score</button>
-        </div>
-
-        <div class="lbList" id="lbList"></div>
-
-        <p class="muted small" id="lbHint">
-          El ranking solo funciona con internet y un endpoint configurado.
-        </p>
       </div>
+
+      <!-- LEADERBOARD -->
+      <div class="overlay" id="overlayLeaderboard" hidden>
+        <div class="panel leaderboard">
+          <div class="leaderTop">
+            <h1>Ranking mundial</h1>
+            <button class="iconBtn ghost" id="btnCloseLeaderboard" aria-label="Cerrar ranking">
+              <span class="ico">✕</span><span class="lbl">Cerrar</span>
+            </button>
+          </div>
+
+          <p class="muted" id="lbStatus">Cargando…</p>
+
+          <div class="lbRow">
+            <label class="lbLabel" for="playerName">Nombre</label>
+            <input id="playerName" class="lbInput" maxlength="16" placeholder="Tu nombre (para enviar score)" />
+            <button class="btn primary" id="btnSubmitScore">Enviar score</button>
+          </div>
+
+          <div class="lbList" id="lbList"></div>
+
+          <p class="muted small" id="lbHint">
+            El ranking solo funciona con internet y un endpoint configurado.
+          </p>
+        </div>
+      </div>
+
     </div>
   </main>
 

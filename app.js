@@ -1,15 +1,15 @@
-/* Grid Runner — PWA (v0.0.3)
-   ✅ Scroll continuo (más FPS) + player smooth movement
-   ✅ Velocidad progresiva: lenta al inicio, sube suave (tiempo + racha)
-   ✅ Bloques KO muy visibles (pulso + X + borde rojo)
-   ✅ Score más “legible”: delta, popups, barra combo
-   ✅ Menos densidad de celdas
-   ✅ Ranking online: UI lista + endpoint configurable
+/* Grid Runner — PWA (v0.0.4)
+   ✅ Player centrado en el grid
+   ✅ Banda de 3 filas (marcada) donde puede moverse (4 direcciones)
+   ✅ Celdas “pasadas” atenuadas (visual: ya no afectan)
+   ✅ Start con nombre + guardado local de runs
+   ✅ Opciones (vibración, d-pad, intensidad FX)
+   ✅ Números más juicy por color
 */
 (() => {
   "use strict";
 
-  const APP_VERSION = "0.0.3";
+  const APP_VERSION = "0.0.4";
 
   // ───────────────────────── UI refs ─────────────────────────
   const $ = (id) => document.getElementById(id);
@@ -25,11 +25,21 @@
   const hudComboFill = $("hudComboFill");
   const hudComboText = $("hudComboText");
   const pillSpeed = $("pillSpeed");
+  const pillPlayer = $("pillPlayer");
 
   const btnPause = $("btnPause");
   const btnRestart = $("btnRestart");
   const btnInstall = $("btnInstall");
   const pillOffline = $("pillOffline");
+
+  const btnOptions = $("btnOptions");
+  const overlayOptions = $("overlayOptions");
+  const btnCloseOptions = $("btnCloseOptions");
+  const optVibration = $("optVibration");
+  const optDpad = $("optDpad");
+  const optFx = $("optFx");
+  const optFxValue = $("optFxValue");
+  const btnClearLocal = $("btnClearLocal");
 
   const btnLeaderboard = $("btnLeaderboard");
   const overlayLeaderboard = $("overlayLeaderboard");
@@ -43,9 +53,14 @@
   const overlayPaused = $("overlayPaused");
   const overlayGameOver = $("overlayGameOver");
 
+  const startName = $("startName");
+  const startBest = $("startBest");
+  const startRuns = $("startRuns");
+
   const btnStart = $("btnStart");
   const btnResume = $("btnResume");
   const btnPlayAgain = $("btnPlayAgain");
+  const btnBackToStart = $("btnBackToStart");
   const finalLine = $("finalLine");
 
   const toast = $("toast");
@@ -53,20 +68,33 @@
   const zoneLeft = $("zoneLeft");
   const zoneRight = $("zoneRight");
 
+  const dpad = $("dpad");
+  const btnUp = $("btnUp");
+  const btnDown = $("btnDown");
+  const btnLeft = $("btnLeft");
+  const btnRight = $("btnRight");
+
   const ROOT = document.documentElement;
 
+  // ───────────────────────── Local storage keys ─────────────────────────
+  const BEST_KEY = "grid_runner_best_v4";
+  const RUNS_KEY = "grid_runner_runs_v1";
+  const PLAYER_NAME_KEY = "grid_runner_player_name_v2";
+  const SETTINGS_KEY = "grid_runner_settings_v1";
+
   // ───────────────────────── Leaderboard config (ONLINE) ─────────────────────────
-  // ✅ Para que funcione “mundial” necesitas un backend.
-  // Pon aquí tu endpoint cuando lo tengas (Cloudflare Worker / Supabase / etc.)
-  // Ejemplo: const LEADERBOARD_ENDPOINT = "https://TU-WORKER.tudominio.workers.dev";
-  const LEADERBOARD_ENDPOINT = ""; // <- rellena cuando lo tengas
+  const LEADERBOARD_ENDPOINT = ""; // <- pon tu Cloudflare Worker URL aquí
   const LEADERBOARD_GAME_ID = "grid-runner";
-  const PLAYER_NAME_KEY = "grid_runner_player_name_v1";
 
   // ───────────────────────── Game config ─────────────────────────
   const COLS = 8;
   const ROWS = 24;
-  const PLAYER_ROW = ROWS - 3;
+
+  // Banda central de movimiento: 3 filas
+  const BAND_HEIGHT = 3;
+  const BAND_CENTER = Math.floor(ROWS / 2);
+  const BAND_START = BAND_CENTER - 1;
+  const BAND_END = BAND_CENTER + 1;
 
   const CELL = Object.freeze({
     EMPTY: 0,
@@ -86,18 +114,53 @@
     [CELL.BONUS]: "#ffcc33",
   };
 
-  const BEST_KEY = "grid_runner_best_v3";
-
   // Velocidad (rows/sec)
-  const SPEED_START = 0.85;  // MUY lento al inicio
-  const SPEED_MAX   = 4.50;  // máximo (sin volverse injugable)
-  const SPEED_RAMP_SECONDS = 85; // tarda en llegar cerca del max
+  const SPEED_START = 0.85;
+  const SPEED_MAX   = 4.50;
+  const SPEED_RAMP_SECONDS = 85;
 
-  // Movimiento suave del player (col/sec)
-  const PLAYER_SMOOTH_COLS_PER_SEC = 18;
+  // Smooth movement
+  const PLAYER_SMOOTH_CELLS_PER_SEC = 18;
 
   // Combo reward cada N
   const COMBO_EVERY = 8;
+
+  // ───────────────────────── Settings ─────────────────────────
+  const defaultSettings = Object.freeze({
+    vibration: true,
+    showDpad: true,
+    fx: 1.0, // 0.4..1.25
+  });
+
+  /** @type {{vibration:boolean, showDpad:boolean, fx:number}} */
+  let settings = loadSettings();
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return { ...defaultSettings };
+      const obj = JSON.parse(raw);
+      return {
+        vibration: !!obj.vibration,
+        showDpad: obj.showDpad !== false,
+        fx: clamp(Number(obj.fx) || 1.0, 0.4, 1.25),
+      };
+    } catch {
+      return { ...defaultSettings };
+    }
+  }
+
+  function saveSettings() {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }
+
+  function applySettingsToUI() {
+    optVibration.checked = settings.vibration;
+    optDpad.checked = settings.showDpad;
+    optFx.value = String(settings.fx);
+    optFxValue.textContent = settings.fx.toFixed(2);
+    dpad.hidden = !settings.showDpad;
+  }
 
   // ───────────────────────── State ─────────────────────────
   let dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
@@ -114,8 +177,7 @@
   let streak = 0;
   let mult = 1;
 
-  let runTime = 0;       // segundos sobreviviendo
-  let rowsSurvived = 0;  // filas avanzadas
+  let runTime = 0;
 
   // Scroll continuo: 0..cellPx
   let scrollPx = 0;
@@ -123,9 +185,12 @@
   // Speed boost (por bonus/trampa) que decae a 0
   let speedBoost = 0; // -0.25..+0.35
 
-  // Player movement
+  // Player movement (col/row dentro de la banda)
   let targetCol = Math.floor(COLS / 2);
+  let targetRow = BAND_CENTER;
+
   let playerColFloat = targetCol;
+  let playerRowFloat = targetRow;
 
   // Grid
   /** @type {Uint8Array[]} */
@@ -147,19 +212,22 @@
 
   /** @type {{x:number,y:number,vx:number,vy:number,life:number,max:number,size:number,color:string,alpha:number}[]} */
   const particles = [];
-  /** @type {{x:number,y:number,text:string,life:number,max:number,vy:number,alpha:number,color:string}[]} */
+  /** @type {{x:number,y:number,text:string,life:number,max:number,vy:number,alpha:number,color:string,scale0:number,scale1:number}[]} */
   const floatTexts = [];
 
   // HUD prev
   let prevScore = -1, prevStreak = -1, prevMult = -1, prevBest = -1;
-  let lastDelta = 0;
   let deltaTimer = 0;
 
-  // RNG
+  // Player name
+  let playerName = (localStorage.getItem(PLAYER_NAME_KEY) || "").trim().slice(0, 16);
+
+  // ───────────────────────── Utils ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const randi = (min, max) => (Math.random() * (max - min + 1) + min) | 0;
 
   function vibrate(ms = 12) {
+    if (!settings.vibration) return;
     try { if (navigator.vibrate) navigator.vibrate(ms); } catch {}
   }
 
@@ -181,7 +249,6 @@
   }
 
   function setScoreDelta(v) {
-    lastDelta = v;
     deltaTimer = 900;
     hudScoreDelta.textContent = (v >= 0 ? `+${v}` : `${v}`);
     hudScoreDelta.classList.toggle("delta", true);
@@ -198,6 +265,7 @@
     if (force || streak !== prevStreak) { hudStreak.textContent = String(streak); bump(hudStreak); prevStreak = streak; updateComboUI(); }
     if (force || mult !== prevMult) { hudMult.textContent = String(mult); bump(hudMult); prevMult = mult; }
     if (force || best !== prevBest) { hudBest.textContent = String(best); bump(hudBest); prevBest = best; }
+    pillPlayer.textContent = `👤 ${playerName || "—"}`;
   }
 
   function overlayShow(el) {
@@ -214,6 +282,40 @@
     }, ms);
   }
 
+  // ───────────────────────── Runs local (historial) ─────────────────────────
+  function loadRuns() {
+    try {
+      const raw = localStorage.getItem(RUNS_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+      return arr.slice(0, 50);
+    } catch {
+      return [];
+    }
+  }
+
+  function saveRuns(runs) {
+    localStorage.setItem(RUNS_KEY, JSON.stringify(runs.slice(0, 50)));
+  }
+
+  function addRun(scoreFinal) {
+    const runs = loadRuns();
+    runs.unshift({
+      s: scoreFinal | 0,
+      t: Date.now(),
+      n: (playerName || "").slice(0, 16),
+    });
+    saveRuns(runs);
+  }
+
+  function refreshStartStats() {
+    startBest.textContent = String(best);
+    const runs = loadRuns();
+    const last = runs.slice(0, 3).map(r => String(r.s));
+    startRuns.textContent = last.length ? last.join(" · ") : "—";
+  }
+
   // ───────────────────────── Board generation ─────────────────────────
   function makeEmptyRow() {
     const row = new Uint8Array(COLS);
@@ -222,12 +324,9 @@
   }
 
   function chooseType(difficulty01) {
-    // Menos densidad global (más limpio visual)
-    // Primero decidimos si “hay algo” en esa celda.
-    const fill = clamp(0.16 + difficulty01 * 0.12, 0.16, 0.28); // 16%..28%
+    const fill = clamp(0.16 + difficulty01 * 0.12, 0.16, 0.28);
     if (Math.random() > fill) return CELL.EMPTY;
 
-    // Pesos (bloques no demasiado)
     const wBlock = 0.34 + difficulty01 * 0.10;
     const wCoin  = 0.32 - difficulty01 * 0.02;
     const wGem   = 0.16;
@@ -253,9 +352,8 @@
       ? clamp(safeCol + (Math.random() < 0.5 ? -1 : 1), 0, COLS - 1)
       : safeCol;
 
-    // límites por fila (reduce “demasiados cuadrados”)
-    const maxBlocks = 2 + (difficulty01 > 0.75 ? 1 : 0); // 2..3
-    const maxItems  = 2 + (difficulty01 > 0.55 ? 1 : 0); // 2..3
+    const maxBlocks = 2 + (difficulty01 > 0.75 ? 1 : 0);
+    const maxItems  = 2 + (difficulty01 > 0.55 ? 1 : 0);
 
     let blocks = 0;
     let items = 0;
@@ -276,7 +374,6 @@
       }
     }
 
-    // Garantiza “algo” a veces (para que no sea aburrido al inicio)
     if (difficulty01 < 0.25 && items === 0 && Math.random() < 0.35) {
       const c = randi(0, COLS - 1);
       if (c !== safeCol && row[c] === CELL.EMPTY) row[c] = CELL.COIN;
@@ -288,8 +385,7 @@
   function initGrid() {
     grid = [];
     for (let r = 0; r < ROWS; r++) {
-      const d = 0.0; // inicio calmado
-      grid.push(generateRow(d));
+      grid.push(generateRow(0.0));
     }
   }
 
@@ -302,70 +398,76 @@
   }
 
   function spawnParticles(col, row, color, amount, power = 1) {
+    const fx = settings.fx;
     const c = cellCenterPx(col, row);
-    for (let i = 0; i < amount; i++) {
+    const n = Math.floor(amount * fx);
+    for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = (0.6 + Math.random() * 1.4) * power;
+      const sp = (0.6 + Math.random() * 1.4) * power * fx;
       particles.push({
         x: c.x,
         y: c.y,
         vx: Math.cos(a) * sp * 2.4,
-        vy: Math.sin(a) * sp * 2.4 - (1.1 * power),
+        vy: Math.sin(a) * sp * 2.4 - (1.1 * power * fx),
         life: 0,
-        max: 360 + Math.random() * 240,
-        size: (1.5 + Math.random() * 2.2) * dpr,
+        max: 330 + Math.random() * 260,
+        size: (1.4 + Math.random() * 2.4) * dpr * fx,
         color,
         alpha: 1,
       });
     }
   }
 
-  function spawnFloatText(col, row, text, color = "rgba(255,255,255,.95)") {
+  function spawnFloatText(col, row, text, color, kind = "normal") {
+    const fx = settings.fx;
     const c = cellCenterPx(col, row);
+    const max = kind === "combo" ? 980 : 860;
     floatTexts.push({
       x: c.x,
-      y: c.y - 6 * dpr,
+      y: c.y - 7 * dpr,
       text,
       life: 0,
-      max: 820,
-      vy: -0.22 * dpr,
+      max,
+      vy: (-0.26 * dpr) * (kind === "combo" ? 1.15 : 1.0),
       alpha: 1,
-      color
+      color,
+      scale0: (kind === "combo" ? 1.35 : 1.18) * fx,
+      scale1: 1.0 * fx,
     });
   }
 
   function kick(type) {
+    const fx = settings.fx;
     if (type === "good") {
-      shake = clamp(shake + 0.15, 0, 1);
-      pulse = clamp(pulse + 0.18, 0, 1);
-      glow = clamp(glow + 0.02, 0.16, 0.28);
+      shake = clamp(shake + 0.12 * fx, 0, 1);
+      pulse = clamp(pulse + 0.16 * fx, 0, 1);
+      glow = clamp(glow + 0.02 * fx, 0.16, 0.30);
       vibrate(10);
     } else if (type === "bonus") {
-      shake = clamp(shake + 0.24, 0, 1);
-      pulse = clamp(pulse + 0.26, 0, 1);
-      glow = clamp(glow + 0.03, 0.16, 0.30);
+      shake = clamp(shake + 0.20 * fx, 0, 1);
+      pulse = clamp(pulse + 0.22 * fx, 0, 1);
+      glow = clamp(glow + 0.03 * fx, 0.16, 0.32);
       vibrate(18);
     } else if (type === "bad") {
-      shake = clamp(shake + 0.20, 0, 1);
-      pulse = clamp(pulse + 0.16, 0, 1);
-      glow = clamp(glow + 0.015, 0.16, 0.26);
+      shake = clamp(shake + 0.18 * fx, 0, 1);
+      pulse = clamp(pulse + 0.14 * fx, 0, 1);
+      glow = clamp(glow + 0.015 * fx, 0.16, 0.28);
       vibrate(22);
     } else if (type === "dead") {
-      shake = 1; pulse = 1; glow = 0.30;
+      shake = 1; pulse = 1; glow = 0.32;
       vibrate(70);
     }
   }
 
   function updateTheme(dtMs) {
-    // color según racha (suave)
     const s = clamp(streak, 0, 50);
-    hueTarget = 215 + s * 1.25; // 215..~277
+    hueTarget = 215 + s * 1.25;
     hue += (hueTarget - hue) * (1 - Math.pow(0.0018, dtMs));
 
     glow += (0.18 - glow) * (1 - Math.pow(0.0022, dtMs));
     pulse += (0 - pulse) * (1 - Math.pow(0.0045, dtMs));
     shake += (0 - shake) * (1 - Math.pow(0.0060, dtMs));
-    speedBoost += (0 - speedBoost) * (1 - Math.pow(0.0028, dtMs)); // decae
+    speedBoost += (0 - speedBoost) * (1 - Math.pow(0.0028, dtMs));
 
     ROOT.style.setProperty("--hue", hue.toFixed(2));
     ROOT.style.setProperty("--glow", glow.toFixed(3));
@@ -395,9 +497,7 @@
 
   // ───────────────────────── Speed / difficulty ─────────────────────────
   function difficulty01() {
-    // ramp por tiempo de supervivencia (más estable que score)
     const t = clamp(runTime / SPEED_RAMP_SECONDS, 0, 1);
-    // racha añade “emoción” pero poco
     const s = clamp(streak / 35, 0, 1);
     return clamp(t * 0.88 + s * 0.12, 0, 1);
   }
@@ -405,13 +505,13 @@
   function currentSpeedRowsPerSec() {
     const d = difficulty01();
     const base = SPEED_START + (SPEED_MAX - SPEED_START) * d;
-    const streakBoost = 1 + clamp(mult - 1, 0, 4) * 0.03; // hasta +12%
+    const streakBoost = 1 + clamp(mult - 1, 0, 4) * 0.03;
     const boost = 1 + clamp(speedBoost, -0.25, 0.35);
     return base * streakBoost * boost;
   }
 
   // ───────────────────────── Game logic ─────────────────────────
-  function resetGame() {
+  function resetGame(showStartOverlay = true) {
     running = false;
     paused = false;
     gameOver = false;
@@ -421,13 +521,14 @@
     mult = 1;
 
     runTime = 0;
-    rowsSurvived = 0;
 
     scrollPx = 0;
     speedBoost = 0;
 
     targetCol = Math.floor(COLS / 2);
+    targetRow = BAND_CENTER;
     playerColFloat = targetCol;
+    playerRowFloat = targetRow;
 
     particles.length = 0;
     floatTexts.length = 0;
@@ -435,22 +536,42 @@
 
     initGrid();
     updateHud(true);
-    updateComboUI();
 
     hudScoreDelta.textContent = "+0";
     deltaTimer = 0;
 
     hideToast();
 
-    overlayShow(overlayStart);
     overlayHide(overlayPaused);
     overlayHide(overlayGameOver);
+
+    if (showStartOverlay) {
+      overlayShow(overlayStart);
+      refreshStartStats();
+      syncStartNameUI();
+    } else {
+      overlayHide(overlayStart);
+    }
 
     draw();
   }
 
   function startGame() {
     if (gameOver) return;
+
+    const nm = (startName.value || "").trim().slice(0, 16);
+    if (!nm || nm.length < 2) {
+      showToast("Pon un nombre (mín. 2).", 1100);
+      return;
+    }
+
+    playerName = nm;
+    localStorage.setItem(PLAYER_NAME_KEY, playerName);
+
+    // sincroniza también en ranking
+    playerNameInput.value = playerName;
+    pillPlayer.textContent = `👤 ${playerName}`;
+
     overlayHide(overlayStart, 180);
     running = true;
     paused = false;
@@ -477,11 +598,14 @@
     paused = false;
     gameOver = true;
 
+    addRun(score);
+
     if (score > best) {
       best = score;
       localStorage.setItem(BEST_KEY, String(best));
     }
     updateHud(true);
+    refreshStartStats();
 
     finalLine.textContent = `Has hecho ${score} puntos. ${reason}`;
     overlayShow(overlayGameOver);
@@ -491,11 +615,12 @@
     kick("dead");
   }
 
-  function applyCellEffect(cell, col) {
+  function applyCellEffect(cell, col, row) {
     let msg = null;
 
     if (cell === CELL.EMPTY) {
-      if (streak > 0 && Math.random() < 0.16) streak = Math.max(0, streak - 1);
+      // “decay” suave para que no suba mult infinito sin pisar cosas
+      if (streak > 0 && Math.random() < 0.12) streak = Math.max(0, streak - 1);
       mult = 1 + Math.min(4, Math.floor(streak / 5));
       return null;
     }
@@ -505,18 +630,15 @@
       return null;
     }
 
-    const fxCol = col;
-    const fxRow = PLAYER_ROW;
-
     if (cell === CELL.TRAP) {
       score = Math.max(0, score - 25);
       setScoreDelta(-25);
-      spawnFloatText(fxCol, fxRow, "-25", "rgba(255,130,160,.95)");
+      spawnFloatText(col, row, "-25", "rgba(255,120,160,.98)", "normal");
       streak = 0;
       mult = 1;
       speedBoost = clamp(speedBoost - 0.10, -0.25, 0.35);
-      msg = "TRAMPA -25 (racha reset)";
-      spawnParticles(fxCol, fxRow, CELL_COLOR[CELL.TRAP], 14, 1.1);
+      msg = "TRAMPA -25";
+      spawnParticles(col, row, CELL_COLOR[CELL.TRAP], 18, 1.1);
       kick("bad");
       return msg;
     }
@@ -529,26 +651,26 @@
       const add = 10 * mult;
       score += add;
       setScoreDelta(add);
-      spawnFloatText(fxCol, fxRow, `+${add}`, "rgba(170,255,220,.95)");
-      msg = `+${add} (Moneda)`;
-      spawnParticles(fxCol, fxRow, CELL_COLOR[CELL.COIN], 10, 0.9);
+      spawnFloatText(col, row, `+${add}`, "rgba(165,255,220,.98)", "normal");
+      msg = `+${add}`;
+      spawnParticles(col, row, CELL_COLOR[CELL.COIN], 14, 0.95);
       kick("good");
     } else if (cell === CELL.GEM) {
       const add = 30 * mult;
       score += add;
       setScoreDelta(add);
-      spawnFloatText(fxCol, fxRow, `+${add}`, "rgba(170,220,255,.95)");
-      msg = `+${add} (Gema)`;
-      spawnParticles(fxCol, fxRow, CELL_COLOR[CELL.GEM], 14, 1.0);
+      spawnFloatText(col, row, `+${add}`, "rgba(165,220,255,.98)", "normal");
+      msg = `+${add}`;
+      spawnParticles(col, row, CELL_COLOR[CELL.GEM], 18, 1.05);
       kick("good");
     } else if (cell === CELL.BONUS) {
       const add = 60 * mult;
       score += add;
       setScoreDelta(add);
-      spawnFloatText(fxCol, fxRow, `+${add}`, "rgba(255,240,170,.95)");
+      spawnFloatText(col, row, `+${add}`, "rgba(255,240,165,.98)", "normal");
       speedBoost = clamp(speedBoost + 0.07, -0.25, 0.35);
       msg = `BONUS +${add}`;
-      spawnParticles(fxCol, fxRow, CELL_COLOR[CELL.BONUS], 18, 1.2);
+      spawnParticles(col, row, CELL_COLOR[CELL.BONUS], 22, 1.25);
       kick("bonus");
     }
 
@@ -557,50 +679,67 @@
       const add = 120 * mult;
       score += add;
       setScoreDelta(add);
-      spawnFloatText(fxCol, fxRow, `COMBO +${add}`, "rgba(255,255,255,.95)");
+      spawnFloatText(col, row, `COMBO +${add}`, "rgba(255,255,255,.98)", "combo");
       speedBoost = clamp(speedBoost + 0.10, -0.25, 0.35);
-      msg = `COMBO x${mult} +${add}`;
-      spawnParticles(fxCol, fxRow, "#ffffff", 22, 1.3);
+      msg = `COMBO +${add}`;
+      spawnParticles(col, row, "#ffffff", 28, 1.35);
       kick("bonus");
     }
 
     return msg;
   }
 
+  function tryTriggerCellAt(col, row, reason = "") {
+    if (!running || paused || gameOver) return;
+
+    const c = clamp(col, 0, COLS - 1);
+    const r = clamp(row, 0, ROWS - 1);
+
+    const cell = grid[r][c];
+    if (cell === CELL.EMPTY) return;
+
+    const msg = applyCellEffect(cell, c, r);
+    if (!gameOver && cell !== CELL.BLOCK) grid[r][c] = CELL.EMPTY;
+    if (msg) showToast(msg, 720);
+    updateHud();
+  }
+
   function stepRowAdvance() {
-    // dificultad actual
     const d = difficulty01();
 
-    // shift grid: entra nueva fila arriba
     grid.pop();
     grid.unshift(generateRow(d));
-
-    rowsSurvived += 1;
 
     // Puntos por avanzar (pequeños y constantes)
     const survivalAdd = 1 * mult;
     score += survivalAdd;
 
-    // Evaluación de celda bajo el player (usa targetCol para lógica)
+    // El scroll te “mete” una nueva celda bajo tus pies: trigger ahí
     const col = clamp(targetCol, 0, COLS - 1);
-    const cell = grid[PLAYER_ROW][col];
+    const row = clamp(targetRow, 0, ROWS - 1);
 
-    const msg = applyCellEffect(cell, col);
-    if (!gameOver && cell !== CELL.BLOCK) grid[PLAYER_ROW][col] = CELL.EMPTY;
-
-    if (msg) showToast(msg, 900);
+    tryTriggerCellAt(col, row, "scroll");
 
     updateHud();
   }
 
-  function movePlayer(dir) {
+  function movePlayer(dx, dy) {
     if (!running || paused || gameOver) return;
-    const next = clamp(targetCol + dir, 0, COLS - 1);
-    if (next !== targetCol) {
-      targetCol = next;
-      shake = clamp(shake + 0.06, 0, 1);
-      vibrate(6);
-    }
+
+    const nextCol = clamp(targetCol + dx, 0, COLS - 1);
+    const nextRow = clamp(targetRow + dy, BAND_START, BAND_END);
+
+    const moved = (nextCol !== targetCol) || (nextRow !== targetRow);
+    if (!moved) return;
+
+    targetCol = nextCol;
+    targetRow = nextRow;
+
+    shake = clamp(shake + 0.06 * settings.fx, 0, 1);
+    vibrate(7);
+
+    // Trigger inmediato al pisar una celda por movimiento (más responsive)
+    tryTriggerCellAt(targetCol, targetRow, "move");
   }
 
   // ───────────────────────── Rendering ─────────────────────────
@@ -656,54 +795,80 @@
     ctx.globalAlpha = 1;
   }
 
-  function drawCell(x, y, type) {
+  function drawCell(x, y, type, rowIndex) {
+    const inBand = (rowIndex >= BAND_START && rowIndex <= BAND_END);
+    const behind = Math.max(0, rowIndex - BAND_END); // filas “pasadas” (abajo)
+    const fade = behind === 0 ? 1 : clamp(1 - behind * 0.12, 0.35, 0.92);
+
     // base
+    ctx.save();
+    ctx.globalAlpha = 1;
     ctx.fillStyle = CELL_COLOR[CELL.EMPTY];
     ctx.fillRect(x, y, cellPx, cellPx);
+
+    // banda marcada (3 filas)
+    if (inBand) {
+      ctx.fillStyle = "rgba(255,255,255,0.035)";
+      ctx.fillRect(x, y, cellPx, cellPx);
+    }
 
     // grid line
     ctx.strokeStyle = "rgba(255,255,255,0.05)";
     ctx.lineWidth = Math.max(1, Math.floor(dpr));
     ctx.strokeRect(x + 0.5, y + 0.5, cellPx - 1, cellPx - 1);
 
-    if (type === CELL.EMPTY) return;
+    // fade de filas pasadas (no afectan)
+    if (behind > 0) {
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillRect(x, y, cellPx, cellPx);
+    }
+
+    if (type === CELL.EMPTY) {
+      ctx.restore();
+      return;
+    }
 
     const inset = Math.floor(cellPx * 0.18);
     const r = Math.floor(cellPx * 0.18);
 
-    // BLOQUE KO: súper visible
+    // dibuja contenido con fade (pasadas = más apagadas)
+    ctx.globalAlpha = fade;
+
     if (type === CELL.BLOCK) {
       const p = 0.5 + 0.5 * Math.sin(animT * 6.2);
-      ctx.fillStyle = "rgba(90,96,120,0.90)";
+      ctx.fillStyle = "rgba(90,96,120,0.92)";
       roundRectFill(x + inset, y + inset, cellPx - inset * 2, cellPx - inset * 2, r);
 
-      // borde rojo
+      // borde rojo (más suave en pasadas)
       ctx.save();
-      ctx.globalAlpha = 0.75 + p * 0.20;
+      ctx.globalAlpha = fade * (0.70 + p * 0.22);
       ctx.strokeStyle = "rgba(230,0,18,0.95)";
       ctx.lineWidth = Math.max(2, Math.floor(2 * dpr));
       ctx.strokeRect(x + inset + 0.5, y + inset + 0.5, cellPx - inset * 2 - 1, cellPx - inset * 2 - 1);
       ctx.restore();
 
-      // “X”
       const cx = x + cellPx * 0.5;
       const cy = y + cellPx * 0.5;
-      drawBlockX(cx, cy, cellPx * 0.18, 0.55 + p * 0.35);
+      drawBlockX(cx, cy, cellPx * 0.18, fade * (0.52 + p * 0.36));
+
+      ctx.restore();
+      ctx.globalAlpha = 1;
       return;
     }
 
-    // item normal
     ctx.fillStyle = CELL_COLOR[type];
     roundRectFill(x + inset, y + inset, cellPx - inset * 2, cellPx - inset * 2, r);
 
-    // gloss
-    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
     roundRectFill(
       x + inset + 1, y + inset + 1,
       cellPx - inset * 2 - 2,
       Math.floor((cellPx - inset * 2) * 0.45),
       r
     );
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 
   function drawParticles() {
@@ -720,19 +885,66 @@
     ctx.globalAlpha = 1;
   }
 
+  function easeOutBack(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
   function drawFloatTexts() {
     if (!floatTexts.length) return;
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `${Math.floor(13 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto`;
+
     for (const ft of floatTexts) {
+      const t = clamp(ft.life / ft.max, 0, 1);
+      const pop = easeOutBack(clamp(t * 2.2, 0, 1));
+      const scale = ft.scale0 + (ft.scale1 - ft.scale0) * clamp(t * 1.4, 0, 1);
+
+      const fontPx = Math.floor(16 * dpr * scale);
+      ctx.font = `${fontPx}px system-ui, -apple-system, Segoe UI, Roboto`;
       ctx.globalAlpha = Math.max(0, Math.min(1, ft.alpha));
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillText(ft.text, ft.x + 1.5 * dpr, ft.y + 1.5 * dpr);
+
+      // sombra + borde ligero
+      ctx.fillStyle = "rgba(0,0,0,0.40)";
+      ctx.fillText(ft.text, ft.x + 2 * dpr, ft.y + 2 * dpr);
+
       ctx.fillStyle = ft.color;
       ctx.fillText(ft.text, ft.x, ft.y);
+
+      // pequeño glow
+      ctx.globalAlpha *= 0.22;
+      ctx.fillText(ft.text, ft.x, ft.y);
+      ctx.globalAlpha = Math.max(0, Math.min(1, ft.alpha));
     }
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBandMarkers(bw, yOffset) {
+    // stripe fondo
+    for (let r = BAND_START; r <= BAND_END; r++) {
+      const y = boardY + r * cellPx + yOffset;
+      ctx.fillStyle = "rgba(255,255,255,0.025)";
+      ctx.fillRect(boardX, y, bw, cellPx);
+    }
+
+    // líneas delimitadoras
+    const yTop = boardY + BAND_START * cellPx + yOffset;
+    const yBot = boardY + (BAND_END + 1) * cellPx + yOffset;
+
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = "rgba(110,200,255,0.55)";
+    ctx.lineWidth = Math.max(1, Math.floor(dpr));
+    ctx.beginPath();
+    ctx.moveTo(boardX, yTop + 0.5);
+    ctx.lineTo(boardX + bw, yTop + 0.5);
+    ctx.moveTo(boardX, yBot + 0.5);
+    ctx.lineTo(boardX + bw, yBot + 0.5);
+    ctx.stroke();
     ctx.restore();
     ctx.globalAlpha = 1;
   }
@@ -740,15 +952,15 @@
   function draw() {
     // shake
     shakeSeed += 1;
+    const fx = settings.fx;
     const sx = (Math.sin(shakeSeed * 12.9898) * 43758.5453) % 1;
     const sy = (Math.sin(shakeSeed * 78.233) * 12345.6789) % 1;
-    const offX = (sx - 0.5) * (cellPx * 0.12) * shake;
-    const offY = (sy - 0.5) * (cellPx * 0.12) * shake;
+    const offX = (sx - 0.5) * (cellPx * 0.10) * shake * fx;
+    const offY = (sy - 0.5) * (cellPx * 0.10) * shake * fx;
 
     ctx.save();
     ctx.translate(offX, offY);
 
-    // background
     ctx.fillStyle = "#06060a";
     ctx.fillRect(-offX, -offY, canvas.width, canvas.height);
 
@@ -756,28 +968,30 @@
     const bh = cellPx * ROWS;
 
     // frame
-    ctx.fillStyle = `rgba(255,255,255,${0.02 + pulse * 0.04})`;
+    ctx.fillStyle = `rgba(255,255,255,${0.02 + pulse * 0.045})`;
     roundRectFill(boardX - 8 * dpr, boardY - 8 * dpr, bw + 16 * dpr, bh + 16 * dpr, 18 * dpr);
 
-    // draw grid with scroll offset (smooth)
     const yOffset = scrollPx;
 
+    // banda marcada (detrás de celdas)
+    drawBandMarkers(bw, yOffset);
+
+    // grid
     for (let r = 0; r < ROWS; r++) {
       const y = boardY + r * cellPx + yOffset;
       const row = grid[r];
       for (let c = 0; c < COLS; c++) {
         const x = boardX + c * cellPx;
-        drawCell(x, y, row[c]);
+        drawCell(x, y, row[c], r);
       }
     }
 
-    // particles + float texts (over board)
     drawParticles();
     drawFloatTexts();
 
-    // player smooth
+    // player smooth (col+row)
     const playerX = boardX + playerColFloat * cellPx;
-    const playerY = boardY + PLAYER_ROW * cellPx + yOffset;
+    const playerY = boardY + playerRowFloat * cellPx + yOffset;
 
     // glow
     ctx.globalAlpha = 0.16 + pulse * 0.22;
@@ -810,12 +1024,10 @@
   }
 
   // ───────────────────────── Leaderboard (online) ─────────────────────────
-  function isOnline() {
-    return navigator.onLine;
-  }
+  function isOnline() { return navigator.onLine; }
 
-  function leaderboardReady() {
-    return isOnline() && !!LEADERBOARD_ENDPOINT;
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c]));
   }
 
   function renderLb(entries) {
@@ -841,10 +1053,6 @@
     });
   }
 
-  function escapeHtml(s) {
-    return s.replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c]));
-  }
-
   async function fetchLeaderboard() {
     if (!isOnline()) {
       lbStatus.textContent = "Sin internet. El ranking solo se muestra online.";
@@ -865,34 +1073,28 @@
       const data = await res.json();
       lbStatus.textContent = "Top mundial";
       renderLb(data?.entries || []);
-    } catch (e) {
+    } catch {
       lbStatus.textContent = "No se pudo cargar el ranking (endpoint caído o CORS).";
       renderLb([]);
     }
   }
 
   async function submitScoreOnline() {
-    if (!isOnline()) {
-      showToast("Sin internet: no se puede enviar score.", 1200);
-      return;
-    }
-    if (!LEADERBOARD_ENDPOINT) {
-      showToast("Falta configurar LEADERBOARD_ENDPOINT en app.js", 1500);
-      return;
-    }
+    if (!isOnline()) { showToast("Sin internet: no se puede enviar.", 1100); return; }
+    if (!LEADERBOARD_ENDPOINT) { showToast("Falta LEADERBOARD_ENDPOINT.", 1400); return; }
 
     const name = (playerNameInput.value || "").trim().slice(0, 16);
-    if (!name) {
-      showToast("Pon un nombre primero.", 1000);
-      return;
-    }
+    if (!name || name.length < 2) { showToast("Nombre mínimo 2.", 1000); return; }
 
-    localStorage.setItem(PLAYER_NAME_KEY, name);
+    playerName = name;
+    localStorage.setItem(PLAYER_NAME_KEY, playerName);
+    pillPlayer.textContent = `👤 ${playerName}`;
+    startName.value = playerName;
 
     try {
       btnSubmitScore.disabled = true;
       const url = `${LEADERBOARD_ENDPOINT}/submit`;
-      const payload = { game: LEADERBOARD_GAME_ID, name, score };
+      const payload = { game: LEADERBOARD_GAME_ID, name: playerName, score };
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type":"application/json" },
@@ -923,27 +1125,26 @@
     animT += dt / 1000;
 
     // timers
-    if (toastTimer > 0) {
-      toastTimer -= dt;
-      if (toastTimer <= 0) hideToast();
-    }
-    if (deltaTimer > 0) {
-      deltaTimer -= dt;
-      if (deltaTimer <= 0) {
-        hudScoreDelta.textContent = "+0";
-      }
-    }
+    if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) hideToast(); }
+    if (deltaTimer > 0) { deltaTimer -= dt; if (deltaTimer <= 0) hudScoreDelta.textContent = "+0"; }
 
     runTime += dt / 1000;
 
     updateTheme(dt);
     updateParticles(dt);
 
-    // smooth player move
-    const diff = (targetCol - playerColFloat);
-    const maxStep = PLAYER_SMOOTH_COLS_PER_SEC * (dt / 1000);
-    if (Math.abs(diff) <= maxStep) playerColFloat = targetCol;
-    else playerColFloat += Math.sign(diff) * maxStep;
+    // smooth player move (col+row)
+    {
+      const diffC = (targetCol - playerColFloat);
+      const diffR = (targetRow - playerRowFloat);
+      const maxStep = PLAYER_SMOOTH_CELLS_PER_SEC * (dt / 1000);
+
+      if (Math.abs(diffC) <= maxStep) playerColFloat = targetCol;
+      else playerColFloat += Math.sign(diffC) * maxStep;
+
+      if (Math.abs(diffR) <= maxStep) playerRowFloat = targetRow;
+      else playerRowFloat += Math.sign(diffR) * maxStep;
+    }
 
     // continuous scroll
     const speedRows = currentSpeedRowsPerSec();
@@ -963,27 +1164,38 @@
 
   // ───────────────────────── Input ─────────────────────────
   function bindInputs() {
-    zoneLeft.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(-1); }, { passive: false });
-    zoneRight.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(+1); }, { passive: false });
+    // Tap zones: izquierda/derecha
+    zoneLeft.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(-1, 0); }, { passive: false });
+    zoneRight.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(+1, 0); }, { passive: false });
+
+    // D-Pad
+    const bindBtn = (el, dx, dy) => {
+      el.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(dx, dy); }, { passive: false });
+    };
+    bindBtn(btnUp, 0, -1);
+    bindBtn(btnDown, 0, +1);
+    bindBtn(btnLeft, -1, 0);
+    bindBtn(btnRight, +1, 0);
 
     // Keyboard
     window.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") movePlayer(-1);
-      if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") movePlayer(+1);
+      const k = e.key;
 
-      if (e.key === " " || e.key === "Spacebar") {
-        if (running && !gameOver) setPaused(!paused);
-      }
-      if (e.key === "p" || e.key === "P" || e.key === "Escape") {
-        if (running && !gameOver) setPaused(!paused);
-      }
-      if (e.key === "Enter") {
+      if (k === "ArrowLeft" || k === "a" || k === "A") movePlayer(-1, 0);
+      if (k === "ArrowRight" || k === "d" || k === "D") movePlayer(+1, 0);
+      if (k === "ArrowUp" || k === "w" || k === "W") movePlayer(0, -1);
+      if (k === "ArrowDown" || k === "s" || k === "S") movePlayer(0, +1);
+
+      if (k === " " || k === "Spacebar") { if (running && !gameOver) setPaused(!paused); }
+      if (k === "p" || k === "P" || k === "Escape") { if (running && !gameOver) setPaused(!paused); }
+
+      if (k === "Enter") {
         if (!overlayStart.hidden) startGame();
-        else if (!overlayGameOver.hidden) { resetGame(); startGame(); }
+        else if (!overlayGameOver.hidden) { resetGame(false); startGame(); }
       }
     });
 
-    // Swipe
+    // Swipe 4 direcciones
     let sx = 0, sy = 0, st = 0;
     canvas.addEventListener("pointerdown", (e) => {
       sx = e.clientX; sy = e.clientY; st = performance.now();
@@ -993,8 +1205,14 @@
       const dx = e.clientX - sx;
       const dy = e.clientY - sy;
       const dt = performance.now() - st;
-      if (dt < 300 && Math.abs(dx) > 28 && Math.abs(dx) > Math.abs(dy)) {
-        movePlayer(dx > 0 ? +1 : -1);
+
+      if (dt < 320) {
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        const min = 26;
+
+        if (ax > ay && ax > min) movePlayer(dx > 0 ? +1 : -1, 0);
+        else if (ay > ax && ay > min) movePlayer(0, dy > 0 ? +1 : -1);
       }
     }, { passive: true });
 
@@ -1002,15 +1220,27 @@
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && running && !gameOver) setPaused(true);
     });
+
+    // evitar scroll iOS durante juego
+    document.addEventListener("touchmove", (e) => {
+      if (running) e.preventDefault();
+    }, { passive: false });
   }
 
   // ───────────────────────── Buttons ─────────────────────────
   function bindButtons() {
-    const startFn = () => startGame();
+    btnStart.addEventListener("click", startGame);
 
-    btnStart.addEventListener("click", startFn);
     btnResume.addEventListener("click", () => setPaused(false));
-    btnPlayAgain.addEventListener("click", () => { resetGame(); startGame(); });
+
+    btnPlayAgain.addEventListener("click", () => {
+      resetGame(false);
+      startGame();
+    });
+
+    btnBackToStart.addEventListener("click", () => {
+      resetGame(true);
+    });
 
     btnPause.addEventListener("click", () => {
       if (!running || gameOver) return;
@@ -1018,24 +1248,65 @@
     });
 
     btnRestart.addEventListener("click", () => {
-      resetGame();
-      startGame();
+      // reinicia pero vuelve a start (para cambiar nombre si quiere)
+      resetGame(true);
     });
 
+    // Options
+    btnOptions.addEventListener("click", () => {
+      overlayShow(overlayOptions);
+      applySettingsToUI();
+    });
+    btnCloseOptions.addEventListener("click", () => overlayHide(overlayOptions, 160));
+
+    optVibration.addEventListener("change", () => {
+      settings.vibration = optVibration.checked;
+      saveSettings();
+      applySettingsToUI();
+      showToast("Guardado ✅", 650);
+    });
+
+    optDpad.addEventListener("change", () => {
+      settings.showDpad = optDpad.checked;
+      saveSettings();
+      applySettingsToUI();
+      showToast("Guardado ✅", 650);
+    });
+
+    optFx.addEventListener("input", () => {
+      settings.fx = clamp(parseFloat(optFx.value) || 1.0, 0.4, 1.25);
+      optFxValue.textContent = settings.fx.toFixed(2);
+      saveSettings();
+      applySettingsToUI();
+    });
+
+    btnClearLocal.addEventListener("click", () => {
+      localStorage.removeItem(RUNS_KEY);
+      refreshStartStats();
+      showToast("Historial borrado.", 900);
+    });
+
+    // Leaderboard
     btnLeaderboard.addEventListener("click", async () => {
       overlayShow(overlayLeaderboard);
       await fetchLeaderboard();
     });
-
-    btnCloseLeaderboard.addEventListener("click", () => {
-      overlayHide(overlayLeaderboard, 160);
-    });
-
+    btnCloseLeaderboard.addEventListener("click", () => overlayHide(overlayLeaderboard, 160));
     btnSubmitScore.addEventListener("click", submitScoreOnline);
 
-    // carga nombre guardado
-    const saved = localStorage.getItem(PLAYER_NAME_KEY);
-    if (saved) playerNameInput.value = saved;
+    // Start name live validation
+    startName.addEventListener("input", () => {
+      const nm = (startName.value || "").trim().slice(0, 16);
+      btnStart.disabled = !(nm.length >= 2);
+      pillPlayer.textContent = `👤 ${nm || playerName || "—"}`;
+    });
+  }
+
+  function syncStartNameUI() {
+    startName.value = playerName || "";
+    btnStart.disabled = !((startName.value || "").trim().length >= 2);
+    playerNameInput.value = playerName || "";
+    updateHud(true);
   }
 
   // ───────────────────────── PWA ─────────────────────────
@@ -1043,14 +1314,12 @@
     const setNet = () => {
       const offline = !navigator.onLine;
       pillOffline.hidden = !offline;
-      // si está abierto el ranking, refresca estado
       if (!overlayLeaderboard.hidden) fetchLeaderboard();
     };
     window.addEventListener("online", setNet);
     window.addEventListener("offline", setNet);
     setNet();
 
-    // Install prompt
     let deferredPrompt = null;
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
@@ -1070,7 +1339,6 @@
       btnInstall.disabled = false;
     });
 
-    // SW
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", async () => {
         try {
@@ -1089,7 +1357,7 @@
 
     best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
 
-    resetGame();
+    applySettingsToUI();
     bindInputs();
     bindButtons();
     setupPWA();
@@ -1103,12 +1371,9 @@
       ro.observe(canvas);
     }
 
-    // evitar scroll iOS durante juego
-    document.addEventListener("touchmove", (e) => {
-      if (running) e.preventDefault();
-    }, { passive: false });
-
+    resetGame(true);
     draw();
+
     console.log(`Grid Runner PWA v${APP_VERSION}`);
   }
 

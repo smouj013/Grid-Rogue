@@ -1,8 +1,8 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
-  "description": "Runner PWA en cuadrícula: esquiva bloques KO, combos, rachas y ranking online.",
-  "start_url": "./?v=0.0.3",
+  "description": "Runner PWA en cuadrícula: 4 direcciones, banda central, combos y ranking online.",
+  "start_url": "./?v=0.0.4",
   "scope": "./",
   "display": "standalone",
   "background_color": "#07070b",

@@ -1,8 +1,8 @@
-/* sw.js — Grid Runner PWA (v0.0.3)
+/* sw.js — Grid Runner PWA (v0.0.4)
    - App shell precache + navegación offline (index)
    - Stale-while-revalidate para assets
 */
-const VERSION = "v0.0.3";
+const VERSION = "v0.0.4";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
