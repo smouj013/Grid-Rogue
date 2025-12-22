@@ -1,15 +1,14 @@
-/* app.js — Grid Runner (PWA) v0.1.2 (JUICY + FIXED)
-   ✅ Canvas sin distorsión: JS fija el tamaño CSS del canvas al mismo que renderiza
-   ✅ NO acumula scroll/tiempo en pausa/menús (adiós “lag” al volver)
-   ✅ Snap a píxel (scroll + player) => cuadrados perfectos
-   ✅ Rendimiento: throttle de DOM (pills) + cap de steps por frame
-   ✅ Juice: screen-shake, pulse, partículas ligeras, glow
+/* app.js — Grid Runner (PWA) v0.1.2
+   ✅ Anti-freeze total: errores globales + nunca deja overlayLoading sin salida
+   ✅ Botones siempre: bind seguro + no depende de orden raro
+   ✅ PWA update real: sw.js?v=APP_VERSION + reg.update() + pillActualizar fiable
 */
 
 (() => {
   "use strict";
 
   const APP_VERSION = (window.APP_VERSION || "0.1.2");
+  window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -21,26 +20,17 @@
     try { return JSON.parse(raw); } catch { return fallback; }
   }
 
+  const $ = (id) => document.getElementById(id);
+
   function overlayShow(el) { if (el) el.hidden = false; }
   function overlayHide(el) { if (el) el.hidden = true; }
 
   function setPill(el, value) {
     if (!el) return;
     const pv = el.querySelector?.(".pv");
-    const txt = String(value);
-    if (pv) {
-      if (pv.textContent !== txt) pv.textContent = txt;
-    } else {
-      if (el.textContent !== txt) el.textContent = txt;
-    }
+    if (pv) pv.textContent = String(value);
+    else el.textContent = String(value);
   }
-
-  const $ = (id) => document.getElementById(id);
-  const must = (id) => {
-    const el = $(id);
-    if (!el) throw new Error(`Missing element #${id}`);
-    return el;
-  };
 
   // ───────────────────────── Storage keys ─────────────────────────
   const BEST_KEY = "gridrunner_best_v1";
@@ -58,11 +48,11 @@
 
   let settings = (() => {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return defaultSettings();
-    const s = safeParse(raw, null);
-    if (!s) return defaultSettings();
+    const s = raw ? safeParse(raw, null) : null;
+    const base = defaultSettings();
+    if (!s) return base;
     return {
-      ...defaultSettings(),
+      ...base,
       ...s,
       fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
     };
@@ -78,8 +68,9 @@
     try { navigator.vibrate(ms); } catch {}
   }
 
-  // ───────────────────────── Auth (profiles) ─────────────────────────
+  // ───────────────────────── Auth ─────────────────────────
   const Auth = window.Auth || null;
+
   let activeProfileId = null;
   let playerName = (localStorage.getItem(NAME_KEY) || "").trim().slice(0, 16);
   let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
@@ -96,7 +87,7 @@
     localStorage.setItem(BEST_KEY, String(best));
   }
 
-  // ───────────────────────── Sprites optional (SVGs) ─────────────────────────
+  // ───────────────────────── Sprites optional ─────────────────────────
   const sprites = { ready: false, map: new Map() };
 
   function spriteUrl(name) {
@@ -121,14 +112,16 @@
       ["trap", "tile_trap.svg"],
       ["block", "tile_block.svg"],
     ];
+
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
+
     try {
       const tasks = keys.map(async ([k, file]) => {
         const img = await loadImage(spriteUrl(file));
         sprites.map.set(k, img);
       });
-      const result = await Promise.race([Promise.all(tasks), timeout]);
-      sprites.ready = (result !== "timeout") ? (sprites.map.size > 0) : (sprites.map.size > 0);
+      await Promise.race([Promise.all(tasks), timeout]);
+      sprites.ready = sprites.map.size > 0;
     } catch {
       sprites.ready = sprites.map.size > 0;
     }
@@ -168,22 +161,19 @@
   let level = 1;
   let nextLevelAt = 220;
 
-  // grid
   let grid = [];
   let consumed = [];
+  let gridReady = false;
 
-  // render geom
   let dpr = 1;
   let stageW = 0, stageH = 0;
   let cellPx = 18;
   let gridW = 0, gridH = 0;
   let offX = 0, offY = 0;
 
-  // scrolling
   let scrollPx = 0;
   let runTime = 0;
 
-  // player zone
   let zoneBase = 3;
   let zoneExtra = 0;
   let zoneH = 3;
@@ -194,23 +184,16 @@
   let colF = 3;
   let rowF = 1;
 
-  // spring movement (snappy)
-  let colV = 0;
-  let rowV = 0;
-
-  // upgrades/effects
   let shields = 0;
   let magnet = 0;
   let scoreBoost = 0;
   let trapResist = 0;
   let rerolls = 0;
 
-  // values
   let coinValue = 10;
   let gemValue = 30;
   let bonusValue = 60;
 
-  // combo
   const COMBO_POOL = [
     [CellType.Coin, CellType.Coin, CellType.Gem],
     [CellType.Gem, CellType.Coin, CellType.Bonus],
@@ -223,50 +206,20 @@
   let comboTimeMax = 6.0;
   let comboTime = 6.0;
 
-  // juice
   let toastT = 0;
-  let shakeT = 0;
-  let shakePow = 0;
-  let playerPulse = 0; // 0..1
-
-  // particles (super ligero)
-  const fxP = [];
-  const FX_MAX = 120;
-
-  function addBurst(x, y, color, n = 10, pow = 1.0) {
-    const fx = clamp(settings.fx, 0.4, 1.25);
-    const count = Math.floor(n * fx);
-    for (let i = 0; i < count; i++) {
-      if (fxP.length >= FX_MAX) fxP.shift();
-      const a = Math.random() * Math.PI * 2;
-      const sp = (40 + Math.random() * 140) * pow * fx;
-      fxP.push({
-        x, y,
-        vx: Math.cos(a) * sp,
-        vy: Math.sin(a) * sp,
-        t: 0,
-        life: 0.35 + Math.random() * 0.35,
-        color,
-        size: 2 + Math.random() * 2.8
-      });
-    }
-  }
-
-  function shake(seconds, pow) {
-    shakeT = Math.max(shakeT, seconds);
-    shakePow = Math.max(shakePow, pow);
-  }
 
   // ───────────────────────── DOM refs ─────────────────────────
   let stage, canvas, ctx;
   let brandSub;
 
   let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion;
+
   let btnOptions, btnPause, btnRestart, btnInstall;
 
   let overlayLoading, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
 
   let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
+
   let btnResume, btnQuitToStart;
 
   let upTitle, upSub, upgradeChoices, btnReroll, btnSkipUpgrade;
@@ -274,25 +227,47 @@
   let goStats, btnBackToStart, btnRetry;
 
   let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal;
+
   let errMsg, btnErrClose, btnErrReload;
 
   let comboSeq, comboTimerVal, comboHint, toast;
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
 
+  // ───────────────────────── Error handling global ─────────────────────────
+  function showFatal(err) {
+    try {
+      console.error(err);
+
+      if (overlayLoading) overlayLoading.hidden = true;
+
+      if (errMsg) errMsg.textContent = (err && err.message) ? err.message : String(err || "Error desconocido");
+      if (overlayError) overlayError.hidden = false;
+
+      // Si overlayError no existe por cualquier razón
+      if (!overlayError) alert((err && err.message) ? err.message : "Error desconocido");
+    } catch {}
+  }
+
+  window.addEventListener("error", (e) => {
+    showFatal(e?.error || new Error(e?.message || "Error"));
+  });
+
+  window.addEventListener("unhandledrejection", (e) => {
+    showFatal(e?.reason || new Error("Promise rejection"));
+  });
+
   // ───────────────────────── UI helpers ─────────────────────────
   function showToast(msg, ms = 900) {
     if (!toast) return;
     toast.textContent = msg;
     toast.hidden = false;
-    toast.classList.add("show");
     toastT = ms;
   }
 
   function hideToast() {
     if (!toast) return;
     toast.hidden = true;
-    toast.classList.remove("show");
     toastT = 0;
   }
 
@@ -301,31 +276,14 @@
     pillOffline.hidden = navigator.onLine;
   }
 
-  // throttle DOM (pills) -> mucho mejor en móvil
-  let uiAcc = 0;
-  let lastUI = { s:-1, b:-1, st:-1, m:"", lv:"", sp:"", pl:"" };
-
-  function updatePillsThrottled(dtMs) {
-    uiAcc += dtMs;
-    if (uiAcc < 120) return; // ~8Hz
-    uiAcc = 0;
-
-    const s = score | 0;
-    const b = best | 0;
-    const st = streak | 0;
-    const m = mult.toFixed(2);
-    const lv = `Lv ${level}`;
-    const sp = `${speedRowsPerSec().toFixed(1)}x`;
-    const pl = playerName || "Jugador";
-
-    if (lastUI.s !== s) { setPill(pillScore, s); lastUI.s = s; }
-    if (lastUI.b !== b) { setPill(pillBest, b); lastUI.b = b; }
-    if (lastUI.st !== st) { setPill(pillStreak, st); lastUI.st = st; }
-    if (lastUI.m !== m) { setPill(pillMult, m); lastUI.m = m; }
-    if (lastUI.lv !== lv) { setPill(pillLevel, lv); lastUI.lv = lv; }
-    if (lastUI.sp !== sp) { setPill(pillSpeed, sp); lastUI.sp = sp; }
-    if (lastUI.pl !== pl) { setPill(pillPlayer, pl); lastUI.pl = pl; }
-
+  function updatePills() {
+    setPill(pillScore, score | 0);
+    setPill(pillBest, best | 0);
+    setPill(pillStreak, streak | 0);
+    setPill(pillMult, mult.toFixed(2));
+    setPill(pillLevel, `Lv ${level}`);
+    setPill(pillSpeed, `${speedRowsPerSec().toFixed(1)}x`);
+    setPill(pillPlayer, playerName || "Jugador");
     setOfflinePill();
   }
 
@@ -348,15 +306,6 @@
 
     targetRow = clamp(targetRow, 0, zoneH - 1);
     rowF = clamp(rowF, 0, zoneH - 1);
-  }
-
-  function makeGrid() {
-    grid = new Array(ROWS);
-    consumed = new Array(ROWS);
-    for (let r = 0; r < ROWS; r++) {
-      grid[r] = genRow();
-      consumed[r] = new Array(COLS).fill(false);
-    }
   }
 
   function genRow() {
@@ -390,6 +339,16 @@
     return out;
   }
 
+  function makeGrid() {
+    grid = new Array(ROWS);
+    consumed = new Array(ROWS);
+    for (let r = 0; r < ROWS; r++) {
+      grid[r] = genRow();
+      consumed[r] = new Array(COLS).fill(false);
+    }
+    gridReady = true;
+  }
+
   function shiftRows() {
     for (let r = ROWS - 1; r >= 1; r--) {
       grid[r] = grid[r - 1];
@@ -401,8 +360,9 @@
 
   // ───────────────────────── Gameplay ─────────────────────────
   function speedRowsPerSec() {
+    const t = runTime;
     const base = 1.05;
-    const byTime = 0.03 * runTime;
+    const byTime = 0.03 * t;
     const byLevel = 0.07 * (level - 1);
     return clamp(base + byTime + byLevel, 0.85, 6.25);
   }
@@ -428,16 +388,12 @@
     const add = Math.round(v * mult * (1 + scoreBoost));
     score = Math.max(0, score + add);
 
-    // juice
-    playerPulse = 1;
-
     if (t === CellType.Trap) {
       streak = 0;
       mult = clamp(mult * 0.92, 1.0, 4.0);
-      vibrate(18);
+      vibrate(15);
       failCombo();
       showToast("Trampa", 650);
-      shake(0.22, 4.0);
       return;
     }
 
@@ -450,7 +406,6 @@
         if (comboIdx >= combo.length) {
           mult = clamp(mult + 0.15, 1.0, 4.0);
           showToast("Combo completado: +MULT", 900);
-          shake(0.12, 2.5);
           rerollCombo();
         } else {
           comboTime = comboTimeMax;
@@ -495,21 +450,11 @@
       consumed[r][c] = true;
       grid[r][c] = CellType.Empty;
 
-      // burst
-      const cx = offX + c * cellPx + cellPx * 0.5;
-      const cy = offY + r * cellPx + cellPx * 0.5;
-      const col = (t === CellType.Trap) ? "#ff7b2e" :
-                  (t === CellType.Block) ? "#7b8296" :
-                  (t === CellType.Coin) ? "#2ee59d" :
-                  (t === CellType.Gem) ? "#69a8ff" : "#ffd35a";
-      addBurst(cx, cy, col, (t === CellType.Block) ? 14 : 10, (t === CellType.Block) ? 1.1 : 1.0);
-
       if (t === CellType.Block) {
         if (shields > 0) {
           shields--;
           showToast("Shield salvó un KO", 900);
-          vibrate(22);
-          shake(0.18, 3.2);
+          vibrate(20);
         } else {
           gameOverNow("KO");
         }
@@ -549,16 +494,20 @@
       const t = combo[i];
       const chip = document.createElement("div");
       chip.className = "chip";
+
       const ic = document.createElement("span");
       ic.className = "ms";
       ic.textContent = iconForType(t);
+
       const tx = document.createElement("span");
       tx.textContent = nameForType(t);
+
       chip.appendChild(ic);
       chip.appendChild(tx);
 
       if (i < comboIdx) chip.style.opacity = "0.55";
       if (i === comboIdx) chip.style.borderColor = "rgba(255,255,255,0.22)";
+
       comboSeq.appendChild(chip);
     }
     comboHint.textContent = "Completa la secuencia para subir multiplicador.";
@@ -586,14 +535,8 @@
   ];
 
   const pickedCount = new Map();
-  function canPick(u) {
-    const c = pickedCount.get(u.id) || 0;
-    return c < (u.max ?? 999);
-  }
-  function markPick(u) {
-    const c = pickedCount.get(u.id) || 0;
-    pickedCount.set(u.id, c + 1);
-  }
+  const canPick = (u) => (pickedCount.get(u.id) || 0) < (u.max ?? 999);
+  const markPick = (u) => pickedCount.set(u.id, (pickedCount.get(u.id) || 0) + 1);
 
   function chooseUpgrades(n = 3) {
     const pool = Upgrades.filter(canPick);
@@ -621,6 +564,7 @@
 
     renderUpgradeChoices();
     overlayShow(overlayUpgrades);
+    updatePills();
   }
 
   function closeUpgrade() {
@@ -648,7 +592,6 @@
         markPick(u);
         u.apply();
         showToast(`Mejora: ${u.name}`, 950);
-        shake(0.10, 2.0);
         closeUpgrade();
       });
       upgradeChoices?.appendChild(card);
@@ -678,52 +621,41 @@
     return true;
   }
 
+  function clearScreen() {
+    if (!ctx) return;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#050507";
+    ctx.fillRect(0, 0, stageW, stageH);
+    ctx.restore();
+  }
+
   function draw() {
     if (!ctx) return;
-
-    // screen shake
-    let sx = 0, sy = 0;
-    if (shakeT > 0) {
-      const pow = shakePow * (shakeT * 2.5);
-      sx = (Math.random() * 2 - 1) * pow;
-      sy = (Math.random() * 2 - 1) * pow;
-    }
+    if (!gridReady || grid.length !== ROWS) { clearScreen(); return; }
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.translate(sx, sy);
-
-    // crisp
     ctx.imageSmoothingEnabled = false;
 
-    // background inside canvas
-    ctx.fillStyle = "#05060a";
+    ctx.fillStyle = "#050507";
     ctx.fillRect(0, 0, stageW, stageH);
 
-    // subtle vignette
-    const g = ctx.createRadialGradient(stageW*0.5, stageH*0.35, 20, stageW*0.5, stageH*0.5, Math.max(stageW, stageH)*0.75);
-    g.addColorStop(0, "rgba(255,255,255,0.045)");
-    g.addColorStop(1, "rgba(0,0,0,0.20)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, stageW, stageH);
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.fillRect(offX, offY, gridW, gridH);
 
-    // zone highlight
     const zTop = offY + zoneY0 * cellPx;
-    ctx.fillStyle = "rgba(105,168,255,0.085)";
+    ctx.fillStyle = "rgba(105,168,255,0.08)";
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
-    // snap scroll to pixel (evita blur)
-    const spx = Math.round(scrollPx);
-
-    // draw cells
     for (let r = 0; r < ROWS; r++) {
-      const y = offY + r * cellPx + spx;
+      const y = offY + r * cellPx + scrollPx;
       for (let c = 0; c < COLS; c++) {
         const t = grid[r][c];
         if (t === CellType.Empty) continue;
 
         const used = consumed[r][c];
-        const alpha = used ? 0.22 : 0.95;
+        const alpha = used ? 0.22 : 0.92;
 
         const x = offX + c * cellPx;
         const key =
@@ -732,49 +664,28 @@
           (t === CellType.Bonus) ? "bonus" :
           (t === CellType.Trap) ? "trap" : "block";
 
-        const pad = 2;
-        const rx = (x + pad) | 0;
-        const ry = (y + pad) | 0;
-        const rw = (cellPx - pad*2) | 0;
-
-        const ok = drawSprite(key, rx, ry, rw, rw, alpha);
+        const ok = drawSprite(key, x + 2, y + 2, cellPx - 4, cellPx - 4, alpha);
         if (!ok) {
-          // base
           ctx.globalAlpha = alpha;
           ctx.fillStyle = CELL_COLORS[t];
-          ctx.fillRect(rx, ry, rw, rw);
-
-          // bevel (juicy, pero barato)
-          ctx.globalAlpha = alpha * 0.35;
-          ctx.fillStyle = "rgba(255,255,255,0.80)";
-          ctx.fillRect(rx, ry, rw, 1);
-          ctx.fillRect(rx, ry, 1, rw);
-
-          ctx.globalAlpha = alpha * 0.25;
-          ctx.fillStyle = "rgba(0,0,0,0.80)";
-          ctx.fillRect(rx, ry + rw - 1, rw, 1);
-          ctx.fillRect(rx + rw - 1, ry, 1, rw);
-
-          ctx.globalAlpha = 1;
-        } else {
+          ctx.fillRect(x + 2, y + 2, cellPx - 4, cellPx - 4);
           ctx.globalAlpha = 1;
         }
       }
     }
 
-    // grid lines (muy suaves)
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = 0.25;
     ctx.strokeStyle = "rgba(255,255,255,0.07)";
     ctx.lineWidth = 1;
     for (let c = 0; c <= COLS; c++) {
-      const x = (offX + c * cellPx) | 0;
+      const x = offX + c * cellPx;
       ctx.beginPath();
       ctx.moveTo(x, offY);
       ctx.lineTo(x, offY + gridH);
       ctx.stroke();
     }
     for (let r = 0; r <= ROWS; r++) {
-      const y = (offY + r * cellPx) | 0;
+      const y = offY + r * cellPx;
       ctx.beginPath();
       ctx.moveTo(offX, y);
       ctx.lineTo(offX + gridW, y);
@@ -782,85 +693,49 @@
     }
     ctx.globalAlpha = 1;
 
-    // player (pulse)
     const px = offX + colF * cellPx;
     const py = offY + (zoneY0 + rowF) * cellPx;
 
-    const pPad = 2;
-    const baseX = Math.round(px + pPad);
-    const baseY = Math.round(py + pPad);
-    const size = Math.round(cellPx - pPad*2);
-
-    const pulse = 1 + (playerPulse * 0.10) * clamp(settings.fx, 0.4, 1.25);
-    const cx = baseX + size * 0.5;
-    const cy = baseY + size * 0.5;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(pulse, pulse);
-    ctx.translate(-cx, -cy);
-
-    const okP = drawSprite("player", baseX, baseY, size, size, 1);
+    const okP = drawSprite("player", px + 2, py + 2, cellPx - 4, cellPx - 4, 1);
     if (!okP) {
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      ctx.fillRect(baseX, baseY, size, size);
-
-      // outline
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.fillRect(px + 2, py + 2, cellPx - 4, cellPx - 4);
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
       ctx.lineWidth = 2;
-      ctx.strokeRect(baseX + 1, baseY + 1, size - 2, size - 2);
+      ctx.strokeRect(px + 3, py + 3, cellPx - 6, cellPx - 6);
     }
 
-    // shield count
     if (shields > 0) {
       ctx.fillStyle = "rgba(105,168,255,0.95)";
       ctx.font = `900 ${Math.max(11, Math.floor(cellPx * 0.38))}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(shields), baseX + size - 10, baseY + 12);
-    }
-    ctx.restore();
-
-    // particles
-    if (fxP.length) {
-      for (let i = 0; i < fxP.length; i++) {
-        const p = fxP[i];
-        const k = clamp(1 - (p.t / p.life), 0, 1);
-        ctx.globalAlpha = 0.9 * k;
-        ctx.fillStyle = p.color;
-        ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
-      }
-      ctx.globalAlpha = 1;
+      ctx.fillText(String(shields), px + cellPx - 10, py + 12);
     }
 
     ctx.restore();
   }
 
-  // ───────────────────────── Resize (FIX: no distorsión) ─────────────────────────
+  // ───────────────────────── Resize ─────────────────────────
   function resize() {
     if (!stage || !canvas || !ctx) return;
 
-    // Área real disponible
     const r = stage.getBoundingClientRect();
     stageW = Math.max(240, Math.floor(r.width));
     stageH = Math.max(240, Math.floor(r.height));
 
-    // ✅ Igualamos tamaño CSS del canvas a la stage -> 0 distorsión
-    canvas.style.width = `${stageW}px`;
-    canvas.style.height = `${stageH}px`;
-
-    dpr = Math.max(1, Math.min(2.0, window.devicePixelRatio || 1)); // 2.0 = mejor rendimiento móvil
+    dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
     canvas.width = Math.floor(stageW * dpr);
     canvas.height = Math.floor(stageH * dpr);
 
     cellPx = Math.floor(Math.min(stageW / COLS, stageH / ROWS));
-    cellPx = clamp(cellPx, 14, 64) | 0;
+    cellPx = clamp(cellPx, 14, 64);
 
     gridW = cellPx * COLS;
     gridH = cellPx * ROWS;
 
-    offX = ((stageW - gridW) / 2) | 0;
-    offY = ((stageH - gridH) / 2) | 0;
+    offX = Math.floor((stageW - gridW) / 2);
+    offY = Math.floor((stageH - gridH) / 2);
 
     draw();
   }
@@ -874,7 +749,7 @@
     if (!canControl()) return;
     targetCol = clamp(targetCol + dx, 0, COLS - 1);
     targetRow = clamp(targetRow + dy, 0, zoneH - 1);
-    vibrate(8);
+    vibrate(10);
   }
 
   function bindInputs() {
@@ -902,6 +777,8 @@
       sx = e.clientX;
       sy = e.clientY;
       st = performance.now();
+      // NO capturamos si hay overlays (evita “me quedé pillado tocando”)
+      if (!overlayStart?.hidden || !overlayOptions?.hidden || !overlayUpgrades?.hidden || !overlayPaused?.hidden || !overlayGameOver?.hidden) return;
       canvas.setPointerCapture?.(e.pointerId);
     });
 
@@ -924,7 +801,7 @@
     canvas.addEventListener("pointercancel", () => { active = false; }, { passive: true });
   }
 
-  // ───────────────────────── UI / buttons ─────────────────────────
+  // ───────────────────────── UI ─────────────────────────
   function togglePause() {
     if (!running || gameOver) return;
     paused = !paused;
@@ -943,6 +820,8 @@
   }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
+  let pendingReload = false;
+
   function resetRun(showMenu) {
     running = false;
     paused = false;
@@ -961,6 +840,8 @@
     trapResist = 0;
     rerolls = 0;
 
+    pickedCount.clear();
+
     zoneExtra = 0;
     recomputeZone();
 
@@ -968,17 +849,6 @@
     targetRow = Math.floor(zoneH / 2);
     colF = targetCol;
     rowF = targetRow;
-    colV = 0;
-    rowV = 0;
-
-    runTime = 0;
-    scrollPx = 0;
-    comboTime = comboTimeMax;
-    playerPulse = 0;
-    shakeT = 0;
-    shakePow = 0;
-
-    fxP.length = 0;
 
     makeGrid();
     rerollCombo();
@@ -986,9 +856,12 @@
     overlayHide(overlayPaused);
     overlayHide(overlayUpgrades);
     overlayHide(overlayGameOver);
+    overlayHide(overlayOptions);
+
     if (showMenu) overlayShow(overlayStart);
     else overlayHide(overlayStart);
 
+    updatePills();
     draw();
   }
 
@@ -1006,8 +879,8 @@
 
     runTime = 0;
     scrollPx = 0;
-    comboTime = comboTimeMax;
 
+    updatePills();
     draw();
   }
 
@@ -1041,104 +914,61 @@
     }
 
     overlayShow(overlayGameOver);
-    shake(0.28, 5.0);
+
+    if (pendingReload) {
+      pendingReload = false;
+      requestAppReload();
+    }
   }
 
-  // ───────────────────────── Main loop (FIX sync + perf) ─────────────────────────
+  // ───────────────────────── Main loop ─────────────────────────
   let lastT = 0;
 
-  function updateAlways(dtMs) {
-    // toast
+  function update(dtMs) {
     if (toastT > 0) {
       toastT -= dtMs;
       if (toastT <= 0) hideToast();
     }
 
-    // particles
-    for (let i = fxP.length - 1; i >= 0; i--) {
-      const p = fxP[i];
-      p.t += dtMs / 1000;
-      if (p.t >= p.life) { fxP.splice(i, 1); continue; }
-      const dt = dtMs / 1000;
-      p.vx *= Math.pow(0.12, dt); // damping
-      p.vy *= Math.pow(0.12, dt);
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-    }
-
-    // shake decay
-    if (shakeT > 0) {
-      shakeT -= dtMs / 1000;
-      if (shakeT <= 0) { shakeT = 0; shakePow = 0; }
-    }
-
-    // pulse decay
-    if (playerPulse > 0) {
-      playerPulse = Math.max(0, playerPulse - (dtMs / 1000) * 3.8);
-    }
-
-    // UI throttle
-    updatePillsThrottled(dtMs);
-  }
-
-  function updateRun(dtMs) {
-    const dt = dtMs / 1000;
-
-    // ✅ combo timer solo en juego activo
-    comboTime -= dt;
+    comboTime -= dtMs / 1000;
     if (comboTimerVal) comboTimerVal.textContent = `${Math.max(0, comboTime).toFixed(1)}s`;
     if (comboTime <= 0) {
       failCombo();
       comboTime = comboTimeMax;
     }
 
-    // movement spring (snappy)
-    const spring = 68;
-    const damp = 14;
-    colV += (targetCol - colF) * spring * dt;
-    rowV += (targetRow - rowF) * spring * dt;
-    colV *= Math.exp(-damp * dt);
-    rowV *= Math.exp(-damp * dt);
-    colF += colV * dt;
-    rowF += rowV * dt;
+    const k = 14;
+    colF = lerp(colF, targetCol, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
+    rowF = lerp(rowF, targetRow, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
 
-    runTime += dt;
-
-    // scroll
+    runTime += dtMs / 1000;
     const sp = speedRowsPerSec();
-    scrollPx += (sp * cellPx) * dt;
+    scrollPx += (sp * cellPx) * (dtMs / 1000);
 
-    // ✅ cap steps por frame (evita freeze si un frame llega tarde)
-    const maxSteps = 6;
-    let steps = Math.floor(scrollPx / cellPx);
-    if (steps > maxSteps) steps = maxSteps;
-
-    if (steps > 0) {
-      scrollPx -= steps * cellPx;
-      for (let i = 0; i < steps; i++) stepAdvance();
+    while (scrollPx >= cellPx && running && !paused && !gameOver && !inLevelUp) {
+      scrollPx -= cellPx;
+      stepAdvance();
     }
 
-    // si se acumuló demasiado, recorta (no queremos “catch up” infinito)
-    scrollPx = clamp(scrollPx, 0, cellPx - 1);
+    updatePills();
   }
 
   function frame(t) {
-    const dt = Math.min(34, t - lastT); // ~30fps worst-case cap
-    lastT = t;
+    try {
+      const dt = Math.min(40, t - lastT);
+      lastT = t;
 
-    // Siempre: FX/particles/toast/ui
-    updateAlways(dt);
+      if (running && !paused && !gameOver && !inLevelUp) update(dt);
+      else update(dt * 0.25);
 
-    // Solo juego activo: física/scroll/combos
-    if (running && !paused && !gameOver && !inLevelUp) {
-      updateRun(dt);
+      draw();
+    } catch (e) {
+      showFatal(e);
     }
-
-    draw();
     requestAnimationFrame(frame);
   }
 
-  // ───────────────────────── PWA (igual que tu 0.1.2) ─────────────────────────
+  // ───────────────────────── PWA / SW / Install ─────────────────────────
   let deferredPrompt = null;
   let swReg = null;
   let swReloadGuard = false;
@@ -1155,14 +985,27 @@
     setPill(pillUpdate, msg);
   }
 
+  function requestAppReload() {
+    if (running && !gameOver) {
+      pendingReload = true;
+      markUpdateAvailable("Actualizar");
+      showToast("Update listo: se aplicará al terminar.", 1200);
+      return;
+    }
+    location.reload();
+  }
+
   async function applySWUpdateNow() {
     if (swReg?.waiting) {
       try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {}
+    } else {
+      try { await swReg?.update?.(); } catch {}
     }
+
     const k = "gridrunner_sw_reload_once";
     if (sessionStorage.getItem(k) !== "1") {
       sessionStorage.setItem(k, "1");
-      setTimeout(() => location.reload(), 700);
+      setTimeout(() => location.reload(), 650);
     } else {
       location.reload();
     }
@@ -1191,18 +1034,31 @@
       btnInstall?.addEventListener("click", async () => {
         if (!deferredPrompt) return;
         btnInstall.disabled = true;
-        try { deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch {}
+        try {
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+        } catch {}
         deferredPrompt = null;
         btnInstall.hidden = true;
         btnInstall.disabled = false;
       });
     }
 
-    pillUpdate?.addEventListener("click", () => applySWUpdateNow());
+    pillUpdate?.addEventListener("click", () => {
+      if (running && !gameOver) {
+        pendingReload = true;
+        showToast("Se aplicará al terminar.", 900);
+        return;
+      }
+      applySWUpdateNow();
+    });
 
     if ("serviceWorker" in navigator) {
       try {
-        swReg = await navigator.serviceWorker.register(new URL("./sw.js", location.href));
+        const swUrl = new URL(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`, location.href);
+        swReg = await navigator.serviceWorker.register(swUrl);
+
+        // fuerza check de update ahora (no esperar horas)
         try { await swReg.update(); } catch {}
 
         if (swReg.waiting) markUpdateAvailable("Actualizar");
@@ -1221,10 +1077,11 @@
         navigator.serviceWorker.addEventListener("controllerchange", () => {
           if (swReloadGuard) return;
           swReloadGuard = true;
+
           const k = "gridrunner_sw_reload_once";
           if (sessionStorage.getItem(k) !== "1") {
             sessionStorage.setItem(k, "1");
-            location.reload();
+            requestAppReload();
           }
         });
       } catch (e) {
@@ -1233,11 +1090,13 @@
     }
   }
 
-  // ───────────────────────── Boot ─────────────────────────
+  // ───────────────────────── Auth UI ─────────────────────────
   function initAuthUI() {
-    if (!Auth || !profileSelect) {
-      if (btnStart) btnStart.disabled = false;
+    if (!profileSelect) return;
+
+    if (!Auth) {
       if (newProfileWrap) newProfileWrap.hidden = false;
+      if (btnStart) btnStart.disabled = false;
       return;
     }
 
@@ -1278,6 +1137,7 @@
       if (profileSelect.value !== "__new__") {
         Auth.setActiveProfile?.(profileSelect.value);
         syncFromAuth();
+        updatePills();
       }
       refreshNewWrap();
     });
@@ -1292,114 +1152,113 @@
     refreshNewWrap();
   }
 
-  function globalErrorTrap() {
-    window.addEventListener("error", (e) => {
-      try {
-        overlayHide(overlayLoading);
-        if (errMsg) errMsg.textContent = e?.message || "Error";
-        overlayShow(overlayError);
-      } catch {}
-    });
+  // ───────────────────────── Boot ─────────────────────────
+  function cacheDOM() {
+    stage = $("stage");
+    canvas = $("gameCanvas");
+    if (!stage) throw new Error("Falta #stage");
+    if (!canvas) throw new Error("Falta #gameCanvas");
 
-    window.addEventListener("unhandledrejection", (e) => {
-      try {
-        overlayHide(overlayLoading);
-        if (errMsg) errMsg.textContent = (e?.reason?.message || e?.reason || "Promise error");
-        overlayShow(overlayError);
-      } catch {}
-    });
+    ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) throw new Error("No se pudo crear contexto 2D");
+
+    brandSub = $("brandSub");
+
+    pillScore = $("pillScore");
+    pillBest = $("pillBest");
+    pillStreak = $("pillStreak");
+    pillMult = $("pillMult");
+    pillLevel = $("pillLevel");
+    pillSpeed = $("pillSpeed");
+    pillPlayer = $("pillPlayer");
+    pillUpdate = $("pillUpdate");
+    pillOffline = $("pillOffline");
+    pillVersion = $("pillVersion");
+
+    btnOptions = $("btnOptions");
+    btnPause = $("btnPause");
+    btnRestart = $("btnRestart");
+    btnInstall = $("btnInstall");
+
+    overlayLoading = $("overlayLoading");
+    loadingSub = $("loadingSub");
+    overlayStart = $("overlayStart");
+    overlayPaused = $("overlayPaused");
+    overlayUpgrades = $("overlayUpgrades");
+    overlayGameOver = $("overlayGameOver");
+    overlayOptions = $("overlayOptions");
+    overlayError = $("overlayError");
+
+    btnStart = $("btnStart");
+    profileSelect = $("profileSelect");
+    btnNewProfile = $("btnNewProfile");
+    newProfileWrap = $("newProfileWrap");
+    startName = $("startName");
+
+    btnResume = $("btnResume");
+    btnQuitToStart = $("btnQuitToStart");
+
+    upTitle = $("upTitle");
+    upSub = $("upSub");
+    upgradeChoices = $("upgradeChoices");
+    btnReroll = $("btnReroll");
+    btnSkipUpgrade = $("btnSkipUpgrade");
+
+    goStats = $("goStats");
+    btnBackToStart = $("btnBackToStart");
+    btnRetry = $("btnRetry");
+
+    btnCloseOptions = $("btnCloseOptions");
+    optSprites = $("optSprites");
+    optVibration = $("optVibration");
+    optDpad = $("optDpad");
+    optFx = $("optFx");
+    optFxValue = $("optFxValue");
+    btnClearLocal = $("btnClearLocal");
+
+    errMsg = $("errMsg");
+    btnErrClose = $("btnErrClose");
+    btnErrReload = $("btnErrReload");
+
+    comboSeq = $("comboSeq");
+    comboTimerVal = $("comboTimerVal");
+    comboHint = $("comboHint");
+    toast = $("toast");
+
+    dpad = $("dpad");
+    btnUp = $("btnUp");
+    btnDown = $("btnDown");
+    btnLeft = $("btnLeft");
+    btnRight = $("btnRight");
   }
 
   async function boot() {
     try {
-      stage = must("stage");
-      canvas = must("gameCanvas");
-      ctx = canvas.getContext("2d", { alpha: false });
+      cacheDOM();
 
-      brandSub = $("brandSub");
-
-      pillScore = $("pillScore");
-      pillBest = $("pillBest");
-      pillStreak = $("pillStreak");
-      pillMult = $("pillMult");
-      pillLevel = $("pillLevel");
-      pillSpeed = $("pillSpeed");
-      pillPlayer = $("pillPlayer");
-      pillUpdate = $("pillUpdate");
-      pillOffline = $("pillOffline");
-      pillVersion = $("pillVersion");
-
-      btnOptions = $("btnOptions");
-      btnPause = $("btnPause");
-      btnRestart = $("btnRestart");
-      btnInstall = $("btnInstall");
-
-      overlayLoading = $("overlayLoading");
-      loadingSub = $("loadingSub");
-      overlayStart = $("overlayStart");
-      overlayPaused = $("overlayPaused");
-      overlayUpgrades = $("overlayUpgrades");
-      overlayGameOver = $("overlayGameOver");
-      overlayOptions = $("overlayOptions");
-      overlayError = $("overlayError");
-
-      btnStart = $("btnStart");
-      profileSelect = $("profileSelect");
-      btnNewProfile = $("btnNewProfile");
-      newProfileWrap = $("newProfileWrap");
-      startName = $("startName");
-
-      btnResume = $("btnResume");
-      btnQuitToStart = $("btnQuitToStart");
-
-      upTitle = $("upTitle");
-      upSub = $("upSub");
-      upgradeChoices = $("upgradeChoices");
-      btnReroll = $("btnReroll");
-      btnSkipUpgrade = $("btnSkipUpgrade");
-
-      goStats = $("goStats");
-      btnBackToStart = $("btnBackToStart");
-      btnRetry = $("btnRetry");
-
-      btnCloseOptions = $("btnCloseOptions");
-      optSprites = $("optSprites");
-      optVibration = $("optVibration");
-      optDpad = $("optDpad");
-      optFx = $("optFx");
-      optFxValue = $("optFxValue");
-      btnClearLocal = $("btnClearLocal");
-
-      errMsg = $("errMsg");
-      btnErrClose = $("btnErrClose");
-      btnErrReload = $("btnErrReload");
-
-      comboSeq = $("comboSeq");
-      comboTimerVal = $("comboTimerVal");
-      comboHint = $("comboHint");
-      toast = $("toast");
-
-      dpad = $("dpad");
-      btnUp = $("btnUp");
-      btnDown = $("btnDown");
-      btnLeft = $("btnLeft");
-      btnRight = $("btnRight");
+      window.__GRIDRUNNER_BOOTED = true;
 
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
 
-      globalErrorTrap();
+      if (loadingSub) loadingSub.textContent = "Iniciando…";
 
-      if (loadingSub) loadingSub.textContent = "Preparando UI…";
+      syncFromAuth();
+
+      // estado base antes de dibujar
+      recomputeZone();
+      makeGrid();
+      rerollCombo();
+
+      initAuthUI();
       applySettingsToUI();
+
       resize();
       window.addEventListener("resize", resize, { passive: true });
 
-      syncFromAuth();
-      initAuthUI();
-
       bindInputs();
 
+      // UI listeners
       btnPause?.addEventListener("click", togglePause);
       btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
       btnOptions?.addEventListener("click", showOptions);
@@ -1454,42 +1313,35 @@
             localStorage.setItem(NAME_KEY, playerName);
           }
         }
+        updatePills();
         startRun();
       });
 
       pillPlayer?.addEventListener("click", () => resetRun(true));
+      pillPlayer?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") resetRun(true);
+      });
 
-      if (loadingSub) loadingSub.textContent = "Preparando PWA…";
+      if (loadingSub) loadingSub.textContent = "PWA…";
       setupPWA();
 
-      if (loadingSub) loadingSub.textContent = "Preparando sprites…";
       preloadSpritesWithTimeout(900);
 
+      // estado inicial
       resetRun(true);
 
+      // loop
       lastT = performance.now();
       requestAnimationFrame(frame);
 
-      // watchdog + finish splash
-      const watchdog = setTimeout(() => {
-        if (overlayLoading && !overlayLoading.hidden) {
-          overlayHide(overlayLoading);
-          overlayShow(overlayStart);
-        }
-      }, 6500);
+      // quitar loading
+      setTimeout(() => {
+        overlayHide(overlayLoading);
+        overlayShow(overlayStart);
+        if (brandSub) brandSub.textContent = "Listo";
+        updatePills();
+      }, 650);
 
-      await new Promise(res => setTimeout(res, 900));
-      clearTimeout(watchdog);
-
-      overlayHide(overlayLoading);
-      overlayShow(overlayStart);
-
-      if (brandSub) brandSub.textContent = "Listo";
-
-      // ✅ marca booted para tu failsafe inline
-      window.__GRIDRUNNER_BOOTED = true;
-
-      // pause on tab hide
       document.addEventListener("visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {
           paused = true;
@@ -1498,15 +1350,10 @@
       });
 
     } catch (e) {
-      console.error(e);
-      overlayHide(overlayLoading);
-      if (errMsg) errMsg.textContent = e?.message ? e.message : "Error desconocido";
-      overlayShow(overlayError);
-      if (!overlayError) alert(e?.message || "Error desconocido");
+      showFatal(e);
     }
   }
 
-  // DOM ready
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot, { once: true });
   } else {
