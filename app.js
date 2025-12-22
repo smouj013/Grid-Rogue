@@ -1,12 +1,16 @@
-/* Grid Runner — PWA (v0.0.5)
-   ✅ Sistema de sprites configurable por casilla + player
-   ✅ Toggle en Opciones: Sprites ON/OFF
-   ✅ Fallback automático a colores si falta sprite
+/* Grid Runner — PWA (v0.0.6)
+   ✅ Sprites configurables (fallback a colores)
+   ✅ Movimiento 4 direcciones en banda central (banda ampliable por upgrades)
+   ✅ Combos objetivo visibles (secuencia y timer) + bonus al completarlos
+   ✅ Sistema roguelike de mejoras (20+) al subir de nivel (3 opciones)
+   ✅ Densidad de celdas ajustada (menos “ruido”)
+   ✅ Visual: banda marcada, filas “inertes” atenuadas, números más juicy
+   ✅ Ranking mundial online (Cloudflare Worker) solo si hay internet
 */
 (() => {
   "use strict";
 
-  const APP_VERSION = "0.0.5";
+  const APP_VERSION = "0.0.6";
 
   // ───────────────────────── UI refs ─────────────────────────
   const $ = (id) => document.getElementById(id);
@@ -21,14 +25,21 @@
   const hudBest = $("hudBest");
   const hudComboFill = $("hudComboFill");
   const hudComboText = $("hudComboText");
+
+  const hudLevel = $("hudLevel");
+  const hudXp = $("hudXp");
+  const hudLevelFill = $("hudLevelFill");
+
   const pillSpeed = $("pillSpeed");
   const pillPlayer = $("pillPlayer");
   const pillSprites = $("pillSprites");
+  const pillOffline = $("pillOffline");
+  const pillLevel = $("pillLevel");
+  const pillVersion = $("pillVersion");
 
   const btnPause = $("btnPause");
   const btnRestart = $("btnRestart");
   const btnInstall = $("btnInstall");
-  const pillOffline = $("pillOffline");
 
   const btnOptions = $("btnOptions");
   const overlayOptions = $("overlayOptions");
@@ -51,6 +62,7 @@
   const overlayStart = $("overlayStart");
   const overlayPaused = $("overlayPaused");
   const overlayGameOver = $("overlayGameOver");
+  const overlayUpgrades = $("overlayUpgrades");
 
   const startName = $("startName");
   const startBest = $("startBest");
@@ -63,7 +75,6 @@
   const finalLine = $("finalLine");
 
   const toast = $("toast");
-
   const zoneLeft = $("zoneLeft");
   const zoneRight = $("zoneRight");
 
@@ -73,26 +84,34 @@
   const btnLeft = $("btnLeft");
   const btnRight = $("btnRight");
 
-  const ROOT = document.documentElement;
+  const comboSeq = $("comboSeq");
+  const comboTimer = $("comboTimer");
+  const comboHint = $("comboHint");
+
+  const upgradeChoices = $("upgradeChoices");
+  const upLevelPill = $("upLevelPill");
+  const btnReroll = $("btnReroll");
+  const btnSkipUpgrade = $("btnSkipUpgrade");
+  const upgradeHint = $("upgradeHint");
 
   // ───────────────────────── Local storage keys ─────────────────────────
-  const BEST_KEY = "grid_runner_best_v4";
-  const RUNS_KEY = "grid_runner_runs_v1";
-  const PLAYER_NAME_KEY = "grid_runner_player_name_v2";
-  const SETTINGS_KEY = "grid_runner_settings_v2"; // <- v2 para incluir sprites
+  const BEST_KEY = "grid_runner_best_v5";
+  const RUNS_KEY = "grid_runner_runs_v2";
+  const PLAYER_NAME_KEY = "grid_runner_player_name_v3";
+  const SETTINGS_KEY = "grid_runner_settings_v3";
+  const META_KEY = "grid_runner_meta_v1"; // upgrades meta (por si quieres persistir más adelante)
 
-  // ───────────────────────── Leaderboard config (ONLINE) ─────────────────────────
-  const LEADERBOARD_ENDPOINT = ""; // <- pon tu Cloudflare Worker URL aquí
+  // ───────────────────────── Leaderboard (ONLINE) ─────────────────────────
+  // Pon la URL de tu worker desplegado. Ejemplo:
+  // const LEADERBOARD_ENDPOINT = "https://grid-runner-lb.TUUSUARIO.workers.dev";
+  const LEADERBOARD_ENDPOINT = "";
   const LEADERBOARD_GAME_ID = "grid-runner";
 
   // ───────────────────────── Game config ─────────────────────────
   const COLS = 8;
   const ROWS = 24;
 
-  const BAND_HEIGHT = 3;
   const BAND_CENTER = Math.floor(ROWS / 2);
-  const BAND_START = BAND_CENTER - 1;
-  const BAND_END = BAND_CENTER + 1;
 
   const CELL = Object.freeze({
     EMPTY: 0,
@@ -112,16 +131,24 @@
     [CELL.BONUS]: "#ffcc33",
   };
 
-  // Velocidad
-  const SPEED_START = 0.85;
-  const SPEED_MAX   = 4.50;
-  const SPEED_RAMP_SECONDS = 85;
+  // Velocidad (filas / segundo)
+  const SPEED_START = 0.70;     // más lento al inicio
+  const SPEED_MAX   = 4.80;
+  const SPEED_RAMP_SECONDS = 95; // sube más gradual
+  const PLAYER_SMOOTH_CELLS_PER_SEC = 22;
 
-  const PLAYER_SMOOTH_CELLS_PER_SEC = 18;
+  // Streak -> mult
+  const BASE_STREAK_PER_MULT = 5; // upgrades lo pueden bajar
+
+  // Combo “por racha”
   const COMBO_EVERY = 8;
 
-  // ───────────────────────── Sprite config (EDITA AQUÍ) ─────────────────────────
-  // Puedes cambiar a .png sin tocar más nada.
+  // Combo objetivo (visible)
+  const COMBO_TARGET_BASE_DURATION = 24; // segundos
+  const COMBO_TARGET_MIN_LEN = 3;
+  const COMBO_TARGET_MAX_LEN = 5;
+
+  // ───────────────────────── Sprites config (EDITA AQUÍ) ─────────────────────────
   const SPRITES = Object.freeze({
     player: "./assets/sprites/player.svg",
     [CELL.BLOCK]: "./assets/sprites/tile_block.svg",
@@ -129,15 +156,14 @@
     [CELL.GEM]:   "./assets/sprites/tile_gem.svg",
     [CELL.TRAP]:  "./assets/sprites/tile_trap.svg",
     [CELL.BONUS]: "./assets/sprites/tile_bonus.svg",
-    // [CELL.EMPTY]: "./assets/sprites/tile_empty.svg", // opcional
+    [CELL.EMPTY]: "./assets/sprites/tile_empty.svg",
   });
 
-  // Ajuste de padding interno del sprite dentro de la celda
-  const SPRITE_INSET_RATIO = 0.10; // 10% de margen
+  const SPRITE_INSET_RATIO = 0.10;
   const SPRITE_SCALE = Object.freeze({
     default: 1.00,
     player: 1.00,
-    [CELL.BLOCK]: 1.02, // un pelín más grande para diferenciar
+    [CELL.BLOCK]: 1.04,
   });
 
   /** @type {Map<string|number, HTMLImageElement>} */
@@ -151,7 +177,6 @@
       img.decoding = "async";
       img.loading = "eager";
       img.src = url;
-
       img.onload = async () => {
         spriteImages.set(key, img);
         spriteLoaded.set(key, true);
@@ -167,9 +192,7 @@
 
   async function preloadSprites() {
     const tasks = [];
-    // player
     tasks.push(loadImage("player", SPRITES.player));
-    // tiles
     for (const k of Object.keys(SPRITES)) {
       if (k === "player") continue;
       tasks.push(loadImage(Number(k), SPRITES[k]));
@@ -201,7 +224,7 @@
       const obj = JSON.parse(raw);
       return {
         useSprites: obj.useSprites !== false,
-        vibration: !!obj.vibration,
+        vibration: obj.vibration !== false,
         showDpad: obj.showDpad !== false,
         fx: clamp(Number(obj.fx) || 1.0, 0.4, 1.25),
       };
@@ -233,6 +256,7 @@
   let running = false;
   let paused = false;
   let gameOver = false;
+  let inLevelUp = false;
 
   let score = 0;
   let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
@@ -241,90 +265,120 @@
   let mult = 1;
 
   let runTime = 0;
+  let rowsSurvived = 0;
+
   let scrollPx = 0;
   let speedBoost = 0;
 
+  // Player target in celdas
   let targetCol = Math.floor(COLS / 2);
   let targetRow = BAND_CENTER;
 
+  // Smooth render positions
   let playerColFloat = targetCol;
   let playerRowFloat = targetRow;
 
   /** @type {Uint8Array[]} */
   let grid = [];
 
+  // VFX
   let animT = 0;
   let toastTimer = 0;
-
   let shake = 0;
   let shakeSeed = 0;
   let pulse = 0;
+
+  // fondo
   let hue = 220;
   let hueTarget = 220;
-  let glow = 0.18;
+  let glow = 0.16;
 
   const particles = [];
   const floatTexts = [];
 
+  // HUD caching
   let prevScore = -1, prevStreak = -1, prevMult = -1, prevBest = -1;
   let deltaTimer = 0;
 
+  // player name
   let playerName = (localStorage.getItem(PLAYER_NAME_KEY) || "").trim().slice(0, 16);
+
+  // Band (ampliable)
+  let bandHeight = 3; // base
+  function bandStart() { return clamp(BAND_CENTER - Math.floor(bandHeight / 2), 0, ROWS - 1); }
+  function bandEnd()   { return clamp(bandStart() + bandHeight - 1, 0, ROWS - 1); }
+
+  // Dual runner
+  let dualRunner = false; // upgrade
+  function playerWidth() { return dualRunner ? 2 : 1; }
+  function maxCol() { return COLS - playerWidth(); }
+
+  // Buffs / upgrades runtime
+  let shields = 0;
+  let invulnT = 0;
+
+  let coinMul = 1.0;
+  let gemMul = 1.0;
+  let bonusMul = 1.0;
+  let survivalAddBase = 1;
+
+  let streakPerMult = BASE_STREAK_PER_MULT;
+  let comboRewardMul = 1.0;
+  let comboTargetExtraTime = 0;
+
+  let trapPenaltyBase = 25;
+  let trapPenaltyMul = 1.0;
+  let trapSoftReset = 0; // 0 normal, 1 half, 2 keep mult etc
+
+  let genBlockMul = 1.0;
+  let genGoodMul = 1.0;
+  let genBonusMul = 1.0;
+
+  let rerollCharges = 0;
+
+  // Score multiplier buff (temporal)
+  let buffX2T = 0;
+
+  // Combo objetivo state
+  let comboTarget = null; // { seq:number[], idx:number, expires:number, reward:number }
+
+  // Level system (score thresholds)
+  let level = 1;
+  let nextLevelScore = 200;
+
+  // upgrades picked this run
+  /** @type {Record<string, number>} */
+  let upgradeLv = Object.create(null);
 
   // ───────────────────────── Utils ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const randi = (min, max) => (Math.random() * (max - min + 1) + min) | 0;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const randi = (a, b) => (a + Math.floor(Math.random() * (b - a + 1)));
+  const now = () => performance.now() * 0.001;
 
-  function vibrate(ms = 12) {
+  function easeOutCubic(t){ t = clamp(t, 0, 1); return 1 - Math.pow(1 - t, 3); }
+
+  function isMobileLike(){
+    return (matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  }
+
+  function vibrate(ms){
     if (!settings.vibration) return;
-    try { if (navigator.vibrate) navigator.vibrate(ms); } catch {}
+    if (navigator.vibrate) navigator.vibrate(ms);
   }
 
-  // ───────────────────────── UI helpers ─────────────────────────
-  function showToast(msg, ms = 900) {
-    toast.textContent = msg;
-    toast.hidden = false;
-    toastTimer = ms;
-  }
-  function hideToast() {
-    toast.hidden = true;
-    toastTimer = 0;
-  }
-
-  function bump(el) {
+  function bump(el){
+    if (!el) return;
     el.classList.remove("bump");
     void el.offsetWidth;
     el.classList.add("bump");
   }
 
-  function setScoreDelta(v) {
-    deltaTimer = 900;
-    hudScoreDelta.textContent = (v >= 0 ? `+${v}` : `${v}`);
-    hudScoreDelta.classList.toggle("delta", true);
-  }
-
-  function updateComboUI() {
-    const p = (streak % COMBO_EVERY) / COMBO_EVERY;
-    hudComboFill.style.width = `${Math.floor(p * 100)}%`;
-    hudComboText.textContent = `Combo ${streak % COMBO_EVERY}/${COMBO_EVERY}`;
-  }
-
-  function updateHud(force = false) {
-    if (force || score !== prevScore) { hudScore.textContent = String(score); bump(hudScore); prevScore = score; }
-    if (force || streak !== prevStreak) { hudStreak.textContent = String(streak); bump(hudStreak); prevStreak = streak; updateComboUI(); }
-    if (force || mult !== prevMult) { hudMult.textContent = String(mult); bump(hudMult); prevMult = mult; }
-    if (force || best !== prevBest) { hudBest.textContent = String(best); bump(hudBest); prevBest = best; }
-    pillPlayer.textContent = `👤 ${playerName || "—"}`;
-    pillSprites.textContent = `Sprites: ${settings.useSprites ? "ON" : "OFF"}`;
-  }
-
-  function overlayShow(el) {
+  function overlayShow(el){
     el.classList.remove("fadeOut");
     el.hidden = false;
   }
-
-  function overlayHide(el, ms = 180) {
-    if (el.hidden) return;
+  function overlayHide(el, ms = 180){
     el.classList.add("fadeOut");
     window.setTimeout(() => {
       el.hidden = true;
@@ -332,445 +386,1067 @@
     }, ms);
   }
 
-  // ───────────────────────── Runs local ─────────────────────────
-  function loadRuns() {
-    try {
-      const raw = localStorage.getItem(RUNS_KEY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return [];
-      return arr.slice(0, 50);
-    } catch {
-      return [];
+  function showToast(msg, ms = 900){
+    toast.textContent = msg;
+    toast.hidden = false;
+    toastTimer = ms / 1000;
+  }
+
+  function setScoreDelta(add){
+    hudScoreDelta.textContent = (add >= 0 ? `+${add}` : `${add}`);
+    hudScoreDelta.classList.add("delta");
+    deltaTimer = 0.85;
+  }
+
+  function effectiveScoreMult(){
+    return (buffX2T > 0) ? 2 : 1;
+  }
+
+  // ───────────────────────── Combos objetivo ─────────────────────────
+  function chipForCell(cell){
+    if (cell === CELL.COIN) return { cls:"coin", label:"Moneda" };
+    if (cell === CELL.GEM) return { cls:"gem", label:"Gema" };
+    if (cell === CELL.BONUS) return { cls:"bonus", label:"Bonus" };
+    if (cell === CELL.TRAP) return { cls:"trap", label:"Trampa" };
+    if (cell === CELL.BLOCK) return { cls:"block", label:"Bloque" };
+    return { cls:"", label:"—" };
+  }
+
+  function renderComboTarget(){
+    if (!comboTarget) {
+      comboSeq.innerHTML = "";
+      comboTimer.textContent = "—";
+      comboHint.textContent = "—";
+      return;
+    }
+
+    const tLeft = Math.max(0, comboTarget.expires - now());
+    comboTimer.textContent = `${tLeft.toFixed(0)}s`;
+
+    comboSeq.innerHTML = "";
+    for (let i = 0; i < comboTarget.seq.length; i++){
+      const cell = comboTarget.seq[i];
+      const info = chipForCell(cell);
+      const div = document.createElement("div");
+      div.className = "comboChip" + (i < comboTarget.idx ? " done" : "");
+      div.innerHTML = `<span class="comboDot ${info.cls}"></span><span>${info.label}</span>`;
+      comboSeq.appendChild(div);
+    }
+
+    const left = comboTarget.seq.length - comboTarget.idx;
+    comboHint.textContent = left <= 0 ? "¡Completado!" : `Faltan ${left} en orden`;
+  }
+
+  function newComboTarget(){
+    const len = randi(COMBO_TARGET_MIN_LEN, COMBO_TARGET_MAX_LEN);
+    const pool = [CELL.COIN, CELL.GEM, CELL.BONUS];
+    const seq = [];
+    let last = -1;
+    for (let i=0;i<len;i++){
+      let c = pool[randi(0, pool.length - 1)];
+      if (c === last && Math.random() < 0.65) c = pool[(pool.indexOf(c)+1) % pool.length];
+      seq.push(c);
+      last = c;
+    }
+
+    const duration = COMBO_TARGET_BASE_DURATION + comboTargetExtraTime;
+    const rewardBase = 90 * len; // base
+    comboTarget = {
+      seq,
+      idx: 0,
+      expires: now() + duration,
+      reward: Math.floor(rewardBase),
+    };
+    renderComboTarget();
+  }
+
+  function comboTargetOnPick(cell){
+    if (!comboTarget) return;
+
+    // expire?
+    if (now() > comboTarget.expires){
+      newComboTarget();
+      return;
+    }
+
+    const expected = comboTarget.seq[comboTarget.idx];
+    if (cell === expected){
+      comboTarget.idx++;
+      // feedback
+      shake = clamp(shake + 0.06, 0, 1);
+      pulse = clamp(pulse + 0.12, 0, 1);
+      renderComboTarget();
+
+      // completed
+      if (comboTarget.idx >= comboTarget.seq.length){
+        const add = Math.floor(comboTarget.reward * comboRewardMul * mult * effectiveScoreMult());
+        score += add;
+        setScoreDelta(add);
+        spawnFloatText(targetCol, targetRow, `OBJ +${add}`, "rgba(255,255,255,0.95)", 1.15);
+        spawnParticles(targetCol, targetRow, "#ffffff", 24, 1.4);
+        hueTarget = (hueTarget + 22) % 360;
+
+        // chance de buff x2 (upgrade)
+        if (upgradeLv["x2_burst"] > 0){
+          const dur = 6 + 2 * upgradeLv["x2_burst"];
+          buffX2T = Math.max(buffX2T, dur);
+          showToast(`COMBO OBJETIVO ✔  x2 (${dur}s)`, 900);
+        } else {
+          showToast(`COMBO OBJETIVO ✔  +${add}`, 900);
+        }
+
+        // siguiente combo
+        newComboTarget();
+      }
+    } else {
+      // fallo: reinicia progreso (sin castigar demasiado)
+      if (comboTarget.idx > 0){
+        comboTarget.idx = 0;
+        renderComboTarget();
+        spawnFloatText(targetCol, targetRow, `FALLO`, "rgba(255,255,255,0.70)", 0.95);
+        shake = clamp(shake + 0.04, 0, 1);
+      }
     }
   }
-  function saveRuns(runs) {
-    localStorage.setItem(RUNS_KEY, JSON.stringify(runs.slice(0, 50)));
+
+  // ───────────────────────── Upgrades (20+) ─────────────────────────
+  const UPGRADES = [
+    { id:"dual_runner", name:"Doble Runner", max:1,
+      desc:"Tu jugador ocupa 2 cuadrados (recoges doble si cae bien).",
+      apply(){ dualRunner = true; targetCol = clamp(targetCol, 0, maxCol()); }
+    },
+    { id:"band_plus", name:"Más filas de movimiento", max:4,
+      desc:"+1 a la banda central (más libertad vertical).",
+      apply(){ bandHeight = clamp(bandHeight + 1, 3, 9); targetRow = clamp(targetRow, bandStart(), bandEnd()); }
+    },
+    { id:"shield", name:"Escudo", max:3,
+      desc:"Ganas 1 escudo. Un BLOQUE no te mata: consume escudo.",
+      apply(){ shields += 1; }
+    },
+    { id:"coin_boost", name:"Monedas++", max:5,
+      desc:"+20% puntos de MONEDA.",
+      apply(){ coinMul *= 1.2; }
+    },
+    { id:"gem_boost", name:"Gemas++", max:5,
+      desc:"+20% puntos de GEMA.",
+      apply(){ gemMul *= 1.2; }
+    },
+    { id:"bonus_boost", name:"Bonus++", max:5,
+      desc:"+20% puntos de BONUS.",
+      apply(){ bonusMul *= 1.2; }
+    },
+    { id:"survival_boost", name:"Supervivencia", max:5,
+      desc:"+1 punto extra por fila avanzada.",
+      apply(){ survivalAddBase += 1; }
+    },
+    { id:"mult_faster", name:"Multiplicador rápido", max:3,
+      desc:"Necesitas menos racha para subir el multiplicador.",
+      apply(){ streakPerMult = clamp(streakPerMult - 1, 2, 5); }
+    },
+    { id:"trap_armor", name:"Armadura anti-trampa", max:4,
+      desc:"Reduces el daño de TRAMPA (hasta -60%).",
+      apply(){ trapPenaltyMul *= 0.85; }
+    },
+    { id:"trap_soft", name:"Racha resistente", max:2,
+      desc:"Las TRAMPAS no te resetean del todo la racha.",
+      apply(){ trapSoftReset = Math.min(2, trapSoftReset + 1); }
+    },
+    { id:"invuln", name:"Invulnerabilidad breve", max:2,
+      desc:"Tras una TRAMPA, 1.0s invulnerable (escala).",
+      apply(){ /* se usa en runtime */ }
+    },
+    { id:"combo_master", name:"Combo Maestro", max:4,
+      desc:"+30% recompensa de combo objetivo.",
+      apply(){ comboRewardMul *= 1.3; }
+    },
+    { id:"combo_time", name:"Combo con más tiempo", max:3,
+      desc:"+6s al timer del combo objetivo.",
+      apply(){ comboTargetExtraTime += 6; }
+    },
+    { id:"x2_burst", name:"Explosión x2", max:3,
+      desc:"Al completar combo objetivo: x2 puntos durante unos segundos.",
+      apply(){ /* activa en comboTargetOnPick */ }
+    },
+    { id:"less_blocks", name:"Menos bloques", max:3,
+      desc:"Reduce la cantidad de BLOQUES generados.",
+      apply(){ genBlockMul *= 0.88; }
+    },
+    { id:"more_goods", name:"Más recompensas", max:3,
+      desc:"Más MONEDAS y GEMAS en el mapa.",
+      apply(){ genGoodMul *= 1.15; }
+    },
+    { id:"more_bonus", name:"Más BONUS", max:3,
+      desc:"Aumenta probabilidad de BONUS.",
+      apply(){ genBonusMul *= 1.18; }
+    },
+    { id:"reroll", name:"Reroll", max:2,
+      desc:"Ganas 1 reroll por subida de nivel (para repetir opciones).",
+      apply(){ rerollCharges += 1; }
+    },
+    { id:"start_slow", name:"Arranque suave", max:1,
+      desc:"Los primeros segundos, la velocidad sube aún más lento.",
+      apply(){ /* se usa en speed calc */ }
+    },
+    { id:"score_magnet", name:"Imán (1 casilla)", max:3,
+      desc:"Al pisar, recoge también premios adyacentes (si hay).",
+      apply(){ /* se usa en applyCellEffect */ }
+    },
+    { id:"combo_every", name:"Combo por racha mejorado", max:2,
+      desc:"El combo por racha (cada 8) da más puntos.",
+      apply(){ /* runtime */ }
+    },
+  ];
+
+  function getUpgradeLevel(id){ return upgradeLv[id] || 0; }
+  function canTakeUpgrade(u){ return getUpgradeLevel(u.id) < u.max; }
+
+  function pickUpgradeChoices(count=3){
+    const pool = UPGRADES.filter(canTakeUpgrade);
+    // si se agotan, rellena con “shield” (si se puede) o repite pool
+    const out = [];
+    for (let i=0;i<count;i++){
+      if (pool.length === 0) break;
+      const idx = randi(0, pool.length - 1);
+      out.push(pool[idx]);
+      pool.splice(idx, 1);
+    }
+    return out;
   }
-  function addRun(scoreFinal) {
-    const runs = loadRuns();
-    runs.unshift({ s: scoreFinal | 0, t: Date.now(), n: (playerName || "").slice(0, 16) });
-    saveRuns(runs);
+
+  let currentChoices = [];
+
+  function openLevelUp(){
+    inLevelUp = true;
+    setPaused(true, true);
+
+    upLevelPill.textContent = `Nivel ${level}`;
+    upgradeHint.textContent = `Elige 1 mejora (tienes ${Object.keys(upgradeLv).length} activas).`;
+
+    showUpgradeChoices();
+
+    overlayShow(overlayUpgrades);
   }
-  function refreshStartStats() {
-    startBest.textContent = String(best);
-    const runs = loadRuns();
-    const last = runs.slice(0, 3).map(r => String(r.s));
-    startRuns.textContent = last.length ? last.join(" · ") : "—";
+
+  function closeLevelUp(){
+    overlayHide(overlayUpgrades, 160);
+    inLevelUp = false;
+    setPaused(false, true);
+  }
+
+  function showUpgradeChoices(){
+    currentChoices = pickUpgradeChoices(3);
+    upgradeChoices.innerHTML = "";
+
+    for (const u of currentChoices){
+      const lv = getUpgradeLevel(u.id);
+      const div = document.createElement("div");
+      div.className = "upCard";
+      div.innerHTML = `
+        <div class="upName">${u.name}</div>
+        <div class="upDesc">${u.desc}</div>
+        <div class="upMeta">
+          <span>Nivel: ${lv}/${u.max}</span>
+          <span>+1</span>
+        </div>
+      `;
+      div.addEventListener("click", () => {
+        takeUpgrade(u);
+      });
+      upgradeChoices.appendChild(div);
+    }
+
+    // reroll UI
+    const rr = getUpgradeLevel("reroll");
+    const hasRR = rr > 0;
+    btnReroll.hidden = !hasRR;
+    btnReroll.disabled = !(hasRR && rerollCharges > 0);
+    btnReroll.textContent = `🔁 Reroll (${rerollCharges})`;
+
+    // skip (solo si ya estás alto o para debug; lo dejamos oculto por defecto)
+    btnSkipUpgrade.hidden = true;
+  }
+
+  function takeUpgrade(u){
+    const lv = getUpgradeLevel(u.id);
+    if (lv >= u.max) return;
+
+    upgradeLv[u.id] = lv + 1;
+    u.apply();
+
+    // feedback
+    spawnParticles(targetCol, targetRow, "#ffffff", 18, 1.2);
+    spawnFloatText(targetCol, targetRow, `+${u.name}`, "rgba(255,255,255,0.95)", 1.05);
+    showToast(`Mejora: ${u.name}`, 900);
+
+    // asegura combo target
+    if (!comboTarget) newComboTarget();
+
+    closeLevelUp();
   }
 
   // ───────────────────────── Board generation ─────────────────────────
-  function makeEmptyRow() {
+  function makeEmptyRow(){
     const row = new Uint8Array(COLS);
     row.fill(CELL.EMPTY);
     return row;
   }
 
-  function chooseType(difficulty01) {
-    const fill = clamp(0.16 + difficulty01 * 0.12, 0.16, 0.28);
-    if (Math.random() > fill) return CELL.EMPTY;
-
-    const wBlock = 0.34 + difficulty01 * 0.10;
-    const wCoin  = 0.32 - difficulty01 * 0.02;
-    const wGem   = 0.16;
-    const wTrap  = 0.12 + difficulty01 * 0.04;
-    const wBonus = 0.06;
-
-    const sum = wBlock + wCoin + wGem + wTrap + wBonus;
-    let x = Math.random() * sum;
-
-    if ((x -= wBlock) < 0) return CELL.BLOCK;
-    if ((x -= wCoin) < 0) return CELL.COIN;
-    if ((x -= wGem) < 0) return CELL.GEM;
-    if ((x -= wTrap) < 0) return CELL.TRAP;
-    return CELL.BONUS;
-  }
-
-  function generateRow(difficulty01) {
+  function generateRow(difficulty01){
     const row = makeEmptyRow();
 
+    // menos ruido global; y mods por upgrades
+    const blockChance = clamp((0.08 + difficulty01 * 0.20) * genBlockMul, 0.06, 0.30);
+    const coinChance  = clamp((0.085 + difficulty01 * 0.07) * genGoodMul, 0.07, 0.20);
+    const gemChance   = clamp((0.040 + difficulty01 * 0.05) * genGoodMul, 0.03, 0.12);
+    const bonusChance = clamp((0.022 + difficulty01 * 0.03) * genBonusMul, 0.016, 0.07);
+    const trapChance  = clamp((0.038 + difficulty01 * 0.05), 0.03, 0.10);
+
+    // camino seguro 1-2 columnas
     const safeCol = randi(0, COLS - 1);
-    const safeCol2 = (Math.random() < 0.25)
+    const safeCol2 = (Math.random() < 0.28)
       ? clamp(safeCol + (Math.random() < 0.5 ? -1 : 1), 0, COLS - 1)
       : safeCol;
 
-    const maxBlocks = 2 + (difficulty01 > 0.75 ? 1 : 0);
-    const maxItems  = 2 + (difficulty01 > 0.55 ? 1 : 0);
-
-    let blocks = 0;
-    let items = 0;
-
-    for (let c = 0; c < COLS; c++) {
+    for (let c=0;c<COLS;c++){
       if (c === safeCol || c === safeCol2) continue;
 
-      const t = chooseType(difficulty01);
+      const x = Math.random();
+      if (x < blockChance){ row[c] = CELL.BLOCK; continue; }
 
-      if (t === CELL.BLOCK) {
-        if (blocks >= maxBlocks) continue;
-        blocks++;
-        row[c] = t;
-      } else if (t !== CELL.EMPTY) {
-        if (items >= maxItems) continue;
-        items++;
-        row[c] = t;
-      }
+      const y = Math.random();
+      if (y < bonusChance) row[c] = CELL.BONUS;
+      else if (y < bonusChance + gemChance) row[c] = CELL.GEM;
+      else if (y < bonusChance + gemChance + coinChance) row[c] = CELL.COIN;
+      else if (y < bonusChance + gemChance + coinChance + trapChance) row[c] = CELL.TRAP;
     }
 
-    if (difficulty01 < 0.25 && items === 0 && Math.random() < 0.35) {
+    // un extra de moneda a veces
+    if (Math.random() < 0.30){
       const c = randi(0, COLS - 1);
-      if (c !== safeCol && row[c] === CELL.EMPTY) row[c] = CELL.COIN;
+      if (row[c] === CELL.EMPTY && c !== safeCol) row[c] = CELL.COIN;
     }
 
     return row;
   }
 
-  function initGrid() {
+  function initGrid(){
     grid = [];
-    for (let r = 0; r < ROWS; r++) grid.push(generateRow(0.0));
+    for (let r=0;r<ROWS;r++){
+      const d = clamp((r / ROWS) * 0.30, 0, 0.30);
+      grid.push(generateRow(d));
+    }
   }
 
-  // ───────────────────────── FX helpers ─────────────────────────
-  function cellCenterPx(col, row) {
-    return {
-      x: boardX + col * cellPx + cellPx * 0.5,
-      y: boardY + row * cellPx + cellPx * 0.5,
-    };
+  // ───────────────────────── Difficulty / Speed ─────────────────────────
+  function difficulty01(){
+    const t = clamp(runTime / SPEED_RAMP_SECONDS, 0, 1);
+    const streakBoost = clamp(streak / 70, 0, 0.25);
+    return clamp(t + streakBoost, 0, 1);
   }
 
-  function spawnParticles(col, row, color, amount, power = 1) {
+  function currentSpeed(){
+    // base ramp
+    const t = easeOutCubic(clamp(runTime / SPEED_RAMP_SECONDS, 0, 1));
+    let sp = SPEED_START + (SPEED_MAX - SPEED_START) * t;
+
+    // upgrade: start_slow -> amortigua los primeros 18s
+    if (getUpgradeLevel("start_slow") > 0){
+      const k = clamp(runTime / 18, 0, 1);
+      sp = lerp(SPEED_START, sp, k*k);
+    }
+
+    // speedBoost decae a 0
+    sp *= (1 + speedBoost);
+    sp = clamp(sp, 0.55, 6.0);
+    return sp;
+  }
+
+  // ───────────────────────── Effects / Particles / Float text ─────────────────────────
+  function spawnParticles(col, row, color, n=10, sizeMul=1.0){
     const fx = settings.fx;
-    const c = cellCenterPx(col, row);
-    const n = Math.floor(amount * fx);
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = (0.6 + Math.random() * 1.4) * power * fx;
+    const cx = col + 0.5;
+    const cy = row + 0.5;
+    for (let i=0;i<n;i++){
       particles.push({
-        x: c.x,
-        y: c.y,
-        vx: Math.cos(a) * sp * 2.4,
-        vy: Math.sin(a) * sp * 2.4 - (1.1 * power * fx),
-        life: 0,
-        max: 330 + Math.random() * 260,
-        size: (1.4 + Math.random() * 2.4) * dpr * fx,
+        x: cx + (Math.random()-0.5)*0.12,
+        y: cy + (Math.random()-0.5)*0.12,
+        vx: (Math.random()-0.5) * 3.2 * fx,
+        vy: (Math.random()-0.5) * 3.2 * fx - 0.4,
+        life: 0.45 + Math.random()*0.35,
+        t: 0,
         color,
-        alpha: 1,
+        size: (0.10 + Math.random()*0.10) * sizeMul,
       });
     }
   }
 
-  function spawnFloatText(col, row, text, color, kind = "normal") {
+  function spawnFloatText(col, row, text, color="rgba(255,255,255,0.95)", scale=1.0){
     const fx = settings.fx;
-    const c = cellCenterPx(col, row);
-    const max = kind === "combo" ? 980 : 860;
     floatTexts.push({
-      x: c.x,
-      y: c.y - 7 * dpr,
+      x: col + 0.5,
+      y: row + 0.5,
       text,
-      life: 0,
-      max,
-      vy: (-0.26 * dpr) * (kind === "combo" ? 1.15 : 1.0),
-      alpha: 1,
       color,
-      scale0: (kind === "combo" ? 1.35 : 1.18) * fx,
-      scale1: 1.0 * fx,
+      life: 0.85,
+      t: 0,
+      vy: -0.9 - Math.random()*0.4,
+      scale: scale * fx,
+      rot: (Math.random()-0.5)*0.18,
     });
   }
 
-  function kick(type) {
+  function kick(kind){
     const fx = settings.fx;
-    if (type === "good") {
-      shake = clamp(shake + 0.12 * fx, 0, 1);
-      pulse = clamp(pulse + 0.16 * fx, 0, 1);
-      glow = clamp(glow + 0.02 * fx, 0.16, 0.30);
-      vibrate(10);
-    } else if (type === "bonus") {
-      shake = clamp(shake + 0.20 * fx, 0, 1);
-      pulse = clamp(pulse + 0.22 * fx, 0, 1);
-      glow = clamp(glow + 0.03 * fx, 0.16, 0.32);
-      vibrate(18);
-    } else if (type === "bad") {
-      shake = clamp(shake + 0.18 * fx, 0, 1);
-      pulse = clamp(pulse + 0.14 * fx, 0, 1);
-      glow = clamp(glow + 0.015 * fx, 0.16, 0.28);
-      vibrate(22);
-    } else if (type === "dead") {
-      shake = 1; pulse = 1; glow = 0.32;
-      vibrate(70);
-    }
+    if (kind === "good"){ shake = clamp(shake + 0.05*fx, 0, 1); pulse = clamp(pulse + 0.08*fx, 0, 1); }
+    if (kind === "bad"){ shake = clamp(shake + 0.08*fx, 0, 1); pulse = clamp(pulse + 0.04*fx, 0, 1); }
+    if (kind === "bonus"){ shake = clamp(shake + 0.10*fx, 0, 1); pulse = clamp(pulse + 0.12*fx, 0, 1); }
   }
 
-  function updateTheme(dtMs) {
-    const s = clamp(streak, 0, 50);
-    hueTarget = 215 + s * 1.25;
-    hue += (hueTarget - hue) * (1 - Math.pow(0.0018, dtMs));
-
-    glow += (0.18 - glow) * (1 - Math.pow(0.0022, dtMs));
-    pulse += (0 - pulse) * (1 - Math.pow(0.0045, dtMs));
-    shake += (0 - shake) * (1 - Math.pow(0.0060, dtMs));
-    speedBoost += (0 - speedBoost) * (1 - Math.pow(0.0028, dtMs));
-
-    ROOT.style.setProperty("--hue", hue.toFixed(2));
-    ROOT.style.setProperty("--glow", glow.toFixed(3));
-  }
-
-  function updateParticles(dt) {
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.life += dt;
-      const t = p.life / p.max;
-      p.vy += 0.0026 * dt;
-      p.x += p.vx * (dt / 16.67);
-      p.y += p.vy * (dt / 16.67);
-      p.alpha = 1 - t;
-      if (t >= 1) particles.splice(i, 1);
+  // ───────────────────────── Cell effects ─────────────────────────
+  function applyTrap(){
+    if (invulnT > 0) {
+      spawnFloatText(targetCol, targetRow, "NO HIT", "rgba(255,255,255,0.75)", 1.0);
+      return "Invulnerable";
     }
 
-    for (let i = floatTexts.length - 1; i >= 0; i--) {
-      const ft = floatTexts[i];
-      ft.life += dt;
-      const t = ft.life / ft.max;
-      ft.y += ft.vy * (dt / 16.67) * 10;
-      ft.alpha = 1 - t;
-      if (t >= 1) floatTexts.splice(i, 1);
-    }
-  }
+    const pen = Math.max(1, Math.round(trapPenaltyBase * trapPenaltyMul));
+    score -= pen;
+    setScoreDelta(-pen);
 
-  // ───────────────────────── Speed / difficulty ─────────────────────────
-  function difficulty01() {
-    const t = clamp(runTime / SPEED_RAMP_SECONDS, 0, 1);
-    const s = clamp(streak / 35, 0, 1);
-    return clamp(t * 0.88 + s * 0.12, 0, 1);
-  }
-
-  function currentSpeedRowsPerSec() {
-    const d = difficulty01();
-    const base = SPEED_START + (SPEED_MAX - SPEED_START) * d;
-    const streakBoost = 1 + clamp(mult - 1, 0, 4) * 0.03;
-    const boost = 1 + clamp(speedBoost, -0.25, 0.35);
-    return base * streakBoost * boost;
-  }
-
-  // ───────────────────────── Game logic ─────────────────────────
-  function resetGame(showStartOverlay = true) {
-    running = false;
-    paused = false;
-    gameOver = false;
-
-    score = 0;
-    streak = 0;
-    mult = 1;
-
-    runTime = 0;
-    scrollPx = 0;
-    speedBoost = 0;
-
-    targetCol = Math.floor(COLS / 2);
-    targetRow = BAND_CENTER;
-    playerColFloat = targetCol;
-    playerRowFloat = targetRow;
-
-    particles.length = 0;
-    floatTexts.length = 0;
-    shake = 0; pulse = 0; glow = 0.18;
-
-    initGrid();
-    updateHud(true);
-
-    hudScoreDelta.textContent = "+0";
-    deltaTimer = 0;
-
-    hideToast();
-
-    overlayHide(overlayPaused);
-    overlayHide(overlayGameOver);
-
-    if (showStartOverlay) {
-      overlayShow(overlayStart);
-      refreshStartStats();
-      syncStartNameUI();
+    // racha: soft reset según upgrade
+    if (trapSoftReset === 0){
+      streak = 0; mult = 1;
+    } else if (trapSoftReset === 1){
+      streak = Math.floor(streak * 0.5);
+      mult = 1 + Math.min(4, Math.floor(streak / streakPerMult));
     } else {
-      overlayHide(overlayStart);
+      streak = Math.max(0, streak - 4);
+      mult = 1 + Math.min(4, Math.floor(streak / streakPerMult));
     }
 
-    draw();
+    // invuln upgrade
+    const invLv = getUpgradeLevel("invuln");
+    if (invLv > 0) invulnT = Math.max(invulnT, 0.9 + invLv * 0.35);
+
+    speedBoost = clamp(speedBoost - 0.08, -0.28, 0.40);
+    spawnParticles(targetCol, targetRow, CELL_COLOR[CELL.TRAP], 14, 1.1);
+    spawnFloatText(targetCol, targetRow, `-${pen}`, "rgba(255,130,160,0.95)", 1.2);
+    kick("bad");
+    return `TRAMPA -${pen}`;
   }
 
-  function startGame() {
-    if (gameOver) return;
+  function applyGood(cell){
+    streak += 1;
+    mult = 1 + Math.min(4, Math.floor(streak / streakPerMult));
 
-    const nm = (startName.value || "").trim().slice(0, 16);
-    if (!nm || nm.length < 2) {
-      showToast("Pon un nombre (mín. 2).", 1100);
-      return;
+    const sm = effectiveScoreMult();
+
+    if (cell === CELL.COIN){
+      const add = Math.floor(10 * mult * coinMul * sm);
+      score += add;
+      setScoreDelta(add);
+      spawnFloatText(targetCol, targetRow, `+${add}`, "rgba(170,255,220,0.95)", 1.22);
+      spawnParticles(targetCol, targetRow, CELL_COLOR[CELL.COIN], 10, 0.95);
+      kick("good");
+      comboTargetOnPick(CELL.COIN);
+      return `+${add} (Moneda)`;
     }
 
-    playerName = nm;
-    localStorage.setItem(PLAYER_NAME_KEY, playerName);
-
-    playerNameInput.value = playerName;
-    pillPlayer.textContent = `👤 ${playerName}`;
-
-    overlayHide(overlayStart, 180);
-    running = true;
-    paused = false;
-    gameOver = false;
-    lastT = performance.now();
-    requestAnimationFrame(loop);
-  }
-
-  function setPaused(v) {
-    if (!running || gameOver) return;
-    paused = v;
-    if (paused) {
-      overlayShow(overlayPaused);
-      draw();
-    } else {
-      overlayHide(overlayPaused, 160);
-      lastT = performance.now();
-      requestAnimationFrame(loop);
+    if (cell === CELL.GEM){
+      const add = Math.floor(30 * mult * gemMul * sm);
+      score += add;
+      setScoreDelta(add);
+      spawnFloatText(targetCol, targetRow, `+${add}`, "rgba(170,220,255,0.95)", 1.24);
+      spawnParticles(targetCol, targetRow, CELL_COLOR[CELL.GEM], 14, 1.05);
+      kick("good");
+      comboTargetOnPick(CELL.GEM);
+      return `+${add} (Gema)`;
     }
+
+    if (cell === CELL.BONUS){
+      const add = Math.floor(60 * mult * bonusMul * sm);
+      score += add;
+      setScoreDelta(add);
+      spawnFloatText(targetCol, targetRow, `+${add}`, "rgba(255,240,170,0.98)", 1.28);
+      speedBoost = clamp(speedBoost + 0.07, -0.28, 0.40);
+      spawnParticles(targetCol, targetRow, CELL_COLOR[CELL.BONUS], 18, 1.2);
+      kick("bonus");
+      comboTargetOnPick(CELL.BONUS);
+      return `BONUS +${add}`;
+    }
+
+    return "";
   }
 
-  function endGame(reason = "Te has chocado.") {
-    running = false;
-    paused = false;
+  function applyBlock(){
+    if (shields > 0){
+      shields -= 1;
+      spawnParticles(targetCol, targetRow, "#ffffff", 20, 1.25);
+      spawnFloatText(targetCol, targetRow, `ESCUDO`, "rgba(255,255,255,0.95)", 1.15);
+      shake = clamp(shake + 0.16, 0, 1);
+      speedBoost = clamp(speedBoost - 0.05, -0.28, 0.40);
+      return "Bloque absorbido (escudo)";
+    }
     gameOver = true;
-
-    addRun(score);
-
-    if (score > best) {
-      best = score;
-      localStorage.setItem(BEST_KEY, String(best));
-    }
-    updateHud(true);
-    refreshStartStats();
-
-    finalLine.textContent = `Has hecho ${score} puntos. ${reason}`;
-    overlayShow(overlayGameOver);
-    overlayHide(overlayPaused);
-    overlayHide(overlayStart);
-
-    kick("dead");
+    running = false;
+    showGameOver();
+    return "KO";
   }
 
-  function applyCellEffect(cell, col, row) {
-    let msg = null;
-
-    if (cell === CELL.EMPTY) {
-      if (streak > 0 && Math.random() < 0.12) streak = Math.max(0, streak - 1);
-      mult = 1 + Math.min(4, Math.floor(streak / 5));
-      return null;
+  // magnet upgrade: recoge adyacentes (1 celda) si hay premios
+  function magnetCollectAround(){
+    const lv = getUpgradeLevel("score_magnet");
+    if (lv <= 0) return;
+    const range = clamp(lv, 1, 3); // 1..3 (pero mantenemos 1 casilla real; range como “intensidad”)
+    const dirs = [
+      [ 1, 0], [-1, 0], [0, 1], [0,-1]
+    ];
+    for (const [dx,dy] of dirs){
+      const c = targetCol + dx;
+      const r = targetRow + dy;
+      if (c < 0 || c >= COLS || r < 0 || r >= ROWS) continue;
+      const cell = grid[r][c];
+      if (cell === CELL.COIN || cell === CELL.GEM || cell === CELL.BONUS){
+        // “consume” y aplica como si lo pisaras pero con menos vfx
+        grid[r][c] = CELL.EMPTY;
+        const oldFX = settings.fx;
+        // micro: no toques fx, sólo reduce particulas
+        applyGood(cell);
+        spawnParticles(c, r, "rgba(255,255,255,0.85)", 6 + range*2, 0.9);
+      }
     }
+  }
 
-    if (cell === CELL.BLOCK) {
-      endGame("Bloque KO.");
-      return null;
-    }
+  function applyCellEffect(cell){
+    if (cell === CELL.EMPTY) return "";
 
-    if (cell === CELL.TRAP) {
-      score = Math.max(0, score - 25);
-      setScoreDelta(-25);
-      spawnFloatText(col, row, "-25", "rgba(255,120,160,.98)", "normal");
-      streak = 0;
-      mult = 1;
-      speedBoost = clamp(speedBoost - 0.10, -0.25, 0.35);
-      msg = "TRAMPA -25";
-      spawnParticles(col, row, CELL_COLOR[CELL.TRAP], 18, 1.1);
-      kick("bad");
+    if (cell === CELL.TRAP){
+      const msg = applyTrap();
       return msg;
     }
 
-    streak += 1;
-    mult = 1 + Math.min(4, Math.floor(streak / 5));
-
-    if (cell === CELL.COIN) {
-      const add = 10 * mult;
-      score += add;
-      setScoreDelta(add);
-      spawnFloatText(col, row, `+${add}`, "rgba(165,255,220,.98)", "normal");
-      msg = `+${add}`;
-      spawnParticles(col, row, CELL_COLOR[CELL.COIN], 14, 0.95);
-      kick("good");
-    } else if (cell === CELL.GEM) {
-      const add = 30 * mult;
-      score += add;
-      setScoreDelta(add);
-      spawnFloatText(col, row, `+${add}`, "rgba(165,220,255,.98)", "normal");
-      msg = `+${add}`;
-      spawnParticles(col, row, CELL_COLOR[CELL.GEM], 18, 1.05);
-      kick("good");
-    } else if (cell === CELL.BONUS) {
-      const add = 60 * mult;
-      score += add;
-      setScoreDelta(add);
-      spawnFloatText(col, row, `+${add}`, "rgba(255,240,165,.98)", "normal");
-      speedBoost = clamp(speedBoost + 0.07, -0.25, 0.35);
-      msg = `BONUS +${add}`;
-      spawnParticles(col, row, CELL_COLOR[CELL.BONUS], 22, 1.25);
-      kick("bonus");
+    if (cell === CELL.BLOCK){
+      const msg = applyBlock();
+      return msg;
     }
 
-    if (streak > 0 && streak % COMBO_EVERY === 0) {
-      const add = 120 * mult;
+    // Good cells
+    magnetCollectAround();
+    const msg = applyGood(cell);
+
+    // Combo por racha (cada N)
+    if (!gameOver && streak > 0 && streak % COMBO_EVERY === 0){
+      const extra = (getUpgradeLevel("combo_every") > 0) ? (120 + 60*getUpgradeLevel("combo_every")) : 120;
+      const add = Math.floor(extra * mult * effectiveScoreMult());
       score += add;
       setScoreDelta(add);
-      spawnFloatText(col, row, `COMBO +${add}`, "rgba(255,255,255,.98)", "combo");
-      speedBoost = clamp(speedBoost + 0.10, -0.25, 0.35);
-      msg = `COMBO +${add}`;
-      spawnParticles(col, row, "#ffffff", 28, 1.35);
+      spawnFloatText(targetCol, targetRow, `COMBO +${add}`, "rgba(255,255,255,0.95)", 1.18);
+      speedBoost = clamp(speedBoost + 0.08, -0.28, 0.40);
+      spawnParticles(targetCol, targetRow, "#ffffff", 22, 1.25);
       kick("bonus");
     }
 
     return msg;
   }
 
-  function tryTriggerCellAt(col, row) {
-    if (!running || paused || gameOver) return;
-
-    const c = clamp(col, 0, COLS - 1);
-    const r = clamp(row, 0, ROWS - 1);
-
-    const cell = grid[r][c];
-    if (cell === CELL.EMPTY) return;
-
-    const msg = applyCellEffect(cell, c, r);
-    if (!gameOver && cell !== CELL.BLOCK) grid[r][c] = CELL.EMPTY;
-    if (msg) showToast(msg, 720);
-    updateHud();
-  }
-
-  function stepRowAdvance() {
+  // ───────────────────────── Step / loop ─────────────────────────
+  function stepRowAdvance(){
     const d = difficulty01();
+
+    // shift: entra fila arriba
     grid.pop();
     grid.unshift(generateRow(d));
 
-    const survivalAdd = 1 * mult;
-    score += survivalAdd;
+    rowsSurvived += 1;
 
-    tryTriggerCellAt(targetCol, targetRow);
+    // puntos por avanzar
+    const add = Math.floor(survivalAddBase * mult * effectiveScoreMult());
+    score += add;
+
+    // evalúa celda(s) bajo player (1 o 2 columnas si dual)
+    const c0 = clamp(targetCol, 0, maxCol());
+    const r0 = clamp(targetRow, bandStart(), bandEnd());
+
+    const cellsToCheck = [];
+    cellsToCheck.push([c0, r0]);
+    if (dualRunner) cellsToCheck.push([c0+1, r0]);
+
+    let msg = "";
+    for (const [c,r] of cellsToCheck){
+      const cell = grid[r][c];
+      // si ya estás en gameOver, no sigas
+      if (gameOver) break;
+      const localMsg = applyCellEffect(cell);
+      if (!gameOver && cell !== CELL.BLOCK) grid[r][c] = CELL.EMPTY;
+      if (localMsg && !msg) msg = localMsg;
+    }
+
+    if (msg) showToast(msg, 850);
+
+    // level check
+    checkLevelUp();
+
     updateHud();
   }
 
-  function movePlayer(dx, dy) {
-    if (!running || paused || gameOver) return;
-
-    const nextCol = clamp(targetCol + dx, 0, COLS - 1);
-    const nextRow = clamp(targetRow + dy, BAND_START, BAND_END);
-
-    const moved = (nextCol !== targetCol) || (nextRow !== targetRow);
-    if (!moved) return;
-
-    targetCol = nextCol;
-    targetRow = nextRow;
-
-    shake = clamp(shake + 0.06 * settings.fx, 0, 1);
-    vibrate(7);
-
-    tryTriggerCellAt(targetCol, targetRow);
+  function checkLevelUp(){
+    while (score >= nextLevelScore){
+      level += 1;
+      // siguiente umbral (crece)
+      nextLevelScore = Math.floor(nextLevelScore + 160 + level*45 + Math.pow(level, 1.15)*8);
+      showToast(`Nivel ${level} ⚡`, 900);
+      openLevelUp();
+      break; // no acumules varios en el mismo frame
+    }
   }
 
-  // ───────────────────────── Rendering ─────────────────────────
-  function resize() {
+  function tick(dt){
+    if (!running || paused || gameOver) return;
+
+    runTime += dt;
+
+    // buffs
+    if (speedBoost !== 0){
+      speedBoost = lerp(speedBoost, 0, clamp(dt * 0.6, 0, 1));
+      if (Math.abs(speedBoost) < 0.003) speedBoost = 0;
+    }
+    if (invulnT > 0) invulnT = Math.max(0, invulnT - dt);
+    if (buffX2T > 0) buffX2T = Math.max(0, buffX2T - dt);
+
+    // scroll
+    const sp = currentSpeed(); // filas/sec
+    scrollPx += sp * cellPx * dt;
+
+    while (scrollPx >= cellPx){
+      scrollPx -= cellPx;
+      stepRowAdvance();
+      if (paused || gameOver) break;
+    }
+
+    // player smooth
+    const smooth = PLAYER_SMOOTH_CELLS_PER_SEC;
+    playerColFloat = lerp(playerColFloat, targetCol, clamp(dt * smooth, 0, 1));
+    playerRowFloat = lerp(playerRowFloat, targetRow, clamp(dt * smooth, 0, 1));
+
+    // fondo según racha + buff
+    const streakHeat = clamp(streak / 24, 0, 1);
+    hueTarget = 220 + streakHeat * 80 + (buffX2T > 0 ? 18 : 0);
+    hue = lerp(hue, hueTarget, clamp(dt * 0.45, 0, 1));
+    glow = lerp(glow, 0.14 + streakHeat * 0.10, clamp(dt * 0.65, 0, 1));
+
+    // vfx
+    animT += dt;
+    shake = lerp(shake, 0, clamp(dt * 1.8, 0, 1));
+    pulse = lerp(pulse, 0, clamp(dt * 1.6, 0, 1));
+
+    // particles
+    for (let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.t += dt;
+      const k = p.t / p.life;
+      p.x += p.vx * dt * 0.08;
+      p.y += p.vy * dt * 0.08;
+      p.vx *= Math.pow(0.35, dt);
+      p.vy = p.vy * Math.pow(0.45, dt) + 0.9*dt;
+      if (k >= 1) particles.splice(i,1);
+    }
+
+    // float texts
+    for (let i=floatTexts.length-1;i>=0;i--){
+      const f = floatTexts[i];
+      f.t += dt;
+      f.y += f.vy * dt * 0.12;
+      f.vy *= Math.pow(0.60, dt);
+      if (f.t >= f.life) floatTexts.splice(i,1);
+    }
+  }
+
+  // ───────────────────────── Input / movement ─────────────────────────
+  function movePlayer(dx, dy){
+    if (!running || paused || gameOver || inLevelUp) return;
+
+    const nc = clamp(targetCol + dx, 0, maxCol());
+    const nr = clamp(targetRow + dy, bandStart(), bandEnd());
+
+    if (nc !== targetCol || nr !== targetRow){
+      targetCol = nc;
+      targetRow = nr;
+      shake = clamp(shake + 0.05, 0, 1);
+      vibrate(6);
+    }
+  }
+
+  // swipe 4-dir
+  function bindSwipe(){
+    let sx=0, sy=0, st=0, active=false;
+
+    const onDown = (e) => {
+      if (inLevelUp) return;
+      active = true;
+      st = performance.now();
+      const t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+      sx = t.clientX; sy = t.clientY;
+    };
+    const onUp = (e) => {
+      if (!active) return;
+      active = false;
+      const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : e;
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      const dtm = performance.now() - st;
+
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+      const min = 28; // umbral swipe
+      if (ax < min && ay < min) return;
+
+      if (ax > ay){
+        movePlayer(dx > 0 ? 1 : -1, 0);
+      } else {
+        movePlayer(0, dy > 0 ? 1 : -1);
+      }
+    };
+
+    canvas.addEventListener("pointerdown", onDown, { passive:true });
+    canvas.addEventListener("pointerup", onUp, { passive:true });
+
+    canvas.addEventListener("touchstart", onDown, { passive:true });
+    canvas.addEventListener("touchend", onUp, { passive:true });
+  }
+
+  function bindInputs(){
+    // zonas tap izq/der
+    zoneLeft.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(-1,0); }, { passive:false });
+    zoneRight.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer( 1,0); }, { passive:false });
+
+    // dpad
+    btnLeft.addEventListener("pointerdown", (e)=>{ e.preventDefault(); movePlayer(-1,0); }, { passive:false });
+    btnRight.addEventListener("pointerdown",(e)=>{ e.preventDefault(); movePlayer( 1,0); }, { passive:false });
+    btnUp.addEventListener("pointerdown",   (e)=>{ e.preventDefault(); movePlayer( 0,-1); }, { passive:false });
+    btnDown.addEventListener("pointerdown", (e)=>{ e.preventDefault(); movePlayer( 0, 1); }, { passive:false });
+
+    // teclado
+    window.addEventListener("keydown", (e) => {
+      if (e.repeat) return;
+      const k = e.key.toLowerCase();
+      if (k === " "){
+        if (running && !gameOver) setPaused(!paused);
+        e.preventDefault();
+        return;
+      }
+      if (k === "arrowleft" || k === "a") movePlayer(-1,0);
+      if (k === "arrowright"|| k === "d") movePlayer( 1,0);
+      if (k === "arrowup"   || k === "w") movePlayer( 0,-1);
+      if (k === "arrowdown" || k === "s") movePlayer( 0, 1);
+    });
+
+    bindSwipe();
+
+    // pausa automática al cambiar pestaña
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && running && !gameOver) setPaused(true);
+    });
+  }
+
+  // ───────────────────────── HUD ─────────────────────────
+  function updateHud(force=false){
+    if (force || score !== prevScore){ hudScore.textContent = String(score); bump(hudScore); prevScore = score; }
+    if (force || streak !== prevStreak){ hudStreak.textContent = String(streak); bump(hudStreak); prevStreak = streak; }
+    if (force || mult !== prevMult){ hudMult.textContent = String(mult); bump(hudMult); prevMult = mult; }
+    if (force || best !== prevBest){ hudBest.textContent = String(best); bump(hudBest); prevBest = best; }
+
+    // combo meter
+    const p = (COMBO_EVERY > 0) ? ((streak % COMBO_EVERY) / COMBO_EVERY) : 0;
+    hudComboFill.style.width = `${Math.floor(p*100)}%`;
+    hudComboText.textContent = `Combo ${streak % COMBO_EVERY}/${COMBO_EVERY}`;
+
+    // level hud
+    hudLevel.textContent = String(level);
+    pillLevel.textContent = `Nivel ${level}`;
+
+    const prevThreshold = estimatePrevLevelThreshold();
+    const cur = clamp(score - prevThreshold, 0, 99999999);
+    const need = Math.max(1, nextLevelScore - prevThreshold);
+    const lp = clamp(cur / need, 0, 1);
+    hudXp.textContent = `${cur}/${need}`;
+    hudLevelFill.style.width = `${Math.floor(lp*100)}%`;
+
+    // pills
+    pillPlayer.textContent = `👤 ${playerName || "—"}`;
+
+    const sp = currentSpeed();
+    const spx = (sp / SPEED_START);
+    pillSpeed.textContent = `Vel ${spx.toFixed(1)}×`;
+
+    // score delta fade
+    if (deltaTimer > 0){
+      deltaTimer -= 0.016;
+      if (deltaTimer <= 0){
+        hudScoreDelta.textContent = "";
+        hudScoreDelta.classList.remove("delta");
+      }
+    }
+
+    // combo target timer refresh
+    if (comboTarget) renderComboTarget();
+  }
+
+  function estimatePrevLevelThreshold(){
+    // aproximación: para el cálculo del progreso del nivel actual
+    // guardamos el “umbral anterior” como (nextLevelScore - delta). Pero como delta varía, hacemos un truco:
+    // Si level=1, umbral anterior 0.
+    if (level <= 1) return 0;
+
+    // recreamos umbrales desde inicio (barato, niveles bajos)
+    let l = 1;
+    let thr = 200;
+    let prev = 0;
+    while (l < level){
+      prev = thr;
+      l += 1;
+      thr = Math.floor(thr + 160 + l*45 + Math.pow(l, 1.15)*8);
+      if (l > 200) break;
+    }
+    return prev;
+  }
+
+  // ───────────────────────── Render helpers ─────────────────────────
+  function roundRectFill(x,y,w,h,r){
+    const rr = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+rr, y);
+    ctx.arcTo(x+w, y, x+w, y+h, rr);
+    ctx.arcTo(x+w, y+h, x, y+h, rr);
+    ctx.arcTo(x, y+h, x, y, rr);
+    ctx.arcTo(x, y, x+w, y, rr);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawCellSpriteOrColor(cell, x, y, s, alpha, isBlock=false){
+    const spr = getSprite(cell);
+    ctx.globalAlpha = alpha;
+
+    if (spr){
+      const inset = s * SPRITE_INSET_RATIO;
+      const scale = SPRITE_SCALE[cell] ?? SPRITE_SCALE.default;
+      const ss = (s - inset*2) * scale;
+      const ox = x + (s - ss) / 2;
+      const oy = y + (s - ss) / 2;
+      ctx.drawImage(spr, ox, oy, ss, ss);
+    } else {
+      // color fallback
+      ctx.fillStyle = CELL_COLOR[cell] || "#ffffff";
+      roundRectFill(x+1, y+1, s-2, s-2, Math.max(4, s*0.18));
+    }
+
+    // bloque: borde rojo + X
+    if (cell === CELL.BLOCK || isBlock){
+      ctx.globalAlpha = alpha;
+      const t = animT*3.2;
+      const pulse = 0.55 + 0.35*Math.sin(t);
+      ctx.strokeStyle = `rgba(255,60,80,${0.55*pulse})`;
+      ctx.lineWidth = Math.max(2, s*0.08);
+      ctx.strokeRect(x+1.5, y+1.5, s-3, s-3);
+
+      ctx.strokeStyle = `rgba(255,60,80,${0.40*pulse})`;
+      ctx.lineWidth = Math.max(2, s*0.06);
+      ctx.beginPath();
+      ctx.moveTo(x+s*0.22, y+s*0.22);
+      ctx.lineTo(x+s*0.78, y+s*0.78);
+      ctx.moveTo(x+s*0.78, y+s*0.22);
+      ctx.lineTo(x+s*0.22, y+s*0.78);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  function draw(){
+    // fondo dinámico (suave)
+    const w = canvas.width, h = canvas.height;
+    ctx.setTransform(1,0,0,1,0,0);
+
+    ctx.fillStyle = `hsl(${hue} 32% 9%)`;
+    ctx.fillRect(0,0,w,h);
+
+    // glow
+    ctx.globalAlpha = glow;
+    ctx.fillStyle = `hsl(${(hue+20)%360} 70% 50%)`;
+    ctx.beginPath();
+    ctx.ellipse(w*0.35, h*0.18, w*0.35, h*0.28, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // shake
+    let sx=0, sy=0;
+    if (shake > 0.001){
+      shakeSeed += 1;
+      sx = (Math.sin(shakeSeed*12.2)+Math.cos(shakeSeed*7.9))*shake*8*dpr;
+      sy = (Math.cos(shakeSeed*9.1)-Math.sin(shakeSeed*5.7))*shake*8*dpr;
+    }
+
+    ctx.translate(sx, sy);
+
+    // board
+    const bs = bandStart();
+    const be = bandEnd();
+
+    // banda marcada (3+ filas) con color suave
+    const bandTintA = 0.10 + 0.05 * clamp(streak/20, 0, 1);
+    ctx.fillStyle = `rgba(255,255,255,${bandTintA})`;
+    for (let r=bs; r<=be; r++){
+      const y = boardY + (r * cellPx) - scrollPx;
+      ctx.fillRect(boardX, y, cellPx*COLS, cellPx);
+    }
+
+    // grid
+    for (let r=0;r<ROWS;r++){
+      const row = grid[r];
+      const y = boardY + (r * cellPx) - scrollPx;
+
+      // filas “inertes” (ya pasadas detrás de la banda)
+      const behind = r - be;
+      let alphaRow = 1.0;
+      if (behind > 0){
+        alphaRow = clamp(0.50 - behind*0.04, 0.18, 0.50);
+      }
+
+      for (let c=0;c<COLS;c++){
+        const cell = row[c];
+        const x = boardX + c*cellPx;
+
+        // tile bg (vacío) muy sutil para “rejilla”
+        ctx.globalAlpha = 0.16 * alphaRow;
+        ctx.fillStyle = "rgba(255,255,255,0.10)";
+        roundRectFill(x+1, y+1, cellPx-2, cellPx-2, Math.max(4, cellPx*0.18));
+        ctx.globalAlpha = 1;
+
+        if (cell !== CELL.EMPTY){
+          drawCellSpriteOrColor(cell, x, y, cellPx, alphaRow);
+        } else {
+          // opcional: dibujar tile_empty si existe sprite
+          const emptySpr = getSprite(CELL.EMPTY);
+          if (emptySpr){
+            drawCellSpriteOrColor(CELL.EMPTY, x, y, cellPx, 0.15*alphaRow);
+          }
+        }
+      }
+    }
+
+    // particles (in board coords)
+    for (const p of particles){
+      const k = clamp(p.t / p.life, 0, 1);
+      const a = (1 - k) * 0.95;
+      const x = boardX + p.x*cellPx;
+      const y = boardY + p.y*cellPx - scrollPx;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      const s = p.size * cellPx;
+      ctx.beginPath();
+      ctx.arc(x, y, s, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // float texts
+    for (const f of floatTexts){
+      const k = clamp(f.t / f.life, 0, 1);
+      const a = (1 - k);
+      const x = boardX + f.x*cellPx;
+      const y = boardY + f.y*cellPx - scrollPx - k*10*dpr;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(f.rot);
+      const sc = (1 + (1-k)*0.10) * f.scale;
+      ctx.scale(sc, sc);
+
+      // outline para “juicy”
+      ctx.globalAlpha = a;
+      ctx.font = `${Math.floor(12*dpr)}px ui-sans-serif,system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      ctx.lineWidth = Math.max(3, 3*dpr);
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.strokeText(f.text, 0, 0);
+
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, 0, 0);
+
+      ctx.restore();
+    }
+
+    // player
+    const px = boardX + playerColFloat*cellPx;
+    const py = boardY + playerRowFloat*cellPx - scrollPx;
+
+    const pSpr = getSprite("player");
+    const drawPlayerCell = (x, y) => {
+      if (pSpr){
+        const inset = cellPx * SPRITE_INSET_RATIO;
+        const scale = SPRITE_SCALE.player;
+        const ss = (cellPx - inset*2) * scale;
+        const ox = x + (cellPx - ss)/2;
+        const oy = y + (cellPx - ss)/2;
+        ctx.drawImage(pSpr, ox, oy, ss, ss);
+      } else {
+        // rect
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        roundRectFill(x+2, y+2, cellPx-4, cellPx-4, Math.max(6, cellPx*0.22));
+      }
+      // pulse glow
+      const pp = pulse;
+      if (pp > 0.001){
+        ctx.globalAlpha = 0.25*pp;
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.lineWidth = Math.max(2, cellPx*0.08);
+        ctx.strokeRect(x+2.5, y+2.5, cellPx-5, cellPx-5);
+        ctx.globalAlpha = 1;
+      }
+    };
+
+    // dibuja 1 o 2 celdas
+    drawPlayerCell(px, py);
+    if (dualRunner){
+      drawPlayerCell(px + cellPx, py);
+      // unión sutil
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "rgba(255,255,255,0.65)";
+      ctx.fillRect(px + cellPx - 2, py + 6, 4, cellPx - 12);
+      ctx.globalAlpha = 1;
+    }
+
+    // escudos UI (mini pips)
+    if (shields > 0){
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      for (let i=0;i<shields;i++){
+        ctx.beginPath();
+        ctx.arc(px + 10 + i*10, py - 6, 3.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // invuln hint
+    if (invulnT > 0){
+      ctx.globalAlpha = 0.25;
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.lineWidth = Math.max(2, cellPx*0.08);
+      ctx.strokeRect(px+2.5, py+2.5, cellPx*playerWidth()-5, cellPx-5);
+      ctx.globalAlpha = 1;
+    }
+
+    // toast timer
+    if (toastTimer > 0){
+      toastTimer -= 1/60;
+      if (toastTimer <= 0) toast.hidden = true;
+    }
+  }
+
+  // ───────────────────────── Resize ─────────────────────────
+  function resize(){
     const rect = canvas.getBoundingClientRect();
     dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
 
@@ -778,500 +1454,271 @@
     canvas.height = Math.floor(rect.height * dpr);
 
     const pad = Math.floor(14 * dpr);
-    const w = canvas.width - pad * 2;
-    const h = canvas.height - pad * 2;
+    const w = canvas.width - pad*2;
+    const h = canvas.height - pad*2;
 
     const cellW = Math.floor(w / COLS);
     const cellH = Math.floor(h / ROWS);
-    cellPx = Math.max(8, Math.min(cellW, cellH));
+    cellPx = Math.max(10, Math.min(cellW, cellH));
 
     const boardW = cellPx * COLS;
     const boardH = cellPx * ROWS;
 
-    boardX = Math.floor((canvas.width - boardW) / 2);
-    boardY = Math.floor((canvas.height - boardH) / 2);
+    boardX = Math.floor((canvas.width - boardW)/2);
+    boardY = Math.floor((canvas.height - boardH)/2);
 
     draw();
   }
 
-  function roundRectFill(x, y, w, h, r) {
-    r = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-    ctx.fill();
+  // ───────────────────────── Game flow ─────────────────────────
+  function resetRunState(){
+    score = 0;
+    streak = 0;
+    mult = 1;
+
+    runTime = 0;
+    rowsSurvived = 0;
+    scrollPx = 0;
+    speedBoost = 0;
+
+    // player defaults
+    bandHeight = 3;
+    dualRunner = false;
+    shields = 0;
+    invulnT = 0;
+
+    // runtime multipliers
+    coinMul = 1; gemMul = 1; bonusMul = 1;
+    survivalAddBase = 1;
+    streakPerMult = BASE_STREAK_PER_MULT;
+
+    comboRewardMul = 1;
+    comboTargetExtraTime = 0;
+    trapPenaltyBase = 25;
+    trapPenaltyMul = 1;
+    trapSoftReset = 0;
+
+    genBlockMul = 1;
+    genGoodMul = 1;
+    genBonusMul = 1;
+
+    rerollCharges = 0;
+    buffX2T = 0;
+
+    level = 1;
+    nextLevelScore = 200;
+
+    upgradeLv = Object.create(null);
+
+    // player center
+    targetCol = Math.floor(COLS/2);
+    targetRow = BAND_CENTER;
+    playerColFloat = targetCol;
+    playerRowFloat = targetRow;
+
+    // combo target
+    comboTarget = null;
+    newComboTarget();
+
+    particles.length = 0;
+    floatTexts.length = 0;
+
+    animT = 0;
+    toastTimer = 0;
+    shake = 0;
+    pulse = 0;
+    hue = 220;
+    hueTarget = 220;
+    glow = 0.16;
+
+    initGrid();
   }
 
-  function drawBandMarkers(bw, yOffset) {
-    for (let r = BAND_START; r <= BAND_END; r++) {
-      const y = boardY + r * cellPx + yOffset;
-      ctx.fillStyle = "rgba(255,255,255,0.025)";
-      ctx.fillRect(boardX, y, bw, cellPx);
+  function resetGame(goToStart=false){
+    running = false;
+    paused = false;
+    gameOver = false;
+    inLevelUp = false;
+
+    resetRunState();
+
+    if (goToStart){
+      overlayShow(overlayStart);
+      overlayHide(overlayGameOver, 0);
+      overlayHide(overlayPaused, 0);
+      overlayHide(overlayUpgrades, 0);
     }
 
-    const yTop = boardY + BAND_START * cellPx + yOffset;
-    const yBot = boardY + (BAND_END + 1) * cellPx + yOffset;
-
-    ctx.save();
-    ctx.globalAlpha = 0.45;
-    ctx.strokeStyle = "rgba(110,200,255,0.55)";
-    ctx.lineWidth = Math.max(1, Math.floor(dpr));
-    ctx.beginPath();
-    ctx.moveTo(boardX, yTop + 0.5);
-    ctx.lineTo(boardX + bw, yTop + 0.5);
-    ctx.moveTo(boardX, yBot + 0.5);
-    ctx.lineTo(boardX + bw, yBot + 0.5);
-    ctx.stroke();
-    ctx.restore();
+    updateHud(true);
+    renderComboTarget();
   }
 
-  function drawTileSprite(type, x, y, fade01) {
-    const img = getSprite(type);
-    if (!img) return false;
-
-    const inset = Math.floor(cellPx * SPRITE_INSET_RATIO);
-    const s = (SPRITE_SCALE[type] ?? SPRITE_SCALE.default) || 1.0;
-
-    const w = Math.floor((cellPx - inset * 2) * s);
-    const h = Math.floor((cellPx - inset * 2) * s);
-
-    const dx = Math.floor(x + (cellPx - w) / 2);
-    const dy = Math.floor(y + (cellPx - h) / 2);
-
-    ctx.save();
-    ctx.globalAlpha *= fade01;
-    ctx.drawImage(img, dx, dy, w, h);
-    ctx.restore();
-    return true;
-  }
-
-  function drawCell(x, y, type, rowIndex) {
-    const inBand = (rowIndex >= BAND_START && rowIndex <= BAND_END);
-    const behind = Math.max(0, rowIndex - BAND_END);
-    const fade = behind === 0 ? 1 : clamp(1 - behind * 0.12, 0.35, 0.92);
-
-    // base
-    ctx.save();
-    ctx.fillStyle = CELL_COLOR[CELL.EMPTY];
-    ctx.fillRect(x, y, cellPx, cellPx);
-
-    if (inBand) {
-      ctx.fillStyle = "rgba(255,255,255,0.035)";
-      ctx.fillRect(x, y, cellPx, cellPx);
-    }
-
-    // grid line
-    ctx.strokeStyle = "rgba(255,255,255,0.05)";
-    ctx.lineWidth = Math.max(1, Math.floor(dpr));
-    ctx.strokeRect(x + 0.5, y + 0.5, cellPx - 1, cellPx - 1);
-
-    // behind shading
-    if (behind > 0) {
-      ctx.fillStyle = "rgba(0,0,0,0.18)";
-      ctx.fillRect(x, y, cellPx, cellPx);
-    }
-
-    if (type === CELL.EMPTY) {
-      ctx.restore();
+  function startGame(){
+    if (!playerName || playerName.trim().length < 2){
+      showToast("Escribe un nombre primero.", 900);
       return;
     }
 
-    // sprite first, fallback to old colored tile
-    const drewSprite = drawTileSprite(type, x, y, fade);
+    overlayHide(overlayStart, 160);
+    overlayHide(overlayGameOver, 0);
+    overlayHide(overlayPaused, 0);
+    overlayHide(overlayUpgrades, 0);
 
-    if (!drewSprite) {
-      ctx.globalAlpha = fade;
-      const inset = Math.floor(cellPx * 0.18);
-      const r = Math.floor(cellPx * 0.18);
+    running = true;
+    paused = false;
+    gameOver = false;
+    inLevelUp = false;
 
-      ctx.fillStyle = CELL_COLOR[type];
-      roundRectFill(x + inset, y + inset, cellPx - inset * 2, cellPx - inset * 2, r);
+    lastT = 0;
+    requestAnimationFrame(loop);
 
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      roundRectFill(
-        x + inset + 1, y + inset + 1,
-        cellPx - inset * 2 - 2,
-        Math.floor((cellPx - inset * 2) * 0.45),
-        r
-      );
-      ctx.globalAlpha = 1;
-    }
-
-    // extra diferenciación para BLOQUE: borde pulsante
-    if (type === CELL.BLOCK) {
-      const p = 0.5 + 0.5 * Math.sin(animT * 6.2);
-      ctx.save();
-      ctx.globalAlpha = fade * (0.60 + p * 0.25);
-      ctx.strokeStyle = "rgba(230,0,18,0.95)";
-      ctx.lineWidth = Math.max(2, Math.floor(2 * dpr));
-      ctx.strokeRect(x + 2, y + 2, cellPx - 4, cellPx - 4);
-      ctx.restore();
-    }
-
-    ctx.restore();
+    showToast("¡Vamos! 🔥", 700);
   }
 
-  function drawParticles() {
-    if (!particles.length) return;
-    ctx.save();
-    for (const p of particles) {
-      ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  function easeOutBack(t) {
-    const c1 = 1.70158;
-    const c3 = c1 + 1;
-    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-  }
-
-  function drawFloatTexts() {
-    if (!floatTexts.length) return;
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    for (const ft of floatTexts) {
-      const t = clamp(ft.life / ft.max, 0, 1);
-      const pop = easeOutBack(clamp(t * 2.2, 0, 1));
-      const scale = ft.scale0 + (ft.scale1 - ft.scale0) * clamp(t * 1.4, 0, 1);
-
-      const fontPx = Math.floor(16 * dpr * scale * pop);
-      ctx.font = `${fontPx}px system-ui, -apple-system, Segoe UI, Roboto`;
-      ctx.globalAlpha = Math.max(0, Math.min(1, ft.alpha));
-
-      ctx.fillStyle = "rgba(0,0,0,0.40)";
-      ctx.fillText(ft.text, ft.x + 2 * dpr, ft.y + 2 * dpr);
-
-      ctx.fillStyle = ft.color;
-      ctx.fillText(ft.text, ft.x, ft.y);
-    }
-
-    ctx.restore();
-  }
-
-  function draw() {
-    ctx.imageSmoothingEnabled = false; // pixelart friendly
-
-    shakeSeed += 1;
-    const fx = settings.fx;
-    const sx = (Math.sin(shakeSeed * 12.9898) * 43758.5453) % 1;
-    const sy = (Math.sin(shakeSeed * 78.233) * 12345.6789) % 1;
-    const offX = (sx - 0.5) * (cellPx * 0.10) * shake * fx;
-    const offY = (sy - 0.5) * (cellPx * 0.10) * shake * fx;
-
-    ctx.save();
-    ctx.translate(offX, offY);
-
-    ctx.fillStyle = "#06060a";
-    ctx.fillRect(-offX, -offY, canvas.width, canvas.height);
-
-    const bw = cellPx * COLS;
-    const bh = cellPx * ROWS;
-
-    ctx.fillStyle = `rgba(255,255,255,${0.02 + pulse * 0.045})`;
-    roundRectFill(boardX - 8 * dpr, boardY - 8 * dpr, bw + 16 * dpr, bh + 16 * dpr, 18 * dpr);
-
-    const yOffset = scrollPx;
-
-    drawBandMarkers(bw, yOffset);
-
-    for (let r = 0; r < ROWS; r++) {
-      const y = boardY + r * cellPx + yOffset;
-      const row = grid[r];
-      for (let c = 0; c < COLS; c++) {
-        const x = boardX + c * cellPx;
-        drawCell(x, y, row[c], r);
-      }
-    }
-
-    drawParticles();
-    drawFloatTexts();
-
-    // Player sprite (o fallback)
-    const playerX = boardX + playerColFloat * cellPx;
-    const playerY = boardY + playerRowFloat * cellPx + yOffset;
-
-    // glow
-    ctx.globalAlpha = 0.16 + pulse * 0.22;
-    ctx.fillStyle = "#ffffff";
-    roundRectFill(playerX - 2 * dpr, playerY - 2 * dpr, cellPx + 4 * dpr, cellPx + 4 * dpr, Math.floor(cellPx * 0.28));
-    ctx.globalAlpha = 1;
-
-    const pImg = getSprite("player");
-    if (pImg) {
-      const inset = Math.floor(cellPx * 0.10);
-      const s = SPRITE_SCALE.player || 1.0;
-      const w = Math.floor((cellPx - inset * 2) * s);
-      const h = Math.floor((cellPx - inset * 2) * s);
-      const dx = Math.floor(playerX + (cellPx - w) / 2);
-      const dy = Math.floor(playerY + (cellPx - h) / 2);
-      ctx.drawImage(pImg, dx, dy, w, h);
+  function setPaused(v, silent=false){
+    if (gameOver) return;
+    paused = !!v;
+    if (paused){
+      if (!silent) overlayShow(overlayPaused);
     } else {
-      // fallback player
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      roundRectFill(playerX + 2 * dpr, playerY + 5 * dpr, cellPx - 4 * dpr, cellPx - 4 * dpr, Math.floor(cellPx * 0.22));
-      ctx.fillStyle = "#ffffff";
-      roundRectFill(playerX + 2 * dpr, playerY + 2 * dpr, cellPx - 4 * dpr, cellPx - 4 * dpr, Math.floor(cellPx * 0.22));
-      ctx.fillStyle = "#101225";
-      ctx.globalAlpha = 0.9;
-      roundRectFill(playerX + 6 * dpr, playerY + 6 * dpr, cellPx - 12 * dpr, cellPx - 12 * dpr, Math.floor(cellPx * 0.18));
-      ctx.globalAlpha = 1;
+      overlayHide(overlayPaused, 160);
     }
-
-    if (paused && running) {
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(boardX, boardY, bw, bh);
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      ctx.font = `${Math.floor(18 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto`;
-      ctx.textAlign = "center";
-      ctx.fillText("PAUSA", boardX + bw / 2, boardY + bh / 2);
-    }
-
-    ctx.restore();
   }
 
-  // ───────────────────────── Leaderboard ─────────────────────────
-  function isOnline() { return navigator.onLine; }
-  function escapeHtml(s) {
-    return s.replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c]));
-  }
-  function renderLb(entries) {
-    lbList.innerHTML = "";
-    if (!entries || !entries.length) {
-      lbList.innerHTML = `<div class="muted">No hay datos.</div>`;
-      return;
+  function showGameOver(){
+    // guardar best local
+    if (score > best){
+      best = score;
+      localStorage.setItem(BEST_KEY, String(best));
     }
-    entries.forEach((e, i) => {
-      const rank = (i + 1);
-      const name = (e.name || "Player").toString().slice(0, 16);
-      const sc = (e.score ?? 0);
-      const div = document.createElement("div");
-      div.className = "lbEntry";
-      div.innerHTML = `
-        <div class="lbLeft">
-          <div class="lbRank">${rank}</div>
-          <div class="lbName">${escapeHtml(name)}</div>
-        </div>
-        <div class="lbScore">${escapeHtml(String(sc))}</div>
-      `;
-      lbList.appendChild(div);
+
+    // guardar run en historial
+    const runs = loadRuns();
+    runs.unshift({
+      t: Date.now(),
+      score,
+      rows: rowsSurvived,
+      level,
     });
-  }
-  async function fetchLeaderboard() {
-    if (!isOnline()) { lbStatus.textContent = "Sin internet. El ranking solo se muestra online."; renderLb([]); return; }
-    if (!LEADERBOARD_ENDPOINT) { lbStatus.textContent = "Ranking no configurado (falta LEADERBOARD_ENDPOINT en app.js)."; renderLb([]); return; }
-    lbStatus.textContent = "Cargando ranking…";
-    try {
-      const url = `${LEADERBOARD_ENDPOINT}/top?game=${encodeURIComponent(LEADERBOARD_GAME_ID)}&limit=20`;
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      lbStatus.textContent = "Top mundial";
-      renderLb(data?.entries || []);
-    } catch {
-      lbStatus.textContent = "No se pudo cargar el ranking (endpoint caído o CORS).";
-      renderLb([]);
-    }
-  }
-  async function submitScoreOnline() {
-    if (!isOnline()) { showToast("Sin internet: no se puede enviar.", 1100); return; }
-    if (!LEADERBOARD_ENDPOINT) { showToast("Falta LEADERBOARD_ENDPOINT.", 1400); return; }
-    const name = (playerNameInput.value || "").trim().slice(0, 16);
-    if (!name || name.length < 2) { showToast("Nombre mínimo 2.", 1000); return; }
-    playerName = name;
-    localStorage.setItem(PLAYER_NAME_KEY, playerName);
-    pillPlayer.textContent = `👤 ${playerName}`;
-    startName.value = playerName;
+    while (runs.length > 8) runs.pop();
+    localStorage.setItem(RUNS_KEY, JSON.stringify(runs));
 
-    try {
-      btnSubmitScore.disabled = true;
-      const url = `${LEADERBOARD_ENDPOINT}/submit`;
-      const payload = { game: LEADERBOARD_GAME_ID, name: playerName, score };
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type":"application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      showToast("Score enviado ✅", 900);
-      await fetchLeaderboard();
-    } catch {
-      showToast("No se pudo enviar (endpoint/CORS).", 1200);
-    } finally {
-      btnSubmitScore.disabled = false;
-    }
+    finalLine.textContent = `Has hecho ${score} puntos (Nivel ${level}, ${rowsSurvived} filas).`;
+    overlayShow(overlayGameOver);
+
+    updateHud(true);
   }
 
-  // ───────────────────────── Main loop ─────────────────────────
+  // ───────────────────────── Loop ─────────────────────────
   let lastT = 0;
-  function loop(t) {
-    if (!running || paused || gameOver) return;
+  function loop(ts){
+    if (!running) return;
 
-    let dt = t - lastT;
-    lastT = t;
+    if (!lastT) lastT = ts;
+    let dt = (ts - lastT) / 1000;
+    lastT = ts;
 
-    if (dt > 250) dt = 16.67;
-    dt = Math.min(40, dt);
+    // clamp dt
+    dt = clamp(dt, 0, 0.05);
 
-    animT += dt / 1000;
-
-    if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) hideToast(); }
-    if (deltaTimer > 0) { deltaTimer -= dt; if (deltaTimer <= 0) hudScoreDelta.textContent = "+0"; }
-
-    runTime += dt / 1000;
-
-    updateTheme(dt);
-    updateParticles(dt);
-
-    // smooth player
-    {
-      const diffC = (targetCol - playerColFloat);
-      const diffR = (targetRow - playerRowFloat);
-      const maxStep = PLAYER_SMOOTH_CELLS_PER_SEC * (dt / 1000);
-
-      if (Math.abs(diffC) <= maxStep) playerColFloat = targetCol;
-      else playerColFloat += Math.sign(diffC) * maxStep;
-
-      if (Math.abs(diffR) <= maxStep) playerRowFloat = targetRow;
-      else playerRowFloat += Math.sign(diffR) * maxStep;
-    }
-
-    const speedRows = currentSpeedRowsPerSec();
-    pillSpeed.textContent = `Vel ${speedRows.toFixed(1)}×`;
-
-    const speedPx = speedRows * cellPx;
-    scrollPx += speedPx * (dt / 1000);
-
-    while (scrollPx >= cellPx && !gameOver) {
-      scrollPx -= cellPx;
-      stepRowAdvance();
-    }
-
+    tick(dt);
     draw();
     requestAnimationFrame(loop);
   }
 
-  // ───────────────────────── Input ─────────────────────────
-  function bindInputs() {
-    zoneLeft.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(-1, 0); }, { passive: false });
-    zoneRight.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(+1, 0); }, { passive: false });
-
-    const bindBtn = (el, dx, dy) => {
-      el.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(dx, dy); }, { passive: false });
-    };
-    bindBtn(btnUp, 0, -1);
-    bindBtn(btnDown, 0, +1);
-    bindBtn(btnLeft, -1, 0);
-    bindBtn(btnRight, +1, 0);
-
-    window.addEventListener("keydown", (e) => {
-      const k = e.key;
-      if (k === "ArrowLeft" || k === "a" || k === "A") movePlayer(-1, 0);
-      if (k === "ArrowRight" || k === "d" || k === "D") movePlayer(+1, 0);
-      if (k === "ArrowUp" || k === "w" || k === "W") movePlayer(0, -1);
-      if (k === "ArrowDown" || k === "s" || k === "S") movePlayer(0, +1);
-
-      if (k === " " || k === "Spacebar") { if (running && !gameOver) setPaused(!paused); }
-      if (k === "p" || k === "P" || k === "Escape") { if (running && !gameOver) setPaused(!paused); }
-
-      if (k === "Enter") {
-        if (!overlayStart.hidden) startGame();
-        else if (!overlayGameOver.hidden) { resetGame(false); startGame(); }
-      }
-    });
-
-    // swipe 4 dirs
-    let sx = 0, sy = 0, st = 0;
-    canvas.addEventListener("pointerdown", (e) => { sx = e.clientX; sy = e.clientY; st = performance.now(); }, { passive: true });
-    canvas.addEventListener("pointerup", (e) => {
-      const dx = e.clientX - sx;
-      const dy = e.clientY - sy;
-      const dt = performance.now() - st;
-      if (dt < 320) {
-        const ax = Math.abs(dx);
-        const ay = Math.abs(dy);
-        const min = 26;
-        if (ax > ay && ax > min) movePlayer(dx > 0 ? +1 : -1, 0);
-        else if (ay > ax && ay > min) movePlayer(0, dy > 0 ? +1 : -1);
-      }
-    }, { passive: true });
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden && running && !gameOver) setPaused(true);
-    });
-
-    document.addEventListener("touchmove", (e) => {
-      if (running) e.preventDefault();
-    }, { passive: false });
+  // ───────────────────────── Runs stats ─────────────────────────
+  function loadRuns(){
+    try{
+      const raw = localStorage.getItem(RUNS_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+      return arr;
+    } catch {
+      return [];
+    }
   }
 
-  // ───────────────────────── Buttons ─────────────────────────
-  function bindButtons() {
-    btnStart.addEventListener("click", startGame);
+  function refreshStartStats(){
+    startBest.textContent = String(best);
+    const runs = loadRuns();
+    if (!runs.length){
+      startRuns.textContent = "—";
+      return;
+    }
+    const top = runs.slice(0, 3).map(r => r.score).join(" · ");
+    startRuns.textContent = top;
+  }
 
-    btnResume.addEventListener("click", () => setPaused(false));
+  function syncStartNameUI(){
+    startName.value = playerName || "";
+    btnStart.disabled = !((startName.value || "").trim().length >= 2);
+
+    playerNameInput.value = playerName || "";
+    updateHud(true);
+  }
+
+  // ───────────────────────── Buttons / UI ─────────────────────────
+  function bindButtons(){
+    pillVersion.textContent = `v${APP_VERSION}`;
+
+    btnStart.addEventListener("click", () => {
+      playerName = (startName.value || "").trim().slice(0,16);
+      if (playerName.length < 2) return;
+      localStorage.setItem(PLAYER_NAME_KEY, playerName);
+      syncStartNameUI();
+
+      resetRunState();
+      startGame();
+    });
 
     btnPlayAgain.addEventListener("click", () => {
-      resetGame(false);
+      resetRunState();
       startGame();
     });
 
     btnBackToStart.addEventListener("click", () => {
       resetGame(true);
+      refreshStartStats();
+      syncStartNameUI();
     });
 
+    btnResume.addEventListener("click", () => setPaused(false));
     btnPause.addEventListener("click", () => {
       if (!running || gameOver) return;
       setPaused(!paused);
     });
 
     btnRestart.addEventListener("click", () => {
-      resetGame(true);
+      resetRunState();
+      startGame();
     });
 
-    btnOptions.addEventListener("click", () => {
-      overlayShow(overlayOptions);
-      applySettingsToUI();
-    });
+    btnOptions.addEventListener("click", () => overlayShow(overlayOptions));
     btnCloseOptions.addEventListener("click", () => overlayHide(overlayOptions, 160));
 
     optSprites.addEventListener("change", () => {
-      settings.useSprites = optSprites.checked;
+      settings.useSprites = !!optSprites.checked;
       saveSettings();
       applySettingsToUI();
       draw();
-      showToast(settings.useSprites ? "Sprites ON ✅" : "Sprites OFF ✅", 800);
     });
 
     optVibration.addEventListener("change", () => {
-      settings.vibration = optVibration.checked;
+      settings.vibration = !!optVibration.checked;
       saveSettings();
-      applySettingsToUI();
-      showToast("Guardado ✅", 650);
     });
 
     optDpad.addEventListener("change", () => {
-      settings.showDpad = optDpad.checked;
+      settings.showDpad = !!optDpad.checked;
       saveSettings();
       applySettingsToUI();
-      showToast("Guardado ✅", 650);
     });
 
     optFx.addEventListener("input", () => {
-      settings.fx = clamp(parseFloat(optFx.value) || 1.0, 0.4, 1.25);
+      settings.fx = clamp(Number(optFx.value) || 1.0, 0.4, 1.25);
       optFxValue.textContent = settings.fx.toFixed(2);
       saveSettings();
-      applySettingsToUI();
     });
 
     btnClearLocal.addEventListener("click", () => {
@@ -1280,6 +1727,7 @@
       showToast("Historial borrado.", 900);
     });
 
+    // leaderboard
     btnLeaderboard.addEventListener("click", async () => {
       overlayShow(overlayLeaderboard);
       await fetchLeaderboard();
@@ -1287,6 +1735,15 @@
     btnCloseLeaderboard.addEventListener("click", () => overlayHide(overlayLeaderboard, 160));
     btnSubmitScore.addEventListener("click", submitScoreOnline);
 
+    // upgrades overlay
+    btnReroll.addEventListener("click", () => {
+      if (rerollCharges <= 0) return;
+      rerollCharges -= 1;
+      showUpgradeChoices();
+      showToast("Reroll ✅", 700);
+    });
+
+    // start name input
     startName.addEventListener("input", () => {
       const nm = (startName.value || "").trim().slice(0, 16);
       btnStart.disabled = !(nm.length >= 2);
@@ -1294,15 +1751,8 @@
     });
   }
 
-  function syncStartNameUI() {
-    startName.value = playerName || "";
-    btnStart.disabled = !((startName.value || "").trim().length >= 2);
-    playerNameInput.value = playerName || "";
-    updateHud(true);
-  }
-
   // ───────────────────────── PWA ─────────────────────────
-  function setupPWA() {
+  function setupPWA(){
     const setNet = () => {
       const offline = !navigator.onLine;
       pillOffline.hidden = !offline;
@@ -1312,6 +1762,7 @@
     window.addEventListener("offline", setNet);
     setNet();
 
+    // Install prompt (Chrome/Android)
     let deferredPrompt = null;
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
@@ -1322,7 +1773,7 @@
     btnInstall.addEventListener("click", async () => {
       if (!deferredPrompt) return;
       btnInstall.disabled = true;
-      try {
+      try{
         deferredPrompt.prompt();
         await deferredPrompt.userChoice;
       } catch {}
@@ -1331,44 +1782,162 @@
       btnInstall.disabled = false;
     });
 
-    if ("serviceWorker" in navigator) {
+    // SW register
+    if ("serviceWorker" in navigator){
       window.addEventListener("load", async () => {
-        try {
+        try{
           const swUrl = new URL("./sw.js", location.href);
           await navigator.serviceWorker.register(swUrl, { scope: "./" });
-        } catch (err) {
+        } catch (err){
           console.warn("SW register failed:", err);
         }
       });
     }
+
+    // Evitar scroll accidental iOS mientras juegas
+    document.addEventListener("touchmove", (e) => {
+      if (running) e.preventDefault();
+    }, { passive:false });
+  }
+
+  // ───────────────────────── Leaderboard API ─────────────────────────
+  function endpointOk(){
+    return (LEADERBOARD_ENDPOINT && /^https?:\/\//i.test(LEADERBOARD_ENDPOINT));
+  }
+
+  async function fetchLeaderboard(){
+    if (!navigator.onLine){
+      lbStatus.textContent = "Offline. Conéctate para ver el ranking.";
+      lbList.innerHTML = "";
+      return;
+    }
+    if (!endpointOk()){
+      lbStatus.textContent = "No hay endpoint configurado (Cloudflare Worker).";
+      lbList.innerHTML = "";
+      return;
+    }
+
+    lbStatus.textContent = "Cargando…";
+    lbList.innerHTML = "";
+
+    try{
+      const url = new URL("/top", LEADERBOARD_ENDPOINT);
+      url.searchParams.set("game", LEADERBOARD_GAME_ID);
+      url.searchParams.set("limit", "25");
+      const res = await fetch(url.toString(), { method:"GET" });
+      const data = await res.json();
+
+      if (!data || !data.ok){
+        lbStatus.textContent = "Error al cargar ranking.";
+        return;
+      }
+
+      const entries = Array.isArray(data.entries) ? data.entries : [];
+      lbStatus.textContent = entries.length ? "Top mundial" : "Sin entradas aún.";
+
+      for (let i=0;i<entries.length;i++){
+        const e = entries[i];
+        const row = document.createElement("div");
+        row.className = "lbEntry";
+        const when = e.ts ? new Date(e.ts).toLocaleString() : "";
+        row.innerHTML = `
+          <div class="lbLeft">
+            <div class="lbName">#${i+1} ${escapeHtml(e.name || "Anon")}</div>
+            <div class="lbMeta">${when}</div>
+          </div>
+          <div class="lbScore">${Number(e.score||0)}</div>
+        `;
+        lbList.appendChild(row);
+      }
+    } catch (err){
+      console.warn(err);
+      lbStatus.textContent = "Fallo de red / CORS.";
+      lbList.innerHTML = "";
+    }
+  }
+
+  async function submitScoreOnline(){
+    if (!navigator.onLine){
+      showToast("Sin internet.", 900);
+      return;
+    }
+    if (!endpointOk()){
+      showToast("No hay endpoint configurado.", 900);
+      return;
+    }
+
+    const nm = (playerNameInput.value || "").trim().slice(0,16);
+    if (nm.length < 2){
+      showToast("Escribe un nombre.", 900);
+      return;
+    }
+    localStorage.setItem(PLAYER_NAME_KEY, nm);
+    playerName = nm;
+    syncStartNameUI();
+
+    try{
+      btnSubmitScore.disabled = true;
+
+      const res = await fetch(new URL("/submit", LEADERBOARD_ENDPOINT).toString(), {
+        method: "POST",
+        headers: { "content-type":"application/json" },
+        body: JSON.stringify({
+          game: LEADERBOARD_GAME_ID,
+          name: nm,
+          score: Number(best || 0),
+          ts: Date.now(),
+        }),
+      });
+      const data = await res.json();
+      if (data && data.ok){
+        showToast("Enviado ✅", 900);
+        await fetchLeaderboard();
+      } else {
+        showToast("No se pudo enviar.", 900);
+      }
+    } catch (err){
+      console.warn(err);
+      showToast("Error de red.", 900);
+    } finally {
+      btnSubmitScore.disabled = false;
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, (m) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[m]));
   }
 
   // ───────────────────────── Boot ─────────────────────────
-  function boot() {
-    if (!ctx) { alert("Tu navegador no soporta Canvas 2D."); return; }
+  function boot(){
+    if (!ctx){
+      alert("Tu navegador no soporta Canvas 2D.");
+      return;
+    }
 
     best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
 
+    applySettingsToUI();
     bindInputs();
     bindButtons();
     setupPWA();
 
-    applySettingsToUI();
-
     resize();
-    window.addEventListener("resize", () => resize(), { passive: true });
-    window.addEventListener("orientationchange", () => setTimeout(resize, 80), { passive: true });
-
-    if ("ResizeObserver" in window) {
+    window.addEventListener("resize", () => resize(), { passive:true });
+    window.addEventListener("orientationchange", () => setTimeout(resize, 80), { passive:true });
+    if ("ResizeObserver" in window){
       const ro = new ResizeObserver(() => resize());
       ro.observe(canvas);
     }
 
-    // Sprites async: el juego funciona igual aunque aún no estén cargados
+    // sprites async: el juego funciona igual aunque aún no estén cargados
     preloadSprites().then(() => {
-      // si está en sprites ON, repinta para mostrar ya los sprites
       if (settings.useSprites) draw();
     });
+
+    refreshStartStats();
+    syncStartNameUI();
 
     resetGame(true);
     draw();

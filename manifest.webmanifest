@@ -1,13 +1,11 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
-  "description": "Runner PWA en cuadrícula: sprites configurables, combos y ranking online.",
-  "start_url": "./?v=0.0.5",
-  "scope": "./",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#07070b",
   "theme_color": "#e60012",
-  "orientation": "portrait",
+  "description": "Runner en cuadrícula con combos y mejoras roguelike.",
   "icons": [
     {
       "src": "./assets/icon.svg",
