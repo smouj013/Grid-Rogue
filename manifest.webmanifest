@@ -1,11 +1,13 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
+  "description": "Runner en cuadrícula 8x24 con combos y mejoras roguelike.",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#07070b",
   "theme_color": "#e60012",
-  "description": "Runner en cuadrícula con combos y mejoras roguelike.",
   "icons": [
     {
       "src": "./assets/icon.svg",

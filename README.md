@@ -1,15 +1,11 @@
-# Grid Runner — PWA (v0.0.6)
+# Grid Runner — PWA (v0.0.7)
 
-Juego PWA tipo runner en cuadrícula (8x24), ultra ligero y compatible con móvil/PC.
+Juego PWA runner en cuadrícula **8×24**:
+- Player centrado + banda de movimiento (3 filas)
+- Movimiento 4 direcciones (teclado / swipe / dpad opcional / taps izq-der)
+- Puntos + racha + multiplicador + combos visibles
+- Niveles + mejoras roguelike (20+)
+- Offline con Service Worker
+- **Ranking desactivado** (se ignora por ahora)
 
-## Novedades v0.0.6
-- Movimiento **4 direcciones** en una **banda central** (3 filas) ampliable con mejoras.
-- **Combos objetivo visibles** (secuencia + timer) y bonus al completarlos.
-- **Sistema roguelike de mejoras** al subir de nivel:
-  - 3 opciones por nivel
-  - 20+ mejoras distintas
-- Visual mejorado: banda marcada, filas ya “inertes” atenuadas, números más “juicy”.
-- Sprites configurables (Opciones: Sprites ON/OFF) con fallback a colores.
-- Ranking mundial online (opcional): Cloudflare Worker.
-
-## Jerarquía (obligatoria)
+## Estructura

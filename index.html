@@ -6,11 +6,9 @@
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#e60012" />
   <meta name="format-detection" content="telephone=no" />
-
-  <!-- iOS PWA-ish -->
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Grid Runner" />
 
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
@@ -21,81 +19,91 @@
 </head>
 
 <body>
-  <noscript>
-    <div style="padding:16px;color:#fff;background:#000">
-      Este juego necesita JavaScript activado.
-    </div>
-  </noscript>
+  <header class="topbar">
+    <div class="topbarRow">
+      <div class="brand">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="title">Grid Runner</span>
+        <span class="pill subtle" id="pillVersion">v0.0.7</span>
+        <span class="pill warn" id="pillOffline" hidden>Offline</span>
+      </div>
 
-  <header class="topbar" id="topbar">
-    <div class="brand">
-      <span class="dot"></span>
-      <div class="brandText">
-        <div class="title">Grid Runner</div>
-        <div class="subline">
-          <span class="pill" id="pillOffline" hidden>Offline</span>
-          <span class="pill subtle" id="pillVersion">v0.0.6</span>
-          <span class="pill subtle" id="pillSpeed">Vel 1.0×</span>
-          <span class="pill subtle" id="pillLevel">Nivel 1</span>
-          <span class="pill subtle" id="pillPlayer">👤 —</span>
-          <span class="pill subtle" id="pillSprites">Sprites: ON</span>
-        </div>
+      <div class="actions">
+        <button class="iconBtn ghost" id="btnOptions" aria-label="Opciones">
+          <span class="ico">⚙️</span><span class="lbl">Opciones</span>
+        </button>
+
+        <button class="iconBtn ghost" id="btnPause" aria-label="Pausar o reanudar">
+          <span class="ico">⏸</span><span class="lbl">Pausa</span>
+        </button>
+
+        <button class="iconBtn ghost" id="btnRestart" aria-label="Reiniciar">
+          <span class="ico">↻</span><span class="lbl">Reset</span>
+        </button>
+
+        <button class="iconBtn primary" id="btnInstall" hidden>
+          <span class="ico">⬇️</span><span class="lbl">Instalar</span>
+        </button>
       </div>
     </div>
 
-    <div class="hud">
-      <div class="hudItem">
-        <div class="hudLabel">Puntos</div>
-        <div class="hudValue" id="hudScore">0</div>
-        <div class="hudSub" id="hudScoreDelta">+0</div>
-      </div>
+    <div class="hudRow">
+      <div class="hud">
+        <div class="hudItem">
+          <div class="hudLabel">Puntos</div>
+          <div class="hudValueWrap">
+            <div class="hudValue" id="hudScore">0</div>
+            <div class="hudDelta" id="hudScoreDelta">+0</div>
+          </div>
+          <div class="hudSub" id="pillSpeed">Vel 1.0×</div>
+        </div>
 
-      <div class="hudItem">
-        <div class="hudLabel">Racha</div>
-        <div class="hudValue" id="hudStreak">0</div>
-        <div class="hudSub" id="hudComboText">Combo 0/8</div>
-      </div>
+        <div class="hudItem">
+          <div class="hudLabel">Racha</div>
+          <div class="hudValue" id="hudStreak">0</div>
+          <div class="hudSub">Bono</div>
+        </div>
 
-      <div class="hudItem">
-        <div class="hudLabel">x</div>
-        <div class="hudValue" id="hudMult">1</div>
-        <div class="meter" aria-hidden="true">
-          <div class="meterFill" id="hudComboFill"></div>
+        <div class="hudItem">
+          <div class="hudLabel">Mult</div>
+          <div class="hudValue" id="hudMult">1</div>
+          <div class="hudSub">x</div>
+        </div>
+
+        <div class="hudItem">
+          <div class="hudLabel">Mejor</div>
+          <div class="hudValue" id="hudBest">0</div>
+          <div class="hudSub">Local</div>
+        </div>
+
+        <div class="hudItem wide">
+          <div class="hudLabel">Combo</div>
+          <div class="bar">
+            <div class="barFill" id="hudComboFill"></div>
+          </div>
+          <div class="hudSub" id="hudComboText">—</div>
+        </div>
+
+        <div class="hudItem wide">
+          <div class="hudLabel">Nivel</div>
+          <div class="hudValueRow">
+            <div class="hudValue" id="hudLevel">1</div>
+            <div class="hudSub" id="hudXp">0/50</div>
+          </div>
+          <div class="bar">
+            <div class="barFill" id="hudLevelFill"></div>
+          </div>
+        </div>
+
+        <div class="hudItem pills">
+          <div class="hudLabel">Estado</div>
+          <div class="pillRow">
+            <span class="pill" id="pillPlayer">👤 —</span>
+            <span class="pill" id="pillSprites">🧩 Sprites</span>
+            <span class="pill" id="pillLevel">⭐ Lv 1</span>
+          </div>
         </div>
       </div>
-
-      <div class="hudItem">
-        <div class="hudLabel">Nivel</div>
-        <div class="hudValue" id="hudLevel">1</div>
-        <div class="hudSub" id="hudXp">0/200</div>
-        <div class="meter small" aria-hidden="true">
-          <div class="meterFill" id="hudLevelFill"></div>
-        </div>
-      </div>
-
-      <div class="hudItem">
-        <div class="hudLabel">Mejor</div>
-        <div class="hudValue" id="hudBest">0</div>
-        <div class="hudSub">Local</div>
-      </div>
-    </div>
-
-    <div class="actions">
-      <button class="iconBtn ghost" id="btnLeaderboard" aria-label="Ranking mundial">
-        <span class="ico">🏆</span><span class="lbl">Ranking</span>
-      </button>
-      <button class="iconBtn ghost" id="btnOptions" aria-label="Opciones">
-        <span class="ico">⚙️</span><span class="lbl">Opciones</span>
-      </button>
-      <button class="iconBtn ghost" id="btnPause" aria-label="Pausar o reanudar">
-        <span class="ico">⏸</span><span class="lbl">Pausa</span>
-      </button>
-      <button class="iconBtn ghost" id="btnRestart" aria-label="Reiniciar">
-        <span class="ico">↻</span><span class="lbl">Reset</span>
-      </button>
-      <button class="iconBtn primary" id="btnInstall" hidden>
-        <span class="ico">⬇️</span><span class="lbl">Instalar</span>
-      </button>
     </div>
   </header>
 
@@ -103,36 +111,32 @@
     <div class="stage">
       <canvas id="game" aria-label="Juego Grid Runner" role="img"></canvas>
 
-      <!-- HUD dentro del gameplay -->
-      <div class="floatingHud" aria-hidden="false">
+      <div class="touchZones" aria-hidden="true">
+        <div class="zone left" id="zoneLeft"></div>
+        <div class="zone right" id="zoneRight"></div>
+      </div>
+
+      <div class="floatingHud" aria-hidden="true">
         <div class="comboTarget" id="comboTarget">
           <div class="comboTop">
-            <div class="comboTitle">Combo objetivo</div>
+            <div class="comboTitle">Objetivo</div>
             <div class="comboTimer" id="comboTimer">—</div>
           </div>
           <div class="comboSeq" id="comboSeq"></div>
-          <div class="comboHint" id="comboHint">Pisa la secuencia en orden para bonus.</div>
+          <div class="comboHint" id="comboHint">—</div>
         </div>
       </div>
 
-      <!-- Leyenda siempre visible -->
       <div class="legendBar" id="legendBar" aria-label="Leyenda de casillas">
         <div class="legendItem"><span class="chip cCoin"></span><span class="txt">+10</span></div>
         <div class="legendItem"><span class="chip cGem"></span><span class="txt">+30</span></div>
         <div class="legendItem"><span class="chip cBonus"></span><span class="txt">+60</span></div>
         <div class="legendItem"><span class="chip cTrap"></span><span class="txt">-25</span></div>
         <div class="legendItem"><span class="chip cBlock"></span><span class="txt">KO</span></div>
-        <div class="legendHint">Swipe / D-Pad · Tap izq/der</div>
+        <div class="legendHint">Swipe 4 dirs / Tap izq-der / Teclado</div>
       </div>
 
-      <!-- Zonas táctiles (tap izq/der) -->
-      <div class="touchZones" aria-hidden="true">
-        <div class="zone left" id="zoneLeft"></div>
-        <div class="zone right" id="zoneRight"></div>
-      </div>
-
-      <!-- D-Pad -->
-      <div class="dpad" id="dpad" aria-hidden="true">
+      <div class="dpad" id="dpad" aria-label="Controles">
         <button class="dpadBtn up" id="btnUp" aria-label="Arriba">▲</button>
         <button class="dpadBtn left" id="btnLeft" aria-label="Izquierda">◀</button>
         <button class="dpadBtn right" id="btnRight" aria-label="Derecha">▶</button>
@@ -146,40 +150,44 @@
         <div class="panel">
           <h1>Grid Runner</h1>
           <p class="muted">
-            v0.0.6: combos objetivo + sistema roguelike de mejoras (20+).
-            Movimiento 4 direcciones en una banda central.
+            Estás en una cuadrícula 8×24. Muévete dentro de la banda central y farmea puntos.
+            Evita el KO. Completa objetivos para bonus y sube de nivel para mejoras.
           </p>
 
           <div class="formRow">
-            <label class="fieldLabel" for="startName">Nombre</label>
-            <input id="startName" class="fieldInput" maxlength="16" placeholder="Tu nombre (se guarda)" />
+            <label class="label" for="startName">Nombre</label>
+            <input id="startName" class="input" type="text" inputmode="text" autocomplete="nickname"
+                   placeholder="Tu nombre (mín. 2)" maxlength="16" />
           </div>
 
-          <div class="miniStats">
-            <div class="miniCard">
-              <div class="miniLabel">Mejor local</div>
-              <div class="miniValue" id="startBest">0</div>
+          <div class="startStats">
+            <div class="stat">
+              <div class="statLabel">Mejor</div>
+              <div class="statValue" id="startBest">0</div>
             </div>
-            <div class="miniCard">
-              <div class="miniLabel">Últimos</div>
-              <div class="miniValue" id="startRuns">—</div>
+            <div class="stat">
+              <div class="statLabel">Últimas</div>
+              <div class="statValue" id="startRuns">—</div>
             </div>
           </div>
 
-          <ul class="legend">
-            <li><span class="chip cCoin"></span> Moneda (+10 × mult)</li>
-            <li><span class="chip cGem"></span> Gema (+30 × mult)</li>
-            <li><span class="chip cBonus"></span> Bonus (+60 × mult)</li>
-            <li><span class="chip cTrap"></span> Trampa (-25 y racha baja)</li>
-            <li><span class="chip cBlock"></span> Bloque (KO, salvo escudo)</li>
-          </ul>
-
-          <div class="row">
-            <button class="btn primary big" id="btnStart" disabled>Jugar</button>
+          <div class="rowBtns">
+            <button class="btn primary big" id="btnStart">Jugar</button>
           </div>
 
-          <div class="row hint">
-            <span>PC: ← → ↑ ↓ / WASD · Pausa: Espacio</span>
+          <p class="tiny muted">
+            Tip: en iOS, añade a pantalla de inicio para instalar como app.
+          </p>
+        </div>
+      </div>
+
+      <!-- PAUSE -->
+      <div class="overlay" id="overlayPaused" hidden>
+        <div class="panel">
+          <h2>Pausa</h2>
+          <p class="muted">Pulsa continuar o ⏸ para volver.</p>
+          <div class="rowBtns">
+            <button class="btn primary big" id="btnResume">Continuar</button>
           </div>
         </div>
       </div>
@@ -187,138 +195,78 @@
       <!-- GAME OVER -->
       <div class="overlay" id="overlayGameOver" hidden>
         <div class="panel">
-          <h1>Game Over</h1>
-          <p id="finalLine">Has hecho 0 puntos.</p>
-          <div class="row">
-            <button class="btn primary big" id="btnPlayAgain">Reintentar</button>
-          </div>
-          <div class="row">
-            <button class="btn" id="btnBackToStart">Volver</button>
+          <h2>KO</h2>
+          <p class="muted" id="finalLine">—</p>
+          <div class="rowBtns">
+            <button class="btn primary big" id="btnPlayAgain">Otra</button>
+            <button class="btn ghost big" id="btnBackToStart">Inicio</button>
           </div>
         </div>
       </div>
 
-      <!-- PAUSE -->
-      <div class="overlay" id="overlayPaused" hidden>
-        <div class="panel">
-          <h1>Pausa</h1>
-          <p>Toque o pulsa ⏸ / Espacio para volver.</p>
-          <div class="row">
-            <button class="btn primary big" id="btnResume">Continuar</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- LEVEL UP / UPGRADES -->
+      <!-- UPGRADES -->
       <div class="overlay" id="overlayUpgrades" hidden>
-        <div class="panel upgrades">
-          <div class="leaderTop">
-            <h1>¡Subes de nivel!</h1>
-            <span class="pill subtle" id="upLevelPill">Nivel +1</span>
-          </div>
+        <div class="panel wide">
+          <h2>Subes de nivel</h2>
           <p class="muted">Elige 1 mejora (estilo roguelike).</p>
-
-          <div class="upgradeGrid" id="upgradeChoices"></div>
-
-          <div class="row split">
-            <button class="btn" id="btnReroll" hidden>🔁 Reroll</button>
-            <button class="btn ghost" id="btnSkipUpgrade" hidden>Omitir</button>
+          <div class="upgGrid">
+            <button class="upgCard" id="upg0" type="button"></button>
+            <button class="upgCard" id="upg1" type="button"></button>
+            <button class="upgCard" id="upg2" type="button"></button>
           </div>
-
-          <p class="muted small" id="upgradeHint">Algunas mejoras se pueden acumular.</p>
+          <p class="tiny muted">Las mejoras se acumulan. Algunas tienen límite.</p>
         </div>
       </div>
 
       <!-- OPTIONS -->
       <div class="overlay" id="overlayOptions" hidden>
-        <div class="panel options">
-          <div class="leaderTop">
-            <h1>Opciones</h1>
-            <button class="iconBtn ghost" id="btnCloseOptions" aria-label="Cerrar opciones">
-              <span class="ico">✕</span><span class="lbl">Cerrar</span>
-            </button>
+        <div class="panel">
+          <div class="panelTop">
+            <h2>Opciones</h2>
+            <button class="iconBtn ghost" id="btnCloseOptions" aria-label="Cerrar">✕</button>
           </div>
 
-          <div class="optGrid">
-            <div class="optRow">
-              <div class="optLeft">
-                <div class="optTitle">Sprites</div>
-                <div class="optDesc">Usa imágenes para casillas y player.</div>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="optSprites" />
-                <span class="slider"></span>
-              </label>
-            </div>
+          <label class="optRow">
+            <span class="optLeft">
+              <span class="optTitle">Sprites</span>
+              <span class="optDesc">Usar assets (si existen) en vez de colores.</span>
+            </span>
+            <input type="checkbox" id="optSprites" />
+          </label>
 
-            <div class="optRow">
-              <div class="optLeft">
-                <div class="optTitle">Vibración</div>
-                <div class="optDesc">Feedback al tocar casillas.</div>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="optVibration" />
-                <span class="slider"></span>
-              </label>
-            </div>
+          <label class="optRow">
+            <span class="optLeft">
+              <span class="optTitle">Vibración</span>
+              <span class="optDesc">Feedback al coger/KO (si el móvil lo soporta).</span>
+            </span>
+            <input type="checkbox" id="optVibration" />
+          </label>
 
-            <div class="optRow">
-              <div class="optLeft">
-                <div class="optTitle">D-Pad</div>
-                <div class="optDesc">Muestra botones de dirección.</div>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="optDpad" />
-                <span class="slider"></span>
-              </label>
-            </div>
+          <label class="optRow">
+            <span class="optLeft">
+              <span class="optTitle">D-Pad</span>
+              <span class="optDesc">Mostrar botones táctiles 4 direcciones.</span>
+            </span>
+            <input type="checkbox" id="optDpad" />
+          </label>
 
-            <div class="optRow">
-              <div class="optLeft">
-                <div class="optTitle">Intensidad efectos</div>
-                <div class="optDesc">Partículas, números y shake.</div>
-              </div>
-              <input type="range" id="optFx" min="0.4" max="1.25" step="0.05" />
-              <div class="optValue" id="optFxValue">1.00</div>
-            </div>
-
-            <div class="optRow">
-              <div class="optLeft">
-                <div class="optTitle">Borrar historial local</div>
-                <div class="optDesc">Elimina runs guardados en el móvil.</div>
-              </div>
-              <button class="btn" id="btnClearLocal">Borrar</button>
+          <div class="optRow">
+            <span class="optLeft">
+              <span class="optTitle">FX</span>
+              <span class="optDesc">Intensidad visual (shake/partículas).</span>
+            </span>
+            <div class="optRight">
+              <input id="optFx" type="range" min="0.4" max="1.25" step="0.01" />
+              <span class="pill" id="optFxValue">1.00</span>
             </div>
           </div>
 
-          <p class="muted small">
-            Sprites se cargan desde <b>assets/sprites/</b>. Si falta alguno, usa colores.
-          </p>
-        </div>
-      </div>
-
-      <!-- LEADERBOARD -->
-      <div class="overlay" id="overlayLeaderboard" hidden>
-        <div class="panel leaderboard">
-          <div class="leaderTop">
-            <h1>Ranking mundial</h1>
-            <button class="iconBtn ghost" id="btnCloseLeaderboard" aria-label="Cerrar ranking">
-              <span class="ico">✕</span><span class="lbl">Cerrar</span>
-            </button>
+          <div class="rowBtns">
+            <button class="btn ghost" id="btnClearLocal">Borrar datos local</button>
           </div>
 
-          <p class="muted" id="lbStatus">Cargando…</p>
-
-          <div class="lbRow">
-            <label class="lbLabel" for="playerName">Nombre</label>
-            <input id="playerName" class="lbInput" maxlength="16" placeholder="Tu nombre (para enviar score)" />
-            <button class="btn primary" id="btnSubmitScore">Enviar score</button>
-          </div>
-
-          <div class="lbList" id="lbList"></div>
-
-          <p class="muted small" id="lbHint">
-            El ranking solo funciona con internet y un endpoint configurado.
+          <p class="tiny muted">
+            (Ranking desactivado en v0.0.7)
           </p>
         </div>
       </div>
@@ -326,6 +274,9 @@
     </div>
   </main>
 
-  <script src="./app.js" defer></script>
+  <script>
+    window.APP_VERSION = "0.0.7";
+  </script>
+  <script src="./app.js"></script>
 </body>
 </html>

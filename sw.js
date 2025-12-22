@@ -1,8 +1,8 @@
-/* sw.js — Grid Runner PWA (v0.0.6)
+/* sw.js — Grid Runner PWA (v0.0.7)
    - App shell precache + navegación offline (index)
    - Stale-while-revalidate para assets
 */
-const VERSION = "v0.0.6";
+const VERSION = "v0.0.7";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
@@ -15,6 +15,7 @@ const CORE_ASSETS = [
   "./manifest.webmanifest",
   "./assets/icon.svg",
 
+  // sprites opcionales (si no existen, no rompe)
   "./assets/sprites/player.svg",
   "./assets/sprites/tile_block.svg",
   "./assets/sprites/tile_coin.svg",
@@ -28,7 +29,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CORE_CACHE);
     await Promise.allSettled(CORE_ASSETS.map(async (u) => {
-      try {
+      try{
         const res = await fetch(u, { cache: "no-cache" });
         if (res.ok) await cache.put(u, res);
       } catch {}
@@ -41,7 +42,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.map((k) => {
-      if (k.startsWith(CACHE_PREFIX) && k !== CORE_CACHE && k !== RUNTIME_CACHE) {
+      if (k.startsWith(CACHE_PREFIX) && k !== CORE_CACHE && k !== RUNTIME_CACHE){
         return caches.delete(k);
       }
     }));
@@ -56,11 +57,11 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   // navegación
-  if (req.mode === "navigate") {
+  if (req.mode === "navigate"){
     event.respondWith((async () => {
       const cache = await caches.open(CORE_CACHE);
       const cached = await cache.match("./index.html");
-      try {
+      try{
         const net = await fetch(req);
         if (net && net.ok) cache.put("./index.html", net.clone());
         return net;
@@ -71,7 +72,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // assets
+  // assets: stale-while-revalidate
   event.respondWith((async () => {
     const cache = await caches.open(RUNTIME_CACHE);
     const cached = await cache.match(req);
