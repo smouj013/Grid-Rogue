@@ -1,8 +1,8 @@
-/* app.js — Grid Runner (PWA) v0.1.1 (FIXED)
-   ✅ Fix REAL botones: espera a DOM listo (no revienta si <script> no tiene defer)
-   ✅ Fix update: pill “Actualizar” -> postMessage(SKIP_WAITING) al SW waiting + recarga segura
-   ✅ Más robusto: referencias DOM opcionales no tiran toda la app
-   ✅ Mantiene gameplay / upgrades / UI de tu 0.1.1
+/* app.js — Grid Runner (PWA) v0.1.1 (WORKING)
+   ✅ Boot robusto (DOM ready, no depende de defer)
+   ✅ Fix CRÍTICO: resize() NO dibuja si el grid aún no está listo (evita crash y “botones muertos”)
+   ✅ UI completa: Start/Pause/Options/Upgrades/GameOver
+   ✅ PWA: install + update real (waiting -> SKIP_WAITING -> controllerchange -> reload)
 */
 
 (() => {
@@ -20,6 +20,8 @@
     try { return JSON.parse(raw); } catch { return fallback; }
   }
 
+  const $ = (id) => document.getElementById(id);
+
   function overlayShow(el) { if (el) el.hidden = false; }
   function overlayHide(el) { if (el) el.hidden = true; }
 
@@ -29,14 +31,6 @@
     if (pv) pv.textContent = String(value);
     else el.textContent = String(value);
   }
-
-  // DOM helpers (no tiran la app antes de tiempo)
-  const $ = (id) => document.getElementById(id);
-  const must = (id) => {
-    const el = $(id);
-    if (!el) throw new Error(`Missing element #${id}`);
-    return el;
-  };
 
   // ───────────────────────── Storage keys ─────────────────────────
   const BEST_KEY = "gridrunner_best_v1";
@@ -54,11 +48,11 @@
 
   let settings = (() => {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return defaultSettings();
-    const s = safeParse(raw, null);
-    if (!s) return defaultSettings();
+    const s = raw ? safeParse(raw, null) : null;
+    const base = defaultSettings();
+    if (!s) return base;
     return {
-      ...defaultSettings(),
+      ...base,
       ...s,
       fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
     };
@@ -76,6 +70,7 @@
 
   // ───────────────────────── Auth (profiles) ─────────────────────────
   const Auth = window.Auth || null;
+
   let activeProfileId = null;
   let playerName = (localStorage.getItem(NAME_KEY) || "").trim().slice(0, 16);
   let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
@@ -92,11 +87,8 @@
     localStorage.setItem(BEST_KEY, String(best));
   }
 
-  // ───────────────────────── Sprites optional (SVGs) ─────────────────────────
-  const sprites = {
-    ready: false,
-    map: new Map(), // key->Image
-  };
+  // ───────────────────────── Sprites optional ─────────────────────────
+  const sprites = { ready: false, map: new Map() };
 
   function spriteUrl(name) {
     return new URL(`./assets/sprites/${name}`, location.href).toString();
@@ -113,14 +105,13 @@
   }
 
   async function preloadSpritesWithTimeout(timeoutMs = 900) {
-    // NO BLOQUEA NUNCA
     const keys = [
       ["coin", "tile_coin.svg"],
       ["gem", "tile_gem.svg"],
       ["bonus", "tile_bonus.svg"],
       ["trap", "tile_trap.svg"],
       ["block", "tile_block.svg"],
-      // ["player", "player.svg"],
+      // ["player", "player.svg"], // opcional
     ];
 
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
@@ -130,9 +121,8 @@
         const img = await loadImage(spriteUrl(file));
         sprites.map.set(k, img);
       });
-
       const result = await Promise.race([Promise.all(tasks), timeout]);
-      sprites.ready = (result !== "timeout") ? (sprites.map.size > 0) : (sprites.map.size > 0);
+      sprites.ready = (sprites.map.size > 0) && (result === "timeout" || result !== "timeout");
     } catch {
       sprites.ready = sprites.map.size > 0;
     }
@@ -175,6 +165,7 @@
   // grid
   let grid = [];
   let consumed = [];
+  let gridReady = false; // ✅ FIX: evita draw/resize crash al inicio
 
   // render geom
   let dpr = 1;
@@ -194,15 +185,15 @@
   let zoneY0 = 0;
 
   let targetCol = 3;
-  let targetRow = 1; // dentro de zona
+  let targetRow = 1;
   let colF = 3;
   let rowF = 1;
 
   // upgrades/effects
   let shields = 0;
-  let magnet = 0;     // 0..2
-  let scoreBoost = 0; // 0.. (porcentaje)
-  let trapResist = 0; // 0..4
+  let magnet = 0;
+  let scoreBoost = 0;
+  let trapResist = 0;
   let rerolls = 0;
 
   // values
@@ -223,10 +214,10 @@
   let comboTimeMax = 6.0;
   let comboTime = 6.0;
 
-  // fx
+  // toast
   let toastT = 0;
 
-  // ───────────────────────── DOM refs (se asignan en boot) ─────────────────────────
+  // ───────────────────────── DOM refs ─────────────────────────
   let stage, canvas, ctx;
   let brandSub;
 
@@ -303,15 +294,6 @@
     rowF = clamp(rowF, 0, zoneH - 1);
   }
 
-  function makeGrid() {
-    grid = new Array(ROWS);
-    consumed = new Array(ROWS);
-    for (let r = 0; r < ROWS; r++) {
-      grid[r] = genRow();
-      consumed[r] = new Array(COLS).fill(false);
-    }
-  }
-
   function genRow() {
     const density = clamp(0.28 + (level - 1) * 0.005, 0.18, 0.52);
     const out = new Array(COLS).fill(CellType.Empty);
@@ -341,6 +323,16 @@
       }
     }
     return out;
+  }
+
+  function makeGrid() {
+    grid = new Array(ROWS);
+    consumed = new Array(ROWS);
+    for (let r = 0; r < ROWS; r++) {
+      grid[r] = genRow();
+      consumed[r] = new Array(COLS).fill(false);
+    }
+    gridReady = true;
   }
 
   function shiftRows() {
@@ -525,14 +517,8 @@
   ];
 
   const pickedCount = new Map();
-  function canPick(u) {
-    const c = pickedCount.get(u.id) || 0;
-    return c < (u.max ?? 999);
-  }
-  function markPick(u) {
-    const c = pickedCount.get(u.id) || 0;
-    pickedCount.set(u.id, c + 1);
-  }
+  const canPick = (u) => (pickedCount.get(u.id) || 0) < (u.max ?? 999);
+  const markPick = (u) => pickedCount.set(u.id, (pickedCount.get(u.id) || 0) + 1);
 
   function chooseUpgrades(n = 3) {
     const pool = Upgrades.filter(canPick);
@@ -617,22 +603,40 @@
     return true;
   }
 
+  function clearScreen() {
+    if (!ctx) return;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#050507";
+    ctx.fillRect(0, 0, stageW, stageH);
+    ctx.restore();
+  }
+
   function draw() {
     if (!ctx) return;
+    if (!gridReady || grid.length !== ROWS) { // ✅ FIX: evita crash en boot/resize temprano
+      clearScreen();
+      return;
+    }
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
 
+    // bg
     ctx.fillStyle = "#050507";
     ctx.fillRect(0, 0, stageW, stageH);
 
+    // grid bg
     ctx.fillStyle = "rgba(255,255,255,0.03)";
     ctx.fillRect(offX, offY, gridW, gridH);
 
+    // zone highlight
     const zTop = offY + zoneY0 * cellPx;
     ctx.fillStyle = "rgba(105,168,255,0.08)";
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
+    // cells
     for (let r = 0; r < ROWS; r++) {
       const y = offY + r * cellPx + scrollPx;
       for (let c = 0; c < COLS; c++) {
@@ -659,6 +663,7 @@
       }
     }
 
+    // grid lines
     ctx.globalAlpha = 0.25;
     ctx.strokeStyle = "rgba(255,255,255,0.07)";
     ctx.lineWidth = 1;
@@ -678,8 +683,10 @@
     }
     ctx.globalAlpha = 1;
 
+    // player
     const px = offX + colF * cellPx;
     const py = offY + (zoneY0 + rowF) * cellPx;
+
     const okP = drawSprite("player", px + 2, py + 2, cellPx - 4, cellPx - 4, 1);
     if (!okP) {
       ctx.fillStyle = "rgba(255,255,255,0.92)";
@@ -689,6 +696,7 @@
       ctx.strokeRect(px + 3, py + 3, cellPx - 6, cellPx - 6);
     }
 
+    // shield count
     if (shields > 0) {
       ctx.fillStyle = "rgba(105,168,255,0.95)";
       ctx.font = `900 ${Math.max(11, Math.floor(cellPx * 0.38))}px system-ui`;
@@ -721,6 +729,7 @@
     offX = Math.floor((stageW - gridW) / 2);
     offY = Math.floor((stageH - gridH) / 2);
 
+    // ✅ NO dibujar si grid no listo (evita crash)
     draw();
   }
 
@@ -746,13 +755,11 @@
       if (k === "Escape") togglePause();
     });
 
-    // dpad (si existe)
     btnLeft?.addEventListener("click", () => move(-1, 0));
     btnRight?.addEventListener("click", () => move(+1, 0));
     btnUp?.addEventListener("click", () => move(0, -1));
     btnDown?.addEventListener("click", () => move(0, +1));
 
-    // swipe en canvas (si existe)
     if (!canvas) return;
 
     let sx = 0, sy = 0, st = 0, active = false;
@@ -824,6 +831,8 @@
     trapResist = 0;
     rerolls = 0;
 
+    pickedCount.clear();
+
     zoneExtra = 0;
     recomputeZone();
 
@@ -838,6 +847,8 @@
     overlayHide(overlayPaused);
     overlayHide(overlayUpgrades);
     overlayHide(overlayGameOver);
+    overlayHide(overlayOptions);
+
     if (showMenu) overlayShow(overlayStart);
     else overlayHide(overlayStart);
 
@@ -944,7 +955,7 @@
     requestAnimationFrame(frame);
   }
 
-  // ───────────────────────── PWA / SW / Install (FIX UPDATE) ─────────────────────────
+  // ───────────────────────── PWA / SW / Install ─────────────────────────
   let deferredPrompt = null;
   let swReg = null;
   let swReloadGuard = false;
@@ -962,7 +973,6 @@
   }
 
   function requestAppReload() {
-    // Si está en partida, espera al final
     if (running && !gameOver) {
       pendingReload = true;
       markUpdateAvailable("Actualizar");
@@ -973,19 +983,15 @@
   }
 
   async function applySWUpdateNow() {
-    // 1) si hay waiting, le pedimos skipWaiting
     if (swReg?.waiting) {
-      try {
-        swReg.waiting.postMessage({ type: "SKIP_WAITING" });
-      } catch {}
+      try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {}
     }
 
-    // 2) fallback: recarga “por si acaso”
-    // Evita bucle infinito usando sessionStorage.
+    // fallback anti-loop
     const k = "gridrunner_sw_reload_once";
     if (sessionStorage.getItem(k) !== "1") {
       sessionStorage.setItem(k, "1");
-      setTimeout(() => location.reload(), 900);
+      setTimeout(() => location.reload(), 700);
     } else {
       location.reload();
     }
@@ -996,7 +1002,6 @@
     window.addEventListener("online", setOfflinePill, { passive: true });
     window.addEventListener("offline", setOfflinePill, { passive: true });
 
-    // install solo si web instalable y NO standalone
     if (btnInstall) btnInstall.hidden = true;
 
     if (!isStandalone()) {
@@ -1025,7 +1030,6 @@
       });
     }
 
-    // pill update -> ahora SÍ actualiza SW
     pillUpdate?.addEventListener("click", () => {
       if (running && !gameOver) {
         pendingReload = true;
@@ -1035,12 +1039,12 @@
       applySWUpdateNow();
     });
 
-    // SW
     if ("serviceWorker" in navigator) {
       try {
-        swReg = await navigator.serviceWorker.register(new URL("./sw.js", location.href));
+        // query para forzar fetch correcto en GH Pages si cachea agresivo
+        const swUrl = new URL(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`, location.href);
+        swReg = await navigator.serviceWorker.register(swUrl);
 
-        // Si ya hay waiting (update listo antes de abrir la app)
         if (swReg.waiting) {
           markUpdateAvailable("Actualizar");
         }
@@ -1057,7 +1061,6 @@
         });
 
         navigator.serviceWorker.addEventListener("controllerchange", () => {
-          // recarga segura (anti-loop)
           if (swReloadGuard) return;
           swReloadGuard = true;
 
@@ -1073,12 +1076,14 @@
     }
   }
 
-  // ───────────────────────── Boot ─────────────────────────
+  // ───────────────────────── Auth UI ─────────────────────────
   function initAuthUI() {
-    if (!Auth || !profileSelect) {
-      // si NO hay Auth, asegura que Start no quede “capado”
-      if (btnStart) btnStart.disabled = false;
+    if (!profileSelect) return;
+
+    // Si no hay Auth (o falla), dejamos modo simple.
+    if (!Auth) {
       if (newProfileWrap) newProfileWrap.hidden = false;
+      if (btnStart) btnStart.disabled = false;
       return;
     }
 
@@ -1134,100 +1139,123 @@
     refreshNewWrap();
   }
 
+  // ───────────────────────── Boot ─────────────────────────
+  function showFatal(err) {
+    console.error(err);
+    overlayHide(overlayLoading);
+    if (errMsg) errMsg.textContent = (err && err.message) ? err.message : "Error desconocido";
+    overlayShow(overlayError);
+    if (!overlayError) alert((err && err.message) ? err.message : "Error desconocido");
+  }
+
+  function cacheDOM() {
+    stage = $("stage");
+    canvas = $("gameCanvas");
+    if (!stage) throw new Error("Falta #stage");
+    if (!canvas) throw new Error("Falta #gameCanvas");
+
+    ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) throw new Error("No se pudo crear contexto 2D");
+
+    brandSub = $("brandSub");
+
+    pillScore = $("pillScore");
+    pillBest = $("pillBest");
+    pillStreak = $("pillStreak");
+    pillMult = $("pillMult");
+    pillLevel = $("pillLevel");
+    pillSpeed = $("pillSpeed");
+    pillPlayer = $("pillPlayer");
+    pillUpdate = $("pillUpdate");
+    pillOffline = $("pillOffline");
+    pillVersion = $("pillVersion");
+
+    btnOptions = $("btnOptions");
+    btnPause = $("btnPause");
+    btnRestart = $("btnRestart");
+    btnInstall = $("btnInstall");
+
+    overlayLoading = $("overlayLoading");
+    loadingSub = $("loadingSub");
+    overlayStart = $("overlayStart");
+    overlayPaused = $("overlayPaused");
+    overlayUpgrades = $("overlayUpgrades");
+    overlayGameOver = $("overlayGameOver");
+    overlayOptions = $("overlayOptions");
+    overlayError = $("overlayError");
+
+    btnStart = $("btnStart");
+    profileSelect = $("profileSelect");
+    btnNewProfile = $("btnNewProfile");
+    newProfileWrap = $("newProfileWrap");
+    startName = $("startName");
+
+    btnResume = $("btnResume");
+    btnQuitToStart = $("btnQuitToStart");
+
+    upTitle = $("upTitle");
+    upSub = $("upSub");
+    upgradeChoices = $("upgradeChoices");
+    btnReroll = $("btnReroll");
+    btnSkipUpgrade = $("btnSkipUpgrade");
+
+    goStats = $("goStats");
+    btnBackToStart = $("btnBackToStart");
+    btnRetry = $("btnRetry");
+
+    btnCloseOptions = $("btnCloseOptions");
+    optSprites = $("optSprites");
+    optVibration = $("optVibration");
+    optDpad = $("optDpad");
+    optFx = $("optFx");
+    optFxValue = $("optFxValue");
+    btnClearLocal = $("btnClearLocal");
+
+    errMsg = $("errMsg");
+    btnErrClose = $("btnErrClose");
+    btnErrReload = $("btnErrReload");
+
+    comboSeq = $("comboSeq");
+    comboTimerVal = $("comboTimerVal");
+    comboHint = $("comboHint");
+    toast = $("toast");
+
+    dpad = $("dpad");
+    btnUp = $("btnUp");
+    btnDown = $("btnDown");
+    btnLeft = $("btnLeft");
+    btnRight = $("btnRight");
+  }
+
   async function boot() {
     try {
-      // Cache DOM (AQUÍ, ya con DOM listo)
-      stage = must("stage");
-      canvas = must("gameCanvas");
-      ctx = canvas.getContext("2d", { alpha: false });
+      cacheDOM();
 
-      brandSub = $("brandSub");
-
-      pillScore = $("pillScore");
-      pillBest = $("pillBest");
-      pillStreak = $("pillStreak");
-      pillMult = $("pillMult");
-      pillLevel = $("pillLevel");
-      pillSpeed = $("pillSpeed");
-      pillPlayer = $("pillPlayer");
-      pillUpdate = $("pillUpdate");
-      pillOffline = $("pillOffline");
-      pillVersion = $("pillVersion");
-
-      btnOptions = $("btnOptions");
-      btnPause = $("btnPause");
-      btnRestart = $("btnRestart");
-      btnInstall = $("btnInstall");
-
-      overlayLoading = $("overlayLoading");
-      loadingSub = $("loadingSub");
-      overlayStart = $("overlayStart");
-      overlayPaused = $("overlayPaused");
-      overlayUpgrades = $("overlayUpgrades");
-      overlayGameOver = $("overlayGameOver");
-      overlayOptions = $("overlayOptions");
-      overlayError = $("overlayError");
-
-      btnStart = $("btnStart");
-      profileSelect = $("profileSelect");
-      btnNewProfile = $("btnNewProfile");
-      newProfileWrap = $("newProfileWrap");
-      startName = $("startName");
-
-      btnResume = $("btnResume");
-      btnQuitToStart = $("btnQuitToStart");
-
-      upTitle = $("upTitle");
-      upSub = $("upSub");
-      upgradeChoices = $("upgradeChoices");
-      btnReroll = $("btnReroll");
-      btnSkipUpgrade = $("btnSkipUpgrade");
-
-      goStats = $("goStats");
-      btnBackToStart = $("btnBackToStart");
-      btnRetry = $("btnRetry");
-
-      btnCloseOptions = $("btnCloseOptions");
-      optSprites = $("optSprites");
-      optVibration = $("optVibration");
-      optDpad = $("optDpad");
-      optFx = $("optFx");
-      optFxValue = $("optFxValue");
-      btnClearLocal = $("btnClearLocal");
-
-      errMsg = $("errMsg");
-      btnErrClose = $("btnErrClose");
-      btnErrReload = $("btnErrReload");
-
-      comboSeq = $("comboSeq");
-      comboTimerVal = $("comboTimerVal");
-      comboHint = $("comboHint");
-      toast = $("toast");
-
-      dpad = $("dpad");
-      btnUp = $("btnUp");
-      btnDown = $("btnDown");
-      btnLeft = $("btnLeft");
-      btnRight = $("btnRight");
-
-      // Version pill
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
 
-      // UI + layout
-      if (loadingSub) loadingSub.textContent = "Preparando UI…";
+      if (loadingSub) loadingSub.textContent = "Iniciando…";
+
+      // 1) Auth
+      syncFromAuth();
+
+      // 2) Estado base (IMPORTANTE: grid antes de draw/resize)
+      recomputeZone();
+      makeGrid();
+      rerollCombo();
+
+      // 3) UI base
+      initAuthUI();
       applySettingsToUI();
+
+      // 4) Layout
       resize();
       window.addEventListener("resize", resize, { passive: true });
 
-      // Auth
-      syncFromAuth();
-      initAuthUI();
-
-      // Inputs
+      // 5) Inputs
       bindInputs();
 
-      // UI listeners
+      // 6) Botones UI
       btnPause?.addEventListener("click", togglePause);
       btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
       btnOptions?.addEventListener("click", showOptions);
@@ -1287,24 +1315,25 @@
         startRun();
       });
 
+      // pillPlayer: volver al menú
       pillPlayer?.addEventListener("click", () => resetRun(true));
+      pillPlayer?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") resetRun(true);
+      });
 
-      // PWA
-      if (loadingSub) loadingSub.textContent = "Preparando PWA…";
+      // 7) PWA + Sprites (no bloquea)
+      if (loadingSub) loadingSub.textContent = "PWA…";
       setupPWA();
-
-      // Sprites (no bloquea)
-      if (loadingSub) loadingSub.textContent = "Preparando sprites…";
       preloadSpritesWithTimeout(900);
 
-      // Estado inicial
+      // 8) Estado inicial
       resetRun(true);
 
-      // loop
+      // Loop
       lastT = performance.now();
       requestAnimationFrame(frame);
 
-      // splash + watchdog
+      // Watchdog + transición
       const watchdog = setTimeout(() => {
         if (overlayLoading && !overlayLoading.hidden) {
           overlayHide(overlayLoading);
@@ -1312,7 +1341,7 @@
         }
       }, 6500);
 
-      await new Promise(res => setTimeout(res, 1100));
+      await new Promise(res => setTimeout(res, 650));
       clearTimeout(watchdog);
 
       overlayHide(overlayLoading);
@@ -1321,7 +1350,6 @@
       if (brandSub) brandSub.textContent = "Listo";
       updatePills();
 
-      // Pausa automática al cambiar de pestaña
       document.addEventListener("visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {
           paused = true;
@@ -1330,17 +1358,11 @@
       });
 
     } catch (e) {
-      console.error(e);
-      overlayHide(overlayLoading);
-      if (errMsg) errMsg.textContent = e?.message ? e.message : "Error desconocido";
-      overlayShow(overlayError);
-
-      // Si ni overlayError existe, al menos avisa
-      if (!overlayError) alert(e?.message || "Error desconocido");
+      showFatal(e);
     }
   }
 
-  // ───────────────────────── DOM ready (FIX principal) ─────────────────────────
+  // ───────────────────────── DOM ready ─────────────────────────
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot, { once: true });
   } else {
