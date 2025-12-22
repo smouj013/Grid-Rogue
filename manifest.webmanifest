@@ -1,19 +1,40 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
-  "description": "Runner en cuadrícula 8x24 con combos y mejoras roguelike.",
+  "description": "Runner en cuadrícula 8×24. Puntos, racha, combos y mejoras roguelike.",
+  "lang": "es-ES",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#07070b",
   "theme_color": "#e60012",
+  "categories": ["games"],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "./assets/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "./assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icons/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
