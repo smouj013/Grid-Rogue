@@ -33,9 +33,10 @@
         <div class="title">Grid Runner</div>
         <div class="subline">
           <span class="pill" id="pillOffline" hidden>Offline</span>
-          <span class="pill subtle" id="pillVersion">v0.0.4</span>
+          <span class="pill subtle" id="pillVersion">v0.0.5</span>
           <span class="pill subtle" id="pillSpeed">Vel 1.0×</span>
           <span class="pill subtle" id="pillPlayer">👤 —</span>
+          <span class="pill subtle" id="pillSprites">Sprites: ON</span>
         </div>
       </div>
     </div>
@@ -91,13 +92,11 @@
     <div class="stage">
       <canvas id="game" aria-label="Juego Grid Runner" role="img"></canvas>
 
-      <!-- Tap-zones (rápido para móvil) -->
       <div class="touchZones" aria-hidden="true">
         <div class="zone left" id="zoneLeft"></div>
         <div class="zone right" id="zoneRight"></div>
       </div>
 
-      <!-- D-Pad (4 direcciones) -->
       <div class="dpad" id="dpad" aria-label="Controles">
         <button class="dpadBtn up" id="btnUp" aria-label="Arriba">▲</button>
         <button class="dpadBtn left" id="btnLeft" aria-label="Izquierda">◀</button>
@@ -107,7 +106,6 @@
 
       <div class="toast" id="toast" hidden></div>
 
-      <!-- Leyenda SIEMPRE visible -->
       <div class="legendBar" id="legendBar" aria-label="Leyenda de casillas">
         <div class="legendItem"><span class="chip cCoin"></span><span class="txt">+10</span></div>
         <div class="legendItem"><span class="chip cGem"></span><span class="txt">+30</span></div>
@@ -117,13 +115,13 @@
         <div class="legendHint">Swipe / D-Pad · Tap izq/der</div>
       </div>
 
-      <!-- START / BIENVENIDA -->
+      <!-- START -->
       <div class="overlay" id="overlayStart">
         <div class="panel">
           <h1>Grid Runner</h1>
           <p>
-            Te mueves en <b>4 direcciones</b> dentro de la banda central (3 filas marcadas).
-            Las casillas “pasadas” se atenúan (ya no te afectan).
+            v0.0.5: ahora puedes usar <b>sprites</b> para cada casilla.
+            Sustituye los archivos en <b>assets/sprites/</b>.
           </p>
 
           <div class="formRow">
@@ -198,6 +196,17 @@
           <div class="optGrid">
             <div class="optRow">
               <div class="optLeft">
+                <div class="optTitle">Sprites</div>
+                <div class="optDesc">Usa imágenes para casillas y player.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="optSprites" />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="optRow">
+              <div class="optLeft">
                 <div class="optTitle">Vibración</div>
                 <div class="optDesc">Feedback al tocar casillas.</div>
               </div>
@@ -237,7 +246,7 @@
           </div>
 
           <p class="muted small">
-            Nombre y mejores se guardan automáticamente en tu dispositivo.
+            Sprites se cargan desde <b>assets/sprites/</b>. Si falta alguno, usa colores.
           </p>
         </div>
       </div>

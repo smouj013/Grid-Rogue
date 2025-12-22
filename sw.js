@@ -1,8 +1,8 @@
-/* sw.js — Grid Runner PWA (v0.0.4)
+/* sw.js — Grid Runner PWA (v0.0.5)
    - App shell precache + navegación offline (index)
    - Stale-while-revalidate para assets
 */
-const VERSION = "v0.0.4";
+const VERSION = "v0.0.5";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
@@ -14,6 +14,15 @@ const CORE_ASSETS = [
   "./app.js",
   "./manifest.webmanifest",
   "./assets/icon.svg",
+
+  // sprites (precache para offline)
+  "./assets/sprites/player.svg",
+  "./assets/sprites/tile_block.svg",
+  "./assets/sprites/tile_coin.svg",
+  "./assets/sprites/tile_gem.svg",
+  "./assets/sprites/tile_trap.svg",
+  "./assets/sprites/tile_bonus.svg",
+  "./assets/sprites/tile_empty.svg"
 ];
 
 self.addEventListener("install", (event) => {

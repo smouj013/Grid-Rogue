@@ -1,15 +1,12 @@
-/* Grid Runner — PWA (v0.0.4)
-   ✅ Player centrado en el grid
-   ✅ Banda de 3 filas (marcada) donde puede moverse (4 direcciones)
-   ✅ Celdas “pasadas” atenuadas (visual: ya no afectan)
-   ✅ Start con nombre + guardado local de runs
-   ✅ Opciones (vibración, d-pad, intensidad FX)
-   ✅ Números más juicy por color
+/* Grid Runner — PWA (v0.0.5)
+   ✅ Sistema de sprites configurable por casilla + player
+   ✅ Toggle en Opciones: Sprites ON/OFF
+   ✅ Fallback automático a colores si falta sprite
 */
 (() => {
   "use strict";
 
-  const APP_VERSION = "0.0.4";
+  const APP_VERSION = "0.0.5";
 
   // ───────────────────────── UI refs ─────────────────────────
   const $ = (id) => document.getElementById(id);
@@ -26,6 +23,7 @@
   const hudComboText = $("hudComboText");
   const pillSpeed = $("pillSpeed");
   const pillPlayer = $("pillPlayer");
+  const pillSprites = $("pillSprites");
 
   const btnPause = $("btnPause");
   const btnRestart = $("btnRestart");
@@ -35,6 +33,7 @@
   const btnOptions = $("btnOptions");
   const overlayOptions = $("overlayOptions");
   const btnCloseOptions = $("btnCloseOptions");
+  const optSprites = $("optSprites");
   const optVibration = $("optVibration");
   const optDpad = $("optDpad");
   const optFx = $("optFx");
@@ -80,7 +79,7 @@
   const BEST_KEY = "grid_runner_best_v4";
   const RUNS_KEY = "grid_runner_runs_v1";
   const PLAYER_NAME_KEY = "grid_runner_player_name_v2";
-  const SETTINGS_KEY = "grid_runner_settings_v1";
+  const SETTINGS_KEY = "grid_runner_settings_v2"; // <- v2 para incluir sprites
 
   // ───────────────────────── Leaderboard config (ONLINE) ─────────────────────────
   const LEADERBOARD_ENDPOINT = ""; // <- pon tu Cloudflare Worker URL aquí
@@ -90,7 +89,6 @@
   const COLS = 8;
   const ROWS = 24;
 
-  // Banda central de movimiento: 3 filas
   const BAND_HEIGHT = 3;
   const BAND_CENTER = Math.floor(ROWS / 2);
   const BAND_START = BAND_CENTER - 1;
@@ -98,7 +96,7 @@
 
   const CELL = Object.freeze({
     EMPTY: 0,
-    BLOCK: 1,  // KO
+    BLOCK: 1,
     COIN: 2,
     GEM: 3,
     TRAP: 4,
@@ -114,25 +112,86 @@
     [CELL.BONUS]: "#ffcc33",
   };
 
-  // Velocidad (rows/sec)
+  // Velocidad
   const SPEED_START = 0.85;
   const SPEED_MAX   = 4.50;
   const SPEED_RAMP_SECONDS = 85;
 
-  // Smooth movement
   const PLAYER_SMOOTH_CELLS_PER_SEC = 18;
-
-  // Combo reward cada N
   const COMBO_EVERY = 8;
+
+  // ───────────────────────── Sprite config (EDITA AQUÍ) ─────────────────────────
+  // Puedes cambiar a .png sin tocar más nada.
+  const SPRITES = Object.freeze({
+    player: "./assets/sprites/player.svg",
+    [CELL.BLOCK]: "./assets/sprites/tile_block.svg",
+    [CELL.COIN]:  "./assets/sprites/tile_coin.svg",
+    [CELL.GEM]:   "./assets/sprites/tile_gem.svg",
+    [CELL.TRAP]:  "./assets/sprites/tile_trap.svg",
+    [CELL.BONUS]: "./assets/sprites/tile_bonus.svg",
+    // [CELL.EMPTY]: "./assets/sprites/tile_empty.svg", // opcional
+  });
+
+  // Ajuste de padding interno del sprite dentro de la celda
+  const SPRITE_INSET_RATIO = 0.10; // 10% de margen
+  const SPRITE_SCALE = Object.freeze({
+    default: 1.00,
+    player: 1.00,
+    [CELL.BLOCK]: 1.02, // un pelín más grande para diferenciar
+  });
+
+  /** @type {Map<string|number, HTMLImageElement>} */
+  const spriteImages = new Map();
+  /** @type {Map<string|number, boolean>} */
+  const spriteLoaded = new Map();
+
+  async function loadImage(key, url) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.loading = "eager";
+      img.src = url;
+
+      img.onload = async () => {
+        spriteImages.set(key, img);
+        spriteLoaded.set(key, true);
+        try { if (img.decode) await img.decode(); } catch {}
+        resolve(true);
+      };
+      img.onerror = () => {
+        spriteLoaded.set(key, false);
+        resolve(false);
+      };
+    });
+  }
+
+  async function preloadSprites() {
+    const tasks = [];
+    // player
+    tasks.push(loadImage("player", SPRITES.player));
+    // tiles
+    for (const k of Object.keys(SPRITES)) {
+      if (k === "player") continue;
+      tasks.push(loadImage(Number(k), SPRITES[k]));
+    }
+    await Promise.allSettled(tasks);
+  }
+
+  function getSprite(key) {
+    if (!settings.useSprites) return null;
+    if (spriteLoaded.get(key) !== true) return null;
+    return spriteImages.get(key) || null;
+  }
 
   // ───────────────────────── Settings ─────────────────────────
   const defaultSettings = Object.freeze({
+    useSprites: true,
     vibration: true,
     showDpad: true,
-    fx: 1.0, // 0.4..1.25
+    fx: 1.0,
   });
 
-  /** @type {{vibration:boolean, showDpad:boolean, fx:number}} */
+  /** @type {{useSprites:boolean, vibration:boolean, showDpad:boolean, fx:number}} */
   let settings = loadSettings();
 
   function loadSettings() {
@@ -141,6 +200,7 @@
       if (!raw) return { ...defaultSettings };
       const obj = JSON.parse(raw);
       return {
+        useSprites: obj.useSprites !== false,
         vibration: !!obj.vibration,
         showDpad: obj.showDpad !== false,
         fx: clamp(Number(obj.fx) || 1.0, 0.4, 1.25),
@@ -155,11 +215,14 @@
   }
 
   function applySettingsToUI() {
+    optSprites.checked = settings.useSprites;
     optVibration.checked = settings.vibration;
     optDpad.checked = settings.showDpad;
     optFx.value = String(settings.fx);
     optFxValue.textContent = settings.fx.toFixed(2);
     dpad.hidden = !settings.showDpad;
+
+    pillSprites.textContent = `Sprites: ${settings.useSprites ? "ON" : "OFF"}`;
   }
 
   // ───────────────────────── State ─────────────────────────
@@ -178,31 +241,21 @@
   let mult = 1;
 
   let runTime = 0;
-
-  // Scroll continuo: 0..cellPx
   let scrollPx = 0;
+  let speedBoost = 0;
 
-  // Speed boost (por bonus/trampa) que decae a 0
-  let speedBoost = 0; // -0.25..+0.35
-
-  // Player movement (col/row dentro de la banda)
   let targetCol = Math.floor(COLS / 2);
   let targetRow = BAND_CENTER;
 
   let playerColFloat = targetCol;
   let playerRowFloat = targetRow;
 
-  // Grid
   /** @type {Uint8Array[]} */
   let grid = [];
 
-  // Animation time
   let animT = 0;
-
-  // Toast timer
   let toastTimer = 0;
 
-  // Visual FX
   let shake = 0;
   let shakeSeed = 0;
   let pulse = 0;
@@ -210,16 +263,12 @@
   let hueTarget = 220;
   let glow = 0.18;
 
-  /** @type {{x:number,y:number,vx:number,vy:number,life:number,max:number,size:number,color:string,alpha:number}[]} */
   const particles = [];
-  /** @type {{x:number,y:number,text:string,life:number,max:number,vy:number,alpha:number,color:string,scale0:number,scale1:number}[]} */
   const floatTexts = [];
 
-  // HUD prev
   let prevScore = -1, prevStreak = -1, prevMult = -1, prevBest = -1;
   let deltaTimer = 0;
 
-  // Player name
   let playerName = (localStorage.getItem(PLAYER_NAME_KEY) || "").trim().slice(0, 16);
 
   // ───────────────────────── Utils ─────────────────────────
@@ -266,6 +315,7 @@
     if (force || mult !== prevMult) { hudMult.textContent = String(mult); bump(hudMult); prevMult = mult; }
     if (force || best !== prevBest) { hudBest.textContent = String(best); bump(hudBest); prevBest = best; }
     pillPlayer.textContent = `👤 ${playerName || "—"}`;
+    pillSprites.textContent = `Sprites: ${settings.useSprites ? "ON" : "OFF"}`;
   }
 
   function overlayShow(el) {
@@ -282,7 +332,7 @@
     }, ms);
   }
 
-  // ───────────────────────── Runs local (historial) ─────────────────────────
+  // ───────────────────────── Runs local ─────────────────────────
   function loadRuns() {
     try {
       const raw = localStorage.getItem(RUNS_KEY);
@@ -294,21 +344,14 @@
       return [];
     }
   }
-
   function saveRuns(runs) {
     localStorage.setItem(RUNS_KEY, JSON.stringify(runs.slice(0, 50)));
   }
-
   function addRun(scoreFinal) {
     const runs = loadRuns();
-    runs.unshift({
-      s: scoreFinal | 0,
-      t: Date.now(),
-      n: (playerName || "").slice(0, 16),
-    });
+    runs.unshift({ s: scoreFinal | 0, t: Date.now(), n: (playerName || "").slice(0, 16) });
     saveRuns(runs);
   }
-
   function refreshStartStats() {
     startBest.textContent = String(best);
     const runs = loadRuns();
@@ -346,7 +389,6 @@
   function generateRow(difficulty01) {
     const row = makeEmptyRow();
 
-    // Camino seguro 1-2 columnas
     const safeCol = randi(0, COLS - 1);
     const safeCol2 = (Math.random() < 0.25)
       ? clamp(safeCol + (Math.random() < 0.5 ? -1 : 1), 0, COLS - 1)
@@ -384,9 +426,7 @@
 
   function initGrid() {
     grid = [];
-    for (let r = 0; r < ROWS; r++) {
-      grid.push(generateRow(0.0));
-    }
+    for (let r = 0; r < ROWS; r++) grid.push(generateRow(0.0));
   }
 
   // ───────────────────────── FX helpers ─────────────────────────
@@ -521,7 +561,6 @@
     mult = 1;
 
     runTime = 0;
-
     scrollPx = 0;
     speedBoost = 0;
 
@@ -568,7 +607,6 @@
     playerName = nm;
     localStorage.setItem(PLAYER_NAME_KEY, playerName);
 
-    // sincroniza también en ranking
     playerNameInput.value = playerName;
     pillPlayer.textContent = `👤 ${playerName}`;
 
@@ -619,7 +657,6 @@
     let msg = null;
 
     if (cell === CELL.EMPTY) {
-      // “decay” suave para que no suba mult infinito sin pisar cosas
       if (streak > 0 && Math.random() < 0.12) streak = Math.max(0, streak - 1);
       mult = 1 + Math.min(4, Math.floor(streak / 5));
       return null;
@@ -643,7 +680,6 @@
       return msg;
     }
 
-    // Good cells
     streak += 1;
     mult = 1 + Math.min(4, Math.floor(streak / 5));
 
@@ -674,7 +710,6 @@
       kick("bonus");
     }
 
-    // Combo cada 8
     if (streak > 0 && streak % COMBO_EVERY === 0) {
       const add = 120 * mult;
       score += add;
@@ -689,7 +724,7 @@
     return msg;
   }
 
-  function tryTriggerCellAt(col, row, reason = "") {
+  function tryTriggerCellAt(col, row) {
     if (!running || paused || gameOver) return;
 
     const c = clamp(col, 0, COLS - 1);
@@ -706,20 +741,13 @@
 
   function stepRowAdvance() {
     const d = difficulty01();
-
     grid.pop();
     grid.unshift(generateRow(d));
 
-    // Puntos por avanzar (pequeños y constantes)
     const survivalAdd = 1 * mult;
     score += survivalAdd;
 
-    // El scroll te “mete” una nueva celda bajo tus pies: trigger ahí
-    const col = clamp(targetCol, 0, COLS - 1);
-    const row = clamp(targetRow, 0, ROWS - 1);
-
-    tryTriggerCellAt(col, row, "scroll");
-
+    tryTriggerCellAt(targetCol, targetRow);
     updateHud();
   }
 
@@ -738,8 +766,7 @@
     shake = clamp(shake + 0.06 * settings.fx, 0, 1);
     vibrate(7);
 
-    // Trigger inmediato al pisar una celda por movimiento (más responsive)
-    tryTriggerCellAt(targetCol, targetRow, "move");
+    tryTriggerCellAt(targetCol, targetRow);
   }
 
   // ───────────────────────── Rendering ─────────────────────────
@@ -779,34 +806,59 @@
     ctx.fill();
   }
 
-  function drawBlockX(cx, cy, size, alpha) {
+  function drawBandMarkers(bw, yOffset) {
+    for (let r = BAND_START; r <= BAND_END; r++) {
+      const y = boardY + r * cellPx + yOffset;
+      ctx.fillStyle = "rgba(255,255,255,0.025)";
+      ctx.fillRect(boardX, y, bw, cellPx);
+    }
+
+    const yTop = boardY + BAND_START * cellPx + yOffset;
+    const yBot = boardY + (BAND_END + 1) * cellPx + yOffset;
+
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = "rgba(230,0,18,0.95)";
-    ctx.lineWidth = Math.max(2, Math.floor(2 * dpr));
-    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = "rgba(110,200,255,0.55)";
+    ctx.lineWidth = Math.max(1, Math.floor(dpr));
     ctx.beginPath();
-    ctx.moveTo(cx - size, cy - size);
-    ctx.lineTo(cx + size, cy + size);
-    ctx.moveTo(cx + size, cy - size);
-    ctx.lineTo(cx - size, cy + size);
+    ctx.moveTo(boardX, yTop + 0.5);
+    ctx.lineTo(boardX + bw, yTop + 0.5);
+    ctx.moveTo(boardX, yBot + 0.5);
+    ctx.lineTo(boardX + bw, yBot + 0.5);
     ctx.stroke();
     ctx.restore();
-    ctx.globalAlpha = 1;
+  }
+
+  function drawTileSprite(type, x, y, fade01) {
+    const img = getSprite(type);
+    if (!img) return false;
+
+    const inset = Math.floor(cellPx * SPRITE_INSET_RATIO);
+    const s = (SPRITE_SCALE[type] ?? SPRITE_SCALE.default) || 1.0;
+
+    const w = Math.floor((cellPx - inset * 2) * s);
+    const h = Math.floor((cellPx - inset * 2) * s);
+
+    const dx = Math.floor(x + (cellPx - w) / 2);
+    const dy = Math.floor(y + (cellPx - h) / 2);
+
+    ctx.save();
+    ctx.globalAlpha *= fade01;
+    ctx.drawImage(img, dx, dy, w, h);
+    ctx.restore();
+    return true;
   }
 
   function drawCell(x, y, type, rowIndex) {
     const inBand = (rowIndex >= BAND_START && rowIndex <= BAND_END);
-    const behind = Math.max(0, rowIndex - BAND_END); // filas “pasadas” (abajo)
+    const behind = Math.max(0, rowIndex - BAND_END);
     const fade = behind === 0 ? 1 : clamp(1 - behind * 0.12, 0.35, 0.92);
 
     // base
     ctx.save();
-    ctx.globalAlpha = 1;
     ctx.fillStyle = CELL_COLOR[CELL.EMPTY];
     ctx.fillRect(x, y, cellPx, cellPx);
 
-    // banda marcada (3 filas)
     if (inBand) {
       ctx.fillStyle = "rgba(255,255,255,0.035)";
       ctx.fillRect(x, y, cellPx, cellPx);
@@ -817,7 +869,7 @@
     ctx.lineWidth = Math.max(1, Math.floor(dpr));
     ctx.strokeRect(x + 0.5, y + 0.5, cellPx - 1, cellPx - 1);
 
-    // fade de filas pasadas (no afectan)
+    // behind shading
     if (behind > 0) {
       ctx.fillStyle = "rgba(0,0,0,0.18)";
       ctx.fillRect(x, y, cellPx, cellPx);
@@ -828,47 +880,39 @@
       return;
     }
 
-    const inset = Math.floor(cellPx * 0.18);
-    const r = Math.floor(cellPx * 0.18);
+    // sprite first, fallback to old colored tile
+    const drewSprite = drawTileSprite(type, x, y, fade);
 
-    // dibuja contenido con fade (pasadas = más apagadas)
-    ctx.globalAlpha = fade;
+    if (!drewSprite) {
+      ctx.globalAlpha = fade;
+      const inset = Math.floor(cellPx * 0.18);
+      const r = Math.floor(cellPx * 0.18);
 
-    if (type === CELL.BLOCK) {
-      const p = 0.5 + 0.5 * Math.sin(animT * 6.2);
-      ctx.fillStyle = "rgba(90,96,120,0.92)";
+      ctx.fillStyle = CELL_COLOR[type];
       roundRectFill(x + inset, y + inset, cellPx - inset * 2, cellPx - inset * 2, r);
 
-      // borde rojo (más suave en pasadas)
-      ctx.save();
-      ctx.globalAlpha = fade * (0.70 + p * 0.22);
-      ctx.strokeStyle = "rgba(230,0,18,0.95)";
-      ctx.lineWidth = Math.max(2, Math.floor(2 * dpr));
-      ctx.strokeRect(x + inset + 0.5, y + inset + 0.5, cellPx - inset * 2 - 1, cellPx - inset * 2 - 1);
-      ctx.restore();
-
-      const cx = x + cellPx * 0.5;
-      const cy = y + cellPx * 0.5;
-      drawBlockX(cx, cy, cellPx * 0.18, fade * (0.52 + p * 0.36));
-
-      ctx.restore();
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      roundRectFill(
+        x + inset + 1, y + inset + 1,
+        cellPx - inset * 2 - 2,
+        Math.floor((cellPx - inset * 2) * 0.45),
+        r
+      );
       ctx.globalAlpha = 1;
-      return;
     }
 
-    ctx.fillStyle = CELL_COLOR[type];
-    roundRectFill(x + inset, y + inset, cellPx - inset * 2, cellPx - inset * 2, r);
-
-    ctx.fillStyle = "rgba(255,255,255,0.12)";
-    roundRectFill(
-      x + inset + 1, y + inset + 1,
-      cellPx - inset * 2 - 2,
-      Math.floor((cellPx - inset * 2) * 0.45),
-      r
-    );
+    // extra diferenciación para BLOQUE: borde pulsante
+    if (type === CELL.BLOCK) {
+      const p = 0.5 + 0.5 * Math.sin(animT * 6.2);
+      ctx.save();
+      ctx.globalAlpha = fade * (0.60 + p * 0.25);
+      ctx.strokeStyle = "rgba(230,0,18,0.95)";
+      ctx.lineWidth = Math.max(2, Math.floor(2 * dpr));
+      ctx.strokeRect(x + 2, y + 2, cellPx - 4, cellPx - 4);
+      ctx.restore();
+    }
 
     ctx.restore();
-    ctx.globalAlpha = 1;
   }
 
   function drawParticles() {
@@ -882,7 +926,6 @@
       ctx.fill();
     }
     ctx.restore();
-    ctx.globalAlpha = 1;
   }
 
   function easeOutBack(t) {
@@ -902,55 +945,23 @@
       const pop = easeOutBack(clamp(t * 2.2, 0, 1));
       const scale = ft.scale0 + (ft.scale1 - ft.scale0) * clamp(t * 1.4, 0, 1);
 
-      const fontPx = Math.floor(16 * dpr * scale);
+      const fontPx = Math.floor(16 * dpr * scale * pop);
       ctx.font = `${fontPx}px system-ui, -apple-system, Segoe UI, Roboto`;
       ctx.globalAlpha = Math.max(0, Math.min(1, ft.alpha));
 
-      // sombra + borde ligero
       ctx.fillStyle = "rgba(0,0,0,0.40)";
       ctx.fillText(ft.text, ft.x + 2 * dpr, ft.y + 2 * dpr);
 
       ctx.fillStyle = ft.color;
       ctx.fillText(ft.text, ft.x, ft.y);
-
-      // pequeño glow
-      ctx.globalAlpha *= 0.22;
-      ctx.fillText(ft.text, ft.x, ft.y);
-      ctx.globalAlpha = Math.max(0, Math.min(1, ft.alpha));
     }
 
     ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
-  function drawBandMarkers(bw, yOffset) {
-    // stripe fondo
-    for (let r = BAND_START; r <= BAND_END; r++) {
-      const y = boardY + r * cellPx + yOffset;
-      ctx.fillStyle = "rgba(255,255,255,0.025)";
-      ctx.fillRect(boardX, y, bw, cellPx);
-    }
-
-    // líneas delimitadoras
-    const yTop = boardY + BAND_START * cellPx + yOffset;
-    const yBot = boardY + (BAND_END + 1) * cellPx + yOffset;
-
-    ctx.save();
-    ctx.globalAlpha = 0.45;
-    ctx.strokeStyle = "rgba(110,200,255,0.55)";
-    ctx.lineWidth = Math.max(1, Math.floor(dpr));
-    ctx.beginPath();
-    ctx.moveTo(boardX, yTop + 0.5);
-    ctx.lineTo(boardX + bw, yTop + 0.5);
-    ctx.moveTo(boardX, yBot + 0.5);
-    ctx.lineTo(boardX + bw, yBot + 0.5);
-    ctx.stroke();
-    ctx.restore();
-    ctx.globalAlpha = 1;
   }
 
   function draw() {
-    // shake
+    ctx.imageSmoothingEnabled = false; // pixelart friendly
+
     shakeSeed += 1;
     const fx = settings.fx;
     const sx = (Math.sin(shakeSeed * 12.9898) * 43758.5453) % 1;
@@ -967,16 +978,13 @@
     const bw = cellPx * COLS;
     const bh = cellPx * ROWS;
 
-    // frame
     ctx.fillStyle = `rgba(255,255,255,${0.02 + pulse * 0.045})`;
     roundRectFill(boardX - 8 * dpr, boardY - 8 * dpr, bw + 16 * dpr, bh + 16 * dpr, 18 * dpr);
 
     const yOffset = scrollPx;
 
-    // banda marcada (detrás de celdas)
     drawBandMarkers(bw, yOffset);
 
-    // grid
     for (let r = 0; r < ROWS; r++) {
       const y = boardY + r * cellPx + yOffset;
       const row = grid[r];
@@ -989,7 +997,7 @@
     drawParticles();
     drawFloatTexts();
 
-    // player smooth (col+row)
+    // Player sprite (o fallback)
     const playerX = boardX + playerColFloat * cellPx;
     const playerY = boardY + playerRowFloat * cellPx + yOffset;
 
@@ -999,18 +1007,27 @@
     roundRectFill(playerX - 2 * dpr, playerY - 2 * dpr, cellPx + 4 * dpr, cellPx + 4 * dpr, Math.floor(cellPx * 0.28));
     ctx.globalAlpha = 1;
 
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    roundRectFill(playerX + 2 * dpr, playerY + 5 * dpr, cellPx - 4 * dpr, cellPx - 4 * dpr, Math.floor(cellPx * 0.22));
+    const pImg = getSprite("player");
+    if (pImg) {
+      const inset = Math.floor(cellPx * 0.10);
+      const s = SPRITE_SCALE.player || 1.0;
+      const w = Math.floor((cellPx - inset * 2) * s);
+      const h = Math.floor((cellPx - inset * 2) * s);
+      const dx = Math.floor(playerX + (cellPx - w) / 2);
+      const dy = Math.floor(playerY + (cellPx - h) / 2);
+      ctx.drawImage(pImg, dx, dy, w, h);
+    } else {
+      // fallback player
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      roundRectFill(playerX + 2 * dpr, playerY + 5 * dpr, cellPx - 4 * dpr, cellPx - 4 * dpr, Math.floor(cellPx * 0.22));
+      ctx.fillStyle = "#ffffff";
+      roundRectFill(playerX + 2 * dpr, playerY + 2 * dpr, cellPx - 4 * dpr, cellPx - 4 * dpr, Math.floor(cellPx * 0.22));
+      ctx.fillStyle = "#101225";
+      ctx.globalAlpha = 0.9;
+      roundRectFill(playerX + 6 * dpr, playerY + 6 * dpr, cellPx - 12 * dpr, cellPx - 12 * dpr, Math.floor(cellPx * 0.18));
+      ctx.globalAlpha = 1;
+    }
 
-    ctx.fillStyle = "#ffffff";
-    roundRectFill(playerX + 2 * dpr, playerY + 2 * dpr, cellPx - 4 * dpr, cellPx - 4 * dpr, Math.floor(cellPx * 0.22));
-
-    ctx.fillStyle = "#101225";
-    ctx.globalAlpha = 0.9;
-    roundRectFill(playerX + 6 * dpr, playerY + 6 * dpr, cellPx - 12 * dpr, cellPx - 12 * dpr, Math.floor(cellPx * 0.18));
-    ctx.globalAlpha = 1;
-
-    // pause overlay inside canvas
     if (paused && running) {
       ctx.fillStyle = "rgba(0,0,0,0.35)";
       ctx.fillRect(boardX, boardY, bw, bh);
@@ -1023,13 +1040,11 @@
     ctx.restore();
   }
 
-  // ───────────────────────── Leaderboard (online) ─────────────────────────
+  // ───────────────────────── Leaderboard ─────────────────────────
   function isOnline() { return navigator.onLine; }
-
   function escapeHtml(s) {
     return s.replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c]));
   }
-
   function renderLb(entries) {
     lbList.innerHTML = "";
     if (!entries || !entries.length) {
@@ -1052,19 +1067,9 @@
       lbList.appendChild(div);
     });
   }
-
   async function fetchLeaderboard() {
-    if (!isOnline()) {
-      lbStatus.textContent = "Sin internet. El ranking solo se muestra online.";
-      renderLb([]);
-      return;
-    }
-    if (!LEADERBOARD_ENDPOINT) {
-      lbStatus.textContent = "Ranking no configurado (falta LEADERBOARD_ENDPOINT en app.js).";
-      renderLb([]);
-      return;
-    }
-
+    if (!isOnline()) { lbStatus.textContent = "Sin internet. El ranking solo se muestra online."; renderLb([]); return; }
+    if (!LEADERBOARD_ENDPOINT) { lbStatus.textContent = "Ranking no configurado (falta LEADERBOARD_ENDPOINT en app.js)."; renderLb([]); return; }
     lbStatus.textContent = "Cargando ranking…";
     try {
       const url = `${LEADERBOARD_ENDPOINT}/top?game=${encodeURIComponent(LEADERBOARD_GAME_ID)}&limit=20`;
@@ -1078,14 +1083,11 @@
       renderLb([]);
     }
   }
-
   async function submitScoreOnline() {
     if (!isOnline()) { showToast("Sin internet: no se puede enviar.", 1100); return; }
     if (!LEADERBOARD_ENDPOINT) { showToast("Falta LEADERBOARD_ENDPOINT.", 1400); return; }
-
     const name = (playerNameInput.value || "").trim().slice(0, 16);
     if (!name || name.length < 2) { showToast("Nombre mínimo 2.", 1000); return; }
-
     playerName = name;
     localStorage.setItem(PLAYER_NAME_KEY, playerName);
     pillPlayer.textContent = `👤 ${playerName}`;
@@ -1112,7 +1114,6 @@
 
   // ───────────────────────── Main loop ─────────────────────────
   let lastT = 0;
-
   function loop(t) {
     if (!running || paused || gameOver) return;
 
@@ -1124,7 +1125,6 @@
 
     animT += dt / 1000;
 
-    // timers
     if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) hideToast(); }
     if (deltaTimer > 0) { deltaTimer -= dt; if (deltaTimer <= 0) hudScoreDelta.textContent = "+0"; }
 
@@ -1133,7 +1133,7 @@
     updateTheme(dt);
     updateParticles(dt);
 
-    // smooth player move (col+row)
+    // smooth player
     {
       const diffC = (targetCol - playerColFloat);
       const diffR = (targetRow - playerRowFloat);
@@ -1146,7 +1146,6 @@
       else playerRowFloat += Math.sign(diffR) * maxStep;
     }
 
-    // continuous scroll
     const speedRows = currentSpeedRowsPerSec();
     pillSpeed.textContent = `Vel ${speedRows.toFixed(1)}×`;
 
@@ -1164,11 +1163,9 @@
 
   // ───────────────────────── Input ─────────────────────────
   function bindInputs() {
-    // Tap zones: izquierda/derecha
     zoneLeft.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(-1, 0); }, { passive: false });
     zoneRight.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(+1, 0); }, { passive: false });
 
-    // D-Pad
     const bindBtn = (el, dx, dy) => {
       el.addEventListener("pointerdown", (e) => { e.preventDefault(); movePlayer(dx, dy); }, { passive: false });
     };
@@ -1177,10 +1174,8 @@
     bindBtn(btnLeft, -1, 0);
     bindBtn(btnRight, +1, 0);
 
-    // Keyboard
     window.addEventListener("keydown", (e) => {
       const k = e.key;
-
       if (k === "ArrowLeft" || k === "a" || k === "A") movePlayer(-1, 0);
       if (k === "ArrowRight" || k === "d" || k === "D") movePlayer(+1, 0);
       if (k === "ArrowUp" || k === "w" || k === "W") movePlayer(0, -1);
@@ -1195,33 +1190,26 @@
       }
     });
 
-    // Swipe 4 direcciones
+    // swipe 4 dirs
     let sx = 0, sy = 0, st = 0;
-    canvas.addEventListener("pointerdown", (e) => {
-      sx = e.clientX; sy = e.clientY; st = performance.now();
-    }, { passive: true });
-
+    canvas.addEventListener("pointerdown", (e) => { sx = e.clientX; sy = e.clientY; st = performance.now(); }, { passive: true });
     canvas.addEventListener("pointerup", (e) => {
       const dx = e.clientX - sx;
       const dy = e.clientY - sy;
       const dt = performance.now() - st;
-
       if (dt < 320) {
         const ax = Math.abs(dx);
         const ay = Math.abs(dy);
         const min = 26;
-
         if (ax > ay && ax > min) movePlayer(dx > 0 ? +1 : -1, 0);
         else if (ay > ax && ay > min) movePlayer(0, dy > 0 ? +1 : -1);
       }
     }, { passive: true });
 
-    // Pause on background
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && running && !gameOver) setPaused(true);
     });
 
-    // evitar scroll iOS durante juego
     document.addEventListener("touchmove", (e) => {
       if (running) e.preventDefault();
     }, { passive: false });
@@ -1248,16 +1236,22 @@
     });
 
     btnRestart.addEventListener("click", () => {
-      // reinicia pero vuelve a start (para cambiar nombre si quiere)
       resetGame(true);
     });
 
-    // Options
     btnOptions.addEventListener("click", () => {
       overlayShow(overlayOptions);
       applySettingsToUI();
     });
     btnCloseOptions.addEventListener("click", () => overlayHide(overlayOptions, 160));
+
+    optSprites.addEventListener("change", () => {
+      settings.useSprites = optSprites.checked;
+      saveSettings();
+      applySettingsToUI();
+      draw();
+      showToast(settings.useSprites ? "Sprites ON ✅" : "Sprites OFF ✅", 800);
+    });
 
     optVibration.addEventListener("change", () => {
       settings.vibration = optVibration.checked;
@@ -1286,7 +1280,6 @@
       showToast("Historial borrado.", 900);
     });
 
-    // Leaderboard
     btnLeaderboard.addEventListener("click", async () => {
       overlayShow(overlayLeaderboard);
       await fetchLeaderboard();
@@ -1294,7 +1287,6 @@
     btnCloseLeaderboard.addEventListener("click", () => overlayHide(overlayLeaderboard, 160));
     btnSubmitScore.addEventListener("click", submitScoreOnline);
 
-    // Start name live validation
     startName.addEventListener("input", () => {
       const nm = (startName.value || "").trim().slice(0, 16);
       btnStart.disabled = !(nm.length >= 2);
@@ -1357,10 +1349,11 @@
 
     best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
 
-    applySettingsToUI();
     bindInputs();
     bindButtons();
     setupPWA();
+
+    applySettingsToUI();
 
     resize();
     window.addEventListener("resize", () => resize(), { passive: true });
@@ -1370,6 +1363,12 @@
       const ro = new ResizeObserver(() => resize());
       ro.observe(canvas);
     }
+
+    // Sprites async: el juego funciona igual aunque aún no estén cargados
+    preloadSprites().then(() => {
+      // si está en sprites ON, repinta para mostrar ya los sprites
+      if (settings.useSprites) draw();
+    });
 
     resetGame(true);
     draw();

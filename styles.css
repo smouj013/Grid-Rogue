@@ -18,7 +18,6 @@
   --radius: 16px;
 }
 
-/* CRÍTICO: hidden debe ganar siempre */
 [hidden]{ display:none !important; }
 
 *{ box-sizing:border-box; }
@@ -209,7 +208,7 @@ canvas#game{
     0 0 0 1px rgba(255,255,255,.06),
     0 0 28px rgba(255,255,255,0.05);
   image-rendering: pixelated;
-  touch-action: none; /* iOS/Android: evita scroll/zoom raros */
+  touch-action: none;
 }
 
 .touchZones{
@@ -278,7 +277,6 @@ canvas#game{
   to{ transform: translateX(-50%) translateY(0px) scale(1); opacity: 1; }
 }
 
-/* D-Pad */
 .dpad{
   position:absolute;
   left: 10px;
@@ -314,7 +312,6 @@ canvas#game{
 .dpadBtn.right{ grid-column: 3; grid-row: 2; }
 .dpadBtn.down{ grid-column: 2; grid-row: 3; }
 
-/* Overlays */
 .overlay{
   position:absolute; inset: 0;
   display:flex;
@@ -385,7 +382,6 @@ canvas#game{
 .miniLabel{ font-size: 12px; color: var(--muted); font-weight: 950; }
 .miniValue{ font-size: 18px; font-weight: 950; margin-top: 6px; }
 
-/* Leaderboard */
 .panel.leaderboard{ padding: 16px; }
 .leaderTop{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 10px; }
 .muted{ color: var(--muted); }
@@ -440,7 +436,6 @@ canvas#game{
 .lbName{ font-weight: 950; }
 .lbScore{ font-weight: 950; color: rgba(255,255,255,.90); }
 
-/* Options */
 .panel.options{ padding: 16px; }
 .optGrid{ display:flex; flex-direction:column; gap:10px; margin-top: 10px; }
 .optRow{
