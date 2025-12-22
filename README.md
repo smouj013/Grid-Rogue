@@ -1,21 +1,19 @@
-# Grid Runner — PWA (v0.0.3)
+# Grid Runner — PWA (v0.0.4)
 
 Juego móvil PWA tipo runner en cuadrícula (8x24).
-- Movimiento ultra suave (scroll continuo + player smooth)
-- Velocidad progresiva (lenta al inicio, sube suave)
-- Bloques KO muy visibles (borde rojo + X + pulso)
-- Score más claro (delta + popups + combo bar)
-- Menos densidad visual (menos “ruido”)
-- Leyenda siempre visible
-- Controles: tap izq/der + swipe (móvil) / teclado (PC)
-- Offline con Service Worker
-- Ranking mundial: solo online (endpoint configurable)
+
+## Cambios v0.0.4
+- Movimiento en 4 direcciones (WASD/Arrows + swipe + D-Pad)
+- Player centrado en el grid
+- Banda central de 3 filas marcada (zona de movimiento)
+- Filas “pasadas” atenuadas (visual: ya no afectan)
+- Pantalla de bienvenida con nombre (guardado local)
+- Guardado local de runs (historial) + best local
+- Opciones: vibración, mostrar D-Pad, intensidad de efectos
+- UI mejor ajustada a iOS/Android (safe areas, canvas a 100% y sin zoom raro)
+- Números + feedback más “juicy” (color + pop + partículas)
 
 ## Ejecutar en local
-VSCode:
-- Instala **Live Server**
-- Click derecho `index.html` → "Open with Live Server"
-
-o:
+VSCode: Live Server, o:
 ```bash
 npx serve .
