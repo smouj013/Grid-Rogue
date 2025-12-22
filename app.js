@@ -1,8 +1,11 @@
-/* app.js — Grid Runner (PWA) v0.1.2 VISUAL+HOTFIX
-   - Overlays fullscreen por encima del header
-   - Splash real (logo + dots) con mínimo tiempo visible
+/* app.js — Grid Runner (PWA) v0.1.3 VISUAL+HUD
+   - Overlays fullscreen por encima del header (CSS fixed + backdrop)
+   - Splash real (logo + dots) con mínimo visible
    - Transiciones suaves menú<->juego (fadeOut)
    - Popups de puntuación en el grid (texto flotante)
+   - Combo UI con iconos coloreados por tipo
+   - Barra de progreso al siguiente nivel (HUD)
+   - Zona de imán visible: halo + anillo suave
    - Robustez: bounds/NaN guards + grid validate
    - Pausa real al abrir opciones/upgrades/menús
 */
@@ -10,7 +13,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.2");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.3");
   window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
@@ -193,6 +196,9 @@
   let streak = 0;
   let mult = 1.0;
   let level = 1;
+
+  // ✅ para barra de progreso
+  let levelStartScore = 0;
   let nextLevelAt = 220;
 
   let grid = [];
@@ -276,6 +282,8 @@
 
   let comboSeq, comboTimerVal, comboHint, toast;
 
+  let levelProgFill, levelProgText, levelProgPct;
+
   let dpad, btnUp, btnDown, btnLeft, btnRight;
 
   // ───────────────────────── Error handling global ─────────────────────────
@@ -314,7 +322,6 @@
   function hideToast() {
     if (!toast) return;
     toast.classList.remove("show");
-    // deja un pelín para transición
     setTimeout(() => { toast.hidden = true; }, 180);
     toastT = 0;
   }
@@ -332,6 +339,14 @@
     return clamp(base + byTime + byLevel, 0.9, 6.0);
   }
 
+  function updateLevelProgressUI() {
+    const denom = Math.max(1, (nextLevelAt - levelStartScore));
+    const v = clamp((score - levelStartScore) / denom, 0, 1);
+    if (levelProgFill) levelProgFill.style.width = `${Math.round(v * 100)}%`;
+    if (levelProgText) levelProgText.textContent = `Lv ${level} • ${Math.max(0, score - levelStartScore)}/${Math.max(1, nextLevelAt - levelStartScore)}`;
+    if (levelProgPct) levelProgPct.textContent = `${Math.round(v * 100)}%`;
+  }
+
   function updatePills() {
     setPill(pillScore, score | 0);
     setPill(pillBest, best | 0);
@@ -341,6 +356,7 @@
     setPill(pillSpeed, `${speedRowsPerSec().toFixed(1)}x`);
     setPill(pillPlayer, playerName || "Jugador");
     setOfflinePill();
+    updateLevelProgressUI();
   }
 
   function applySettingsToUI() {
@@ -658,6 +674,7 @@
       const t = combo[i];
       const chip = document.createElement("div");
       chip.className = "chip";
+      chip.style.setProperty("--chipc", CELL_COLORS[t] || "rgba(255,255,255,0.22)");
 
       const ic = document.createElement("span");
       ic.className = "ms";
@@ -688,6 +705,7 @@
     { id: "shield", name: "Shield", desc: "Bloquea 1 KO (se consume).", tag: "Defensa", max: 6, apply() { shields++; } },
     { id: "mag1", name: "Imán I", desc: "Atrae premios cercanos (radio 1).", tag: "QoL", max: 1, apply() { magnet = Math.max(magnet, 1); } },
     { id: "mag2", name: "Imán II", desc: "Imán mejorado (radio 2).", tag: "QoL", max: 1, apply() { magnet = 2; } },
+    { id: "mag3", name: "Imán III", desc: "Radio 3 (máximo).", tag: "QoL", max: 1, apply() { magnet = 3; } },
     { id: "boost", name: "Score +", desc: "Más puntos (+8%).", tag: "Puntos", max: 10, apply() { scoreBoost += 0.08; } },
     { id: "trap", name: "Resistencia trampas", desc: "Reduce penalización de trampas.", tag: "Defensa", max: 4, apply() { trapResist++; } },
     { id: "zone", name: "Zona +", desc: "Zona de movimiento más alta (+1 fila).", tag: "Movilidad", max: 3, apply() { zoneExtra++; recomputeZone(); } },
@@ -726,6 +744,7 @@
     pauseForOverlay(true);
 
     level++;
+    levelStartScore = score; // ✅ reinicia progreso del nivel
     nextLevelAt = score + Math.round(240 + level * 150);
 
     if (upTitle) upTitle.textContent = `Nivel ${level}`;
@@ -850,6 +869,34 @@
     }
   }
 
+  function drawMagnetZone(cx, cy) {
+    if (magnet <= 0) return;
+    const rad = (magnet + 0.35) * cellPx;
+
+    // halo suave
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
+    g.addColorStop(0, "rgba(106,176,255,0.12)");
+    g.addColorStop(0.55, "rgba(106,176,255,0.06)");
+    g.addColorStop(1, "rgba(106,176,255,0.0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // anillo fino
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = "rgba(106,176,255,0.55)";
+    ctx.lineWidth = Math.max(1.2, cellPx * 0.06);
+    ctx.setLineDash([Math.max(4, cellPx * 0.22), Math.max(3, cellPx * 0.16)]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function draw(dtMs = 16) {
     if (!ctx) return;
     if (!gridReady || !ensureGridValid()) { clearScreen(); return; }
@@ -874,14 +921,24 @@
 
     ctx.translate(sx, sy);
 
+    // panel grid
     ctx.fillStyle = "rgba(255,255,255,0.028)";
     ctx.fillRect(offX, offY, gridW, gridH);
 
+    // zona de movimiento
     const zTop = offY + zoneY0 * cellPx;
-    const zoneA = 0.075 + 0.06 * zonePulse;
+    const zoneA = 0.070 + 0.06 * zonePulse;
     ctx.fillStyle = `rgba(106,176,255,${zoneA.toFixed(3)})`;
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
+    // borde sutil de zona
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(offX + 0.5, zTop + 0.5, gridW - 1, zoneH * cellPx - 1);
+    ctx.globalAlpha = 1;
+
+    // tiles
     for (let r = 0; r < ROWS; r++) {
       const y = offY + r * cellPx + scrollPx;
       for (let c = 0; c < COLS; c++) {
@@ -909,6 +966,7 @@
       }
     }
 
+    // grid lines
     ctx.globalAlpha = 0.28;
     ctx.strokeStyle = "rgba(255,255,255,0.075)";
     ctx.lineWidth = 1;
@@ -928,12 +986,16 @@
     }
     ctx.globalAlpha = 1;
 
+    // player
     const px = offX + colF * cellPx;
     const py = offY + (zoneY0 + rowF) * cellPx;
-
     const s = 1 + 0.08 * playerPulse;
+
     const cx = px + cellPx / 2;
     const cy = py + cellPx / 2;
+
+    // ✅ zona imán visible (antes del jugador)
+    drawMagnetZone(cx, cy);
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -960,6 +1022,7 @@
 
     ctx.restore();
 
+    // FX
     ctx.globalCompositeOperation = "lighter";
     drawParticles(dtMs);
     ctx.globalCompositeOperation = "source-over";
@@ -1112,6 +1175,8 @@
     streak = 0;
     mult = 1.0;
     level = 1;
+
+    levelStartScore = 0;
     nextLevelAt = 220;
 
     shields = 0;
@@ -1160,7 +1225,6 @@
   }
 
   async function startRun() {
-    // transición menú -> juego
     if (overlayStart && !overlayStart.hidden) await overlayFadeOut(overlayStart, 170);
     overlayHide(overlayGameOver);
     overlayHide(overlayPaused);
@@ -1242,12 +1306,6 @@
     if (shakeT > 0) {
       shakeT -= dtMs;
       if (shakeT <= 0) { shakeT = 0; shakePow = 0; }
-    }
-
-    // partículas decay
-    for (let i = particles.length - 1; i >= 0; i--) {
-      particles[i].life -= 0; // life se descuenta en drawParticles
-      if (particles[i].life <= 0) particles.splice(i, 1);
     }
   }
 
@@ -1573,6 +1631,10 @@
     comboHint = $("comboHint");
     toast = $("toast");
 
+    levelProgFill = $("levelProgFill");
+    levelProgText = $("levelProgText");
+    levelProgPct = $("levelProgPct");
+
     dpad = $("dpad");
     btnUp = $("btnUp");
     btnDown = $("btnDown");
@@ -1691,7 +1753,6 @@
       const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
 
       setTimeout(async () => {
-        // transición loading -> menú
         await overlayFadeOut(overlayLoading, 180);
         overlayShow(overlayStart);
         setState("menu");

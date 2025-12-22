@@ -13,7 +13,7 @@
   <title>Grid Runner</title>
 
   <script>
-    window.APP_VERSION = "0.1.2";
+    window.APP_VERSION = "0.1.3";
   </script>
 
   <!-- ✅ Repair Mode (NO depende de app.js) -->
@@ -57,16 +57,16 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.1.2" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.1.3" />
 
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.1.2" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.3" />
 </head>
 
-<body data-state="loading">
+<body>
   <noscript>
     <div style="padding:16px;color:white;font-family:system-ui;background:#111;border-bottom:1px solid rgba(255,255,255,.12)">
       Necesitas activar JavaScript para jugar.
@@ -120,7 +120,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle" id="pillVersion" title="Versión">v0.1.2</span>
+        <span class="pill subtle" id="pillVersion" title="Versión">v0.1.3</span>
 
         <span class="pill subtle" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -171,7 +171,22 @@
                 <span id="comboTimerVal">0.0</span>
               </div>
             </div>
+
             <div class="comboHint" id="comboHint">Completa la secuencia para subir multiplicador.</div>
+
+            <!-- ✅ Level progress bar -->
+            <div class="levelProg" id="levelProg">
+              <div class="levelRow">
+                <div class="left">
+                  <span class="ms" aria-hidden="true">bolt</span>
+                  <span id="levelProgText">Lv 1 • 0/220</span>
+                </div>
+                <span class="tiny muted" id="levelProgPct">0%</span>
+              </div>
+              <div class="progBar" aria-hidden="true">
+                <div class="progFill" id="levelProgFill"></div>
+              </div>
+            </div>
           </div>
 
           <div class="toast" id="toast" hidden aria-live="polite"></div>
@@ -199,20 +214,31 @@
         <section class="overlay" id="overlayLoading">
           <div class="panel">
             <div class="splash">
-              <div class="splashLogoRow">
-                <div class="splashDot" aria-hidden="true"></div>
-                <div class="splashTitle">Grid Runner</div>
+              <div class="splashLogo" aria-hidden="true">
+                <span class="ms">grid_view</span>
               </div>
-              <div class="splashSub">
-                Cargando <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <div class="splashText">
+                <div class="title">Grid Runner</div>
+                <div class="sub">
+                  Cargando
+                  <span class="dots" aria-hidden="true">
+                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                  </span>
+                </div>
               </div>
+            </div>
+
+            <div class="panelHead" style="margin-bottom:6px;">
+              <div class="muted tiny" id="loadingSub">Iniciando…</div>
             </div>
 
             <div class="loadingBar">
               <div class="loadingBarFill"></div>
             </div>
 
-            <div class="muted tiny" id="loadingSub">Iniciando…</div>
+            <div class="tiny muted" id="loadingHint">
+              Si tarda, se desbloquea solo (failsafe).
+            </div>
 
             <div class="panelActions" style="justify-content:flex-start; margin-top:10px;">
               <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
@@ -296,14 +322,15 @@
               <div class="h2">Game Over</div>
             </div>
 
-            <div class="goHero">
+            <!-- ✅ score grande + best -->
+            <div class="goBig">
               <div>
-                <div class="tag">Tu score</div>
-                <div class="big" id="goScoreBig">0</div>
+                <div class="tiny muted">Tu score</div>
+                <div class="goScore" id="goScoreBig">0</div>
               </div>
-              <div style="text-align:right">
-                <div class="tag">Mejor</div>
-                <div class="big" id="goBestBig">0</div>
+              <div class="goBest">
+                Mejor
+                <span class="v" id="goBestBig">0</span>
               </div>
             </div>
 
@@ -384,6 +411,8 @@
   <script>
     (function(){
       const $ = (id)=>document.getElementById(id);
+      const overlayLoading = $("overlayLoading");
+      const overlayStart = $("overlayStart");
       const loadingSub = $("loadingSub");
       const btnReload = $("btnEmergencyReload");
       const btnRepair = $("btnEmergencyRepair");
@@ -412,12 +441,16 @@
       setTimeout(()=>{
         if (!window.__GRIDRUNNER_BOOTED){
           showFailsafe();
+          try{
+            if (overlayLoading) overlayLoading.hidden = false;
+            if (overlayStart) overlayStart.hidden = false;
+          }catch(e){}
         }
       }, 4500);
     })();
   </script>
 
-  <script src="./auth.js?v=0.1.2" defer></script>
-  <script src="./app.js?v=0.1.2" defer></script>
+  <script src="./auth.js?v=0.1.3" defer></script>
+  <script src="./app.js?v=0.1.3" defer></script>
 </body>
 </html>
