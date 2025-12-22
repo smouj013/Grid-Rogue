@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#e60012" />
+  <meta name="format-detection" content="telephone=no" />
+
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./assets/icon.svg" />
+
+  <title>Grid Runner — PWA</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="title">Grid Runner</span>
+      <span class="pill" id="pillOffline" hidden>Offline</span>
+    </div>
+
+    <div class="hud">
+      <div class="hudItem">
+        <div class="hudLabel">Puntos</div>
+        <div class="hudValue" id="hudScore">0</div>
+      </div>
+      <div class="hudItem">
+        <div class="hudLabel">Racha</div>
+        <div class="hudValue" id="hudStreak">0</div>
+      </div>
+      <div class="hudItem">
+        <div class="hudLabel">x</div>
+        <div class="hudValue" id="hudMult">1</div>
+      </div>
+      <div class="hudItem">
+        <div class="hudLabel">Mejor</div>
+        <div class="hudValue" id="hudBest">0</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost" id="btnPause" aria-label="Pausar o reanudar">⏸</button>
+      <button class="btn ghost" id="btnRestart" aria-label="Reiniciar">↻</button>
+      <button class="btn primary" id="btnInstall" hidden>Instalar</button>
+    </div>
+  </header>
+
+  <main class="gameWrap">
+    <canvas id="game" aria-label="Juego Grid Runner" role="img"></canvas>
+
+    <!-- Zonas táctiles (no molestan visualmente) -->
+    <div class="touchZones" aria-hidden="true">
+      <div class="zone left" id="zoneLeft"></div>
+      <div class="zone right" id="zoneRight"></div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <!-- Pantallas -->
+    <div class="overlay" id="overlayStart">
+      <div class="panel">
+        <h1>Grid Runner</h1>
+        <p>
+          Avanza hacia arriba. Evita los bloques. Pisa celdas para ganar puntos.
+          Encadena buenas para subir multiplicador.
+        </p>
+        <ul class="legend">
+          <li><span class="chip cCoin"></span> Moneda (+10)</li>
+          <li><span class="chip cGem"></span> Gema (+30)</li>
+          <li><span class="chip cBonus"></span> Bonus (+60 + racha)</li>
+          <li><span class="chip cTrap"></span> Trampa (-25 y resetea racha)</li>
+          <li><span class="chip cBlock"></span> Bloque (Game Over)</li>
+        </ul>
+
+        <div class="row">
+          <button class="btn primary big" id="btnStart">Jugar</button>
+        </div>
+        <div class="row hint">
+          <span>Control: swipe o tap izquierda/derecha</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="overlayGameOver" hidden>
+      <div class="panel">
+        <h1>Game Over</h1>
+        <p id="finalLine">Has hecho 0 puntos.</p>
+        <div class="row">
+          <button class="btn primary big" id="btnPlayAgain">Reintentar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="overlayPaused" hidden>
+      <div class="panel">
+        <h1>Pausa</h1>
+        <p>Toque o pulsa ⏸ para volver.</p>
+        <div class="row">
+          <button class="btn primary big" id="btnResume">Continuar</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
