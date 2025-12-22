@@ -1,8 +1,9 @@
-/* auth.js — Grid Runner (PWA) v0.1.4
+/* auth.js — Grid Runner (PWA) v0.1.5
    ✅ Perfiles locales (robusto)
    ✅ Migración desde gridrunner_name_v1 + gridrunner_best_v1 (solo si NO hay perfiles)
    ✅ Validación + saneado de estado (corrige ids/valores raros)
    ✅ API ampliada: rename / delete / export / import / touchLogin
+   ✅ NUEVO v0.1.5: soporte opcional de "prefs" por perfil (incluye audio: musicOn/sfxOn + volúmenes)
    ✅ Nunca rompe si localStorage falla (best-effort)
 */
 
@@ -28,6 +29,12 @@
   function safeString(v) { return (v == null) ? "" : String(v); }
   function normalizeName(name) { return safeString(name).trim().slice(0, 16); }
 
+  function clamp(v, a, b) {
+    v = Number(v);
+    if (!Number.isFinite(v)) v = a;
+    return Math.max(a, Math.min(b, v));
+  }
+
   function clampInt(v, a, b) {
     v = Number(v);
     if (!Number.isFinite(v)) v = a;
@@ -39,6 +46,33 @@
   function writeLS(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } }
   function removeLS(key) { try { localStorage.removeItem(key); return true; } catch { return false; } }
 
+  function safeObj(v) { return (v && typeof v === "object") ? v : null; }
+
+  // ───────────────────────── Prefs (opcional por perfil) ─────────────────────────
+  // No rompe compatibilidad: si prefs no existe, no pasa nada.
+  // Esto permite que el juego (app.js) pueda sincronizar audio por perfil si lo desea.
+  function sanitizePrefs(prefs) {
+    const o = safeObj(prefs);
+    if (!o) return null;
+
+    const out = {};
+
+    if ("useSprites" in o) out.useSprites = !!o.useSprites;
+    if ("vibration" in o) out.vibration = !!o.vibration;
+    if ("showDpad" in o) out.showDpad = !!o.showDpad;
+    if ("fx" in o) out.fx = clamp(o.fx, 0.4, 1.25);
+
+    // ✅ Audio (v0.1.5)
+    if ("musicOn" in o) out.musicOn = !!o.musicOn;
+    if ("sfxOn" in o) out.sfxOn = !!o.sfxOn;
+    if ("musicVol" in o) out.musicVol = clamp(o.musicVol, 0, 1);
+    if ("sfxVol" in o) out.sfxVol = clamp(o.sfxVol, 0, 1);
+
+    // Limpieza: si no quedó nada, null
+    return Object.keys(out).length ? out : null;
+  }
+
+  // ───────────────────────── State load/save ─────────────────────────
   function loadState() {
     const raw = readLS(AUTH_KEY);
     const st = raw ? safeParse(raw, null) : null;
@@ -58,7 +92,7 @@
   function sanitizeProfile(p) {
     if (!p || typeof p !== "object") return null;
 
-    const id = (typeof p.id === "string" && p.id.trim()) ? p.id.trim() : uid();
+    let id = (typeof p.id === "string" && p.id.trim()) ? p.id.trim() : uid();
     const name = normalizeName(p.name) || "Jugador";
 
     const createdAt = Number.isFinite(+p.createdAt) ? +p.createdAt : now();
@@ -66,7 +100,9 @@
 
     const best = Math.max(0, (p.best | 0));
 
-    return { id, name, createdAt, lastLoginAt, best };
+    const prefs = sanitizePrefs(p.prefs);
+
+    return { id, name, createdAt, lastLoginAt, best, ...(prefs ? { prefs } : {}) };
   }
 
   function sanitizeState(st) {
@@ -77,8 +113,11 @@
     for (const p of rawProfiles) {
       const sp = sanitizeProfile(p);
       if (!sp) continue;
+
+      // evitar ids duplicados
       if (seen.has(sp.id)) sp.id = uid();
       seen.add(sp.id);
+
       cleaned.push(sp);
     }
 
@@ -116,6 +155,7 @@
 
   const state = ensureMigration(loadState());
 
+  // ───────────────────────── Core API ─────────────────────────
   function listProfiles() {
     return state.profiles
       .slice()
@@ -208,6 +248,42 @@
     return false;
   }
 
+  // ───────────────────────── Prefs API (v0.1.5, opcional) ─────────────────────────
+  // Nota: no obliga a usarlo. Si no lo llamas, nada cambia.
+  function getPrefsForActive() {
+    const p = getActiveProfile();
+    return p && p.prefs ? { ...p.prefs } : null;
+  }
+
+  function setPrefsForActive(prefs) {
+    const p = getActiveProfile();
+    if (!p) return false;
+
+    const sp = sanitizePrefs(prefs);
+    if (!sp) {
+      // si viene vacío/null, borramos prefs
+      if ("prefs" in p) delete p.prefs;
+      p.lastLoginAt = now();
+      saveState(state);
+      return true;
+    }
+
+    p.prefs = sp;
+    p.lastLoginAt = now();
+    saveState(state);
+    return true;
+  }
+
+  function clearPrefsForActive() {
+    const p = getActiveProfile();
+    if (!p) return false;
+    if ("prefs" in p) delete p.prefs;
+    p.lastLoginAt = now();
+    saveState(state);
+    return true;
+  }
+
+  // ───────────────────────── Export/Import ─────────────────────────
   function exportAuth() {
     const snap = sanitizeState({ v: state.v || 1, activeId: state.activeId, profiles: state.profiles });
     return JSON.stringify(snap);
@@ -272,6 +348,7 @@
     return true;
   }
 
+  // ───────────────────────── Public API ─────────────────────────
   window.Auth = {
     listProfiles,
     getActiveProfile,
@@ -287,5 +364,10 @@
     importAuth,
     clearAuth,
     clearLegacyKeys,
+
+    // ✅ v0.1.5 (opcional)
+    getPrefsForActive,
+    setPrefsForActive,
+    clearPrefsForActive,
   };
 })();

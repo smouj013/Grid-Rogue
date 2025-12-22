@@ -13,7 +13,7 @@
   <title>Grid Runner</title>
 
   <script>
-    window.APP_VERSION = "0.1.4";
+    window.APP_VERSION = "0.1.5";
   </script>
 
   <!-- ✅ Repair Mode (NO depende de app.js) -->
@@ -57,12 +57,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.1.4" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.1.5" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.1.4" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.5" />
 </head>
 
 <body>
@@ -73,85 +73,71 @@
   </noscript>
 
   <div id="app">
-    <!-- Topbar -->
+    <!-- Topbar (más limpio) -->
     <header class="topbar" role="banner">
       <div class="brand">
         <div class="brandDot" aria-hidden="true"></div>
         <div class="brandText">
           <div class="brandTitle">Grid Runner</div>
-          <div class="brandSub" id="brandSub">Arcade grid, upgrades, combos</div>
+          <div class="brandSub" id="brandSub">Upgrades • combos • arcade</div>
         </div>
       </div>
 
-      <div class="pills" aria-label="Estado">
-        <span class="pill" id="pillScore" title="Score">
+      <!-- Mini-stats esenciales -->
+      <div class="miniStats" aria-label="Estado">
+        <span class="pill mini" id="pillScore" title="Score">
           <span class="ms" aria-hidden="true">flag</span>
           <span class="pv">0</span>
         </span>
 
-        <span class="pill" id="pillBest" title="Mejor">
+        <span class="pill mini" id="pillBest" title="Mejor">
           <span class="ms" aria-hidden="true">emoji_events</span>
           <span class="pv">0</span>
         </span>
 
-        <span class="pill" id="pillStreak" title="Racha">
-          <span class="ms" aria-hidden="true">local_fire_department</span>
-          <span class="pv">0</span>
-        </span>
-
-        <span class="pill" id="pillMult" title="Multiplicador">
-          <span class="ms" aria-hidden="true">close</span>
-          <span class="pv">1.00</span>
-        </span>
-
-        <span class="pill" id="pillLevel" title="Nivel">
+        <span class="pill mini" id="pillLevel" title="Nivel">
           <span class="ms" aria-hidden="true">stars</span>
           <span class="pv">Lv 1</span>
         </span>
 
-        <span class="pill" id="pillSpeed" title="Velocidad">
-          <span class="ms" aria-hidden="true">speed</span>
-          <span class="pv">0.0</span>
+        <span class="pill mini" id="pillMult" title="Multiplicador">
+          <span class="ms" aria-hidden="true">close</span>
+          <span class="pv">1.00</span>
         </span>
 
-        <span class="pill pillBtn subtle" id="pillPlayer" title="Abrir menú" role="button" tabindex="0">
+        <span class="pill mini pillBtn subtle" id="pillPlayer" title="Abrir menú" role="button" tabindex="0">
           <span class="ms" aria-hidden="true">person</span>
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle" id="pillVersion" title="Versión">v0.1.4</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.5</span>
 
-        <span class="pill subtle" id="pillOffline" hidden title="Estado de red">
+        <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
           <span class="pv">Offline</span>
         </span>
 
-        <span class="pill pillBtn" id="pillUpdate" hidden title="Actualizar" role="button" tabindex="0">
+        <span class="pill pillBtn mini" id="pillUpdate" hidden title="Actualizar" role="button" tabindex="0">
           <span class="ms" aria-hidden="true">system_update</span>
-          <span class="pv">Actualizar</span>
+          <span class="pv">Update</span>
         </span>
+
+        <!-- (opcionales: siguen existiendo para no romper app.js, pero ocultos) -->
+        <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
+        <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
       </div>
 
+      <!-- Acciones mínimas -->
       <div class="actions" aria-label="Acciones">
-        <button class="iconBtn small" id="btnOptions" type="button" title="Opciones">
-          <span class="ms" aria-hidden="true">settings</span>
-          <span class="lbl">Opciones</span>
-        </button>
-
         <button class="iconBtn small" id="btnPause" type="button" title="Pausa">
           <span class="ms" aria-hidden="true">pause</span>
-          <span class="lbl">Pausa</span>
         </button>
 
-        <button class="iconBtn small" id="btnRestart" type="button" title="Reiniciar run">
-          <span class="ms" aria-hidden="true">restart_alt</span>
-          <span class="lbl">Reiniciar</span>
+        <button class="iconBtn small" id="btnOptions" type="button" title="Opciones">
+          <span class="ms" aria-hidden="true">settings</span>
         </button>
 
-        <button class="iconBtn small" id="btnInstall" type="button" title="Instalar" hidden>
-          <span class="ms" aria-hidden="true">download</span>
-          <span class="lbl">Instalar</span>
-        </button>
+        <!-- btnRestart ya NO está en header; está en Pausa y GameOver -->
       </div>
     </header>
 
@@ -159,7 +145,7 @@
     <main class="stage" id="stage" role="main">
       <div class="canvasWrap" id="canvasWrap">
 
-        <!-- ✅ HUD FUERA del grid (y con altura FIJA en CSS para NO mover el canvas) -->
+        <!-- HUD fuera del grid y con altura fija -->
         <div class="hud" id="hud" aria-hidden="true">
           <div class="combo">
             <div class="comboTop">
@@ -189,7 +175,7 @@
           <div class="toast" id="toast" hidden aria-live="polite"></div>
         </div>
 
-        <!-- ✅ Área de juego (bloquea scroll/zoom y ocupa TODO el espacio restante) -->
+        <!-- Área de juego -->
         <div class="gameArea" id="gameArea">
           <canvas id="gameCanvas" width="640" height="960" aria-label="Juego"></canvas>
 
@@ -255,7 +241,7 @@
             <div class="panelHead">
               <div>
                 <div class="h2" id="startTitle">Nuevo run</div>
-                <div class="muted tiny" id="startSub">Perfiles + upgrades + combos</div>
+                <div class="muted tiny" id="startSub">Perfiles • upgrades • combos</div>
               </div>
             </div>
 
@@ -277,7 +263,7 @@
               </div>
 
               <div class="tiny muted">
-                Controles: WASD / Flechas / Swipe (móvil). Completa combos para subir multiplicador.
+                Controles: WASD / Flechas / Swipe (móvil).
               </div>
             </div>
           </div>
@@ -291,6 +277,7 @@
             </div>
             <div class="panelActions">
               <button class="btn primary" id="btnResume" type="button">Continuar</button>
+              <button class="btn" id="btnPausedRestart" type="button">Reiniciar</button>
               <button class="btn" id="btnQuitToStart" type="button">Salir al menú</button>
             </div>
           </div>
@@ -313,7 +300,7 @@
               <button class="btn" id="btnSkipUpgrade" type="button">Saltar</button>
             </div>
 
-            <div class="tiny muted" id="upgradeHint">El juego se pausa aquí: el grid no avanza mientras eliges.</div>
+            <div class="tiny muted" id="upgradeHint">El juego se pausa aquí.</div>
           </div>
         </section>
 
@@ -339,6 +326,7 @@
 
             <div class="panelActions">
               <button class="btn" id="btnBackToStart" type="button">Menú</button>
+              <button class="btn" id="btnRestart" type="button">Reiniciar</button>
               <button class="btn primary" id="btnRetry" type="button">Reintentar</button>
             </div>
           </div>
@@ -351,11 +339,50 @@
               <div class="h2">Opciones</div>
               <button class="iconBtn small" id="btnCloseOptions" type="button" title="Cerrar">
                 <span class="ms" aria-hidden="true">close</span>
-                <span class="lbl">Cerrar</span>
               </button>
             </div>
 
             <div class="options">
+
+              <!-- AUDIO -->
+              <div class="optGroupTitle">
+                <span class="ms" aria-hidden="true">volume_up</span>
+                <span>Audio</span>
+              </div>
+
+              <label class="optRow">
+                <span>Música</span>
+                <input id="optMusicOn" type="checkbox" />
+              </label>
+
+              <div class="optRow sliderRow">
+                <span>Vol. música</span>
+                <input id="optMusicVol" type="range" min="0" max="1" step="0.01" />
+                <span class="mono" id="optMusicVolValue">0.60</span>
+              </div>
+
+              <div class="optRow sliderRow">
+                <span>Vol. SFX</span>
+                <input id="optSfxVol" type="range" min="0" max="1" step="0.01" />
+                <span class="mono" id="optSfxVolValue">0.90</span>
+              </div>
+
+              <label class="optRow">
+                <span>Mute</span>
+                <input id="optMuteAll" type="checkbox" />
+              </label>
+
+              <div class="optRow">
+                <button class="btn" id="btnTestAudio" type="button">Probar sonido</button>
+                <span class="tiny muted">Desbloquea audio si el móvil lo bloquea</span>
+              </div>
+
+              <!-- GAME -->
+              <div class="optGroupTitle" style="margin-top:8px;">
+                <span class="ms" aria-hidden="true">tune</span>
+                <span>Juego</span>
+              </div>
+
               <label class="optRow">
                 <span>Usar sprites (si existen)</span>
                 <input id="optSprites" type="checkbox" />
@@ -375,6 +402,17 @@
                 <span>FX</span>
                 <input id="optFx" type="range" min="0.4" max="1.25" step="0.01" />
                 <span class="mono" id="optFxValue">1.00</span>
+              </div>
+
+              <!-- PWA -->
+              <div class="optGroupTitle" style="margin-top:8px;">
+                <span class="ms" aria-hidden="true">phone_iphone</span>
+                <span>PWA</span>
+              </div>
+
+              <div class="optRow">
+                <button class="btn" id="btnInstall" type="button" hidden>Instalar</button>
+                <span class="tiny muted">Si tu navegador lo soporta</span>
               </div>
 
               <div class="optRow danger">
@@ -451,7 +489,7 @@
     })();
   </script>
 
-  <script src="./auth.js?v=0.1.4" defer></script>
-  <script src="./app.js?v=0.1.4" defer></script>
+  <script src="./auth.js?v=0.1.5" defer></script>
+  <script src="./app.js?v=0.1.5" defer></script>
 </body>
 </html>

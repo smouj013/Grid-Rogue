@@ -1,15 +1,15 @@
-/* app.js — Grid Runner (PWA) v0.1.4 STABLE+FULLSCREEN
-   - HUD fuera del canvas y con altura fija (cero layout-shifts)
-   - Canvas ocupa el máximo posible (PC/móvil)
-   - Shake ya NO mueve el grid: solo tiembla el player (sin “glitch”)
-   - Anti-scroll/anti-zoom en gameArea (mobile safe)
-   - Pills a 10Hz (menos reflow/jank)
+/* app.js — Grid Runner (PWA) v0.1.5 STABLE+FULLSCREEN + AUDIO
+   - Audio completo: SFX + música (WebAudio) con fallback procedural
+   - Unlock móvil/iOS: audio se activa con el primer gesto (Start/tap/tecla)
+   - Header más limpio: solo acciones esenciales arriba (Pausa + Opciones)
+   - btnRestart movido a Pausa y GameOver
+   - SW update + install mantiene comportamiento
 */
 
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.4");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.5");
   window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
@@ -57,12 +57,351 @@
   const SETTINGS_KEY = "gridrunner_settings_v1";
   const RUNS_KEY = "gridrunner_runs_v1";
 
+  // ───────────────────────── Audio (robusto) ─────────────────────────
+  const AudioSys = (() => {
+    const supports = (() => {
+      try { return !!(window.AudioContext || window.webkitAudioContext); } catch { return false; }
+    })();
+
+    const FILES = {
+      bgm:   "assets/audio/bgm_loop.mp3",
+      coin:  "assets/audio/sfx_coin.wav",
+      gem:   "assets/audio/sfx_gem.wav",
+      bonus: "assets/audio/sfx_bonus.wav",
+      trap:  "assets/audio/sfx_trap.wav",
+      ko:    "assets/audio/sfx_ko.wav",
+      level: "assets/audio/sfx_levelup.wav",
+      pick:  "assets/audio/sfx_pick.wav",
+      reroll:"assets/audio/sfx_reroll.wav",
+      ui:    "assets/audio/sfx_ui.wav",
+    };
+
+    let ctx = null;
+    let master = null;
+    let musicGain = null;
+    let sfxGain = null;
+
+    let unlocked = false;
+    let muted = false;
+    let musicOn = true;
+    let sfxOn = true;
+
+    let musicVol = 0.60;
+    let sfxVol = 0.90;
+
+    const buffers = new Map();
+    let musicNode = null;
+    let musicMode = "none"; // "buffer" | "procedural" | "none"
+
+    const urlOf = (rel) => new URL(rel, location.href).toString();
+
+    function ensureCtx() {
+      if (!supports) return null;
+      if (ctx) return ctx;
+
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC({ latencyHint: "interactive" });
+
+      master = ctx.createGain();
+      musicGain = ctx.createGain();
+      sfxGain = ctx.createGain();
+
+      master.gain.value = muted ? 0 : 1;
+      musicGain.gain.value = musicOn ? musicVol : 0;
+      sfxGain.gain.value = sfxOn ? sfxVol : 0;
+
+      musicGain.connect(master);
+      sfxGain.connect(master);
+      master.connect(ctx.destination);
+
+      return ctx;
+    }
+
+    async function unlock() {
+      if (!supports) return false;
+      const c = ensureCtx();
+      if (!c) return false;
+      try {
+        if (c.state !== "running") await c.resume();
+        unlocked = true;
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function setMute(v) {
+      muted = !!v;
+      if (master) master.gain.value = muted ? 0 : 1;
+    }
+
+    function setMusicOn(v) {
+      musicOn = !!v;
+      if (musicGain) musicGain.gain.value = musicOn ? musicVol : 0;
+      if (!musicOn) stopMusic();
+      else startMusic();
+    }
+
+    function setSfxOn(v) {
+      sfxOn = !!v;
+      if (sfxGain) sfxGain.gain.value = sfxOn ? sfxVol : 0;
+    }
+
+    function setVolumes({ music, sfx }) {
+      if (Number.isFinite(music)) musicVol = clamp(music, 0, 1);
+      if (Number.isFinite(sfx)) sfxVol = clamp(sfx, 0, 1);
+      if (musicGain) musicGain.gain.value = (musicOn ? musicVol : 0);
+      if (sfxGain) sfxGain.gain.value = (sfxOn ? sfxVol : 0);
+    }
+
+    function duckMusic(on) {
+      if (!musicGain) return;
+      const target = on ? (musicOn ? Math.max(0, musicVol * 0.35) : 0) : (musicOn ? musicVol : 0);
+      musicGain.gain.setTargetAtTime(target, ctx ? ctx.currentTime : 0, 0.08);
+    }
+
+    async function loadBuffer(key, relPath) {
+      if (!supports) return null;
+      if (buffers.has(key)) return buffers.get(key);
+
+      const c = ensureCtx();
+      if (!c) return null;
+
+      try {
+        const res = await fetch(urlOf(relPath), { cache: "force-cache" });
+        if (!res || !res.ok) throw new Error("fetch audio fail");
+        const arr = await res.arrayBuffer();
+        const buf = await c.decodeAudioData(arr.slice(0));
+        buffers.set(key, buf);
+        return buf;
+      } catch {
+        buffers.set(key, null);
+        return null;
+      }
+    }
+
+    function playBuffer(buf, { gain = 1, rate = 1, pan = 0 } = {}) {
+      if (!buf) return false;
+      const c = ensureCtx();
+      if (!c || !unlocked) return false;
+      if (!sfxOn || muted) return false;
+
+      try {
+        const src = c.createBufferSource();
+        src.buffer = buf;
+        src.playbackRate.value = clamp(rate, 0.5, 2.0);
+
+        const g = c.createGain();
+        g.gain.value = clamp(gain, 0, 2.0);
+
+        let node = src;
+        if (c.createStereoPanner) {
+          const p = c.createStereoPanner();
+          p.pan.value = clamp(pan, -1, 1);
+          node.connect(p);
+          node = p;
+        }
+        node.connect(g);
+        g.connect(sfxGain);
+
+        src.start();
+        src.onended = () => { try { src.disconnect(); g.disconnect(); } catch {} };
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // Procedural SFX fallback (si faltan wav)
+    function beep({ f = 440, ms = 90, type = "square", gain = 0.18, slideTo = null } = {}) {
+      const c = ensureCtx();
+      if (!c || !unlocked) return false;
+      if (!sfxOn || muted) return false;
+
+      const t0 = c.currentTime;
+      const t1 = t0 + clamp(ms, 20, 600) / 1000;
+
+      const o = c.createOscillator();
+      const g = c.createGain();
+
+      o.type = type;
+      o.frequency.setValueAtTime(f, t0);
+      if (slideTo != null) o.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t1);
+
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), t0 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t1);
+
+      o.connect(g);
+      g.connect(sfxGain);
+      o.start(t0);
+      o.stop(t1);
+
+      o.onended = () => { try { o.disconnect(); g.disconnect(); } catch {} };
+      return true;
+    }
+
+    async function sfx(name) {
+      if (!supports) return false;
+      await unlock();
+
+      const map = {
+        coin: "coin",
+        gem: "gem",
+        bonus: "bonus",
+        trap: "trap",
+        ko: "ko",
+        level: "level",
+        pick: "pick",
+        reroll: "reroll",
+        ui: "ui",
+      };
+
+      const k = map[name] || "ui";
+      const file = FILES[k];
+      if (file) {
+        const buf = await loadBuffer(k, file);
+        if (buf) {
+          // ligeras variaciones
+          const rate = 0.94 + Math.random() * 0.12;
+          const gain = (k === "ko" || k === "trap") ? 0.95 : 0.70;
+          return playBuffer(buf, { gain, rate, pan: (Math.random()*2-1)*0.15 });
+        }
+      }
+
+      // fallback por tipo
+      if (k === "coin")  return beep({ f: 820, ms: 60, type:"square", gain: 0.14, slideTo: 980 });
+      if (k === "gem")   return beep({ f: 620, ms: 85, type:"triangle", gain: 0.16, slideTo: 920 });
+      if (k === "bonus") return beep({ f: 520, ms: 120, type:"sawtooth", gain: 0.12, slideTo: 1040 });
+      if (k === "trap")  return beep({ f: 220, ms: 140, type:"square", gain: 0.16, slideTo: 110 });
+      if (k === "ko")    return beep({ f: 150, ms: 220, type:"sawtooth", gain: 0.18, slideTo: 60 });
+      if (k === "level") return beep({ f: 440, ms: 140, type:"triangle", gain: 0.14, slideTo: 880 });
+      if (k === "pick")  return beep({ f: 520, ms: 80, type:"square", gain: 0.12, slideTo: 700 });
+      if (k === "reroll")return beep({ f: 360, ms: 90, type:"triangle", gain: 0.12, slideTo: 520 });
+      return beep({ f: 520, ms: 55, type:"square", gain: 0.09, slideTo: 610 });
+    }
+
+    function stopMusic() {
+      if (!ctx) return;
+      try {
+        if (musicNode) {
+          musicNode.stop?.();
+          musicNode.disconnect?.();
+        }
+      } catch {}
+      musicNode = null;
+      musicMode = "none";
+    }
+
+    async function startMusic() {
+      if (!supports) return;
+      if (!musicOn || muted) return;
+      await unlock();
+      if (!ctx || !unlocked) return;
+      if (musicNode) return;
+
+      // intenta buffer loop
+      const buf = await loadBuffer("bgm", FILES.bgm);
+      if (buf) {
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        src.playbackRate.value = 1.0;
+
+        src.connect(musicGain);
+        src.start();
+
+        musicNode = src;
+        musicMode = "buffer";
+        return;
+      }
+
+      // fallback procedural: pad suave + lfo
+      try {
+        const o1 = ctx.createOscillator();
+        const o2 = ctx.createOscillator();
+        const g = ctx.createGain();
+
+        o1.type = "sine";
+        o2.type = "triangle";
+        o1.frequency.value = 110;
+        o2.frequency.value = 220;
+
+        // LFO
+        const lfo = ctx.createOscillator();
+        const lfoG = ctx.createGain();
+        lfo.type = "sine";
+        lfo.frequency.value = 0.15;
+        lfoG.gain.value = 12;
+
+        lfo.connect(lfoG);
+        lfoG.connect(o2.frequency);
+
+        g.gain.value = 0.10;
+
+        o1.connect(g);
+        o2.connect(g);
+        g.connect(musicGain);
+
+        o1.start();
+        o2.start();
+        lfo.start();
+
+        // pequeño secuenciador de notas (muy light)
+        const notes = [110, 123.47, 130.81, 146.83, 164.81, 146.83, 130.81, 123.47];
+        let idx = 0;
+        const step = () => {
+          if (!ctx || !musicNode || !musicOn || muted) return;
+          const f = notes[idx++ % notes.length];
+          const t = ctx.currentTime;
+          o1.frequency.setTargetAtTime(f, t, 0.12);
+          o2.frequency.setTargetAtTime(f * 2, t, 0.12);
+          setTimeout(step, 680);
+        };
+
+        const node = {
+          stop() {
+            try { o1.stop(); o2.stop(); lfo.stop(); } catch {}
+            try { o1.disconnect(); o2.disconnect(); lfo.disconnect(); lfoG.disconnect(); g.disconnect(); } catch {}
+          },
+          disconnect() {},
+        };
+
+        musicNode = node;
+        musicMode = "procedural";
+        step();
+      } catch {
+        // nada
+      }
+    }
+
+    return {
+      supports,
+      unlock,
+      sfx,
+      startMusic,
+      stopMusic,
+      duckMusic,
+      setMute,
+      setMusicOn,
+      setSfxOn,
+      setVolumes,
+      getState: () => ({ muted, musicOn, sfxOn, musicVol, sfxVol, unlocked, musicMode }),
+    };
+  })();
+
   // ───────────────────────── Settings ─────────────────────────
   const defaultSettings = () => ({
     useSprites: false,
     vibration: true,
     showDpad: true,
     fx: 1.0,
+
+    // NEW AUDIO
+    musicOn: true,
+    musicVol: 0.60,
+    sfxVol: 0.90,
+    muteAll: false,
   });
 
   let settings = (() => {
@@ -74,6 +413,11 @@
       ...base,
       ...s,
       fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
+
+      musicOn: (s.musicOn ?? base.musicOn) !== false,
+      musicVol: clamp(Number(s.musicVol ?? base.musicVol) || base.musicVol, 0, 1),
+      sfxVol: clamp(Number(s.sfxVol ?? base.sfxVol) || base.sfxVol, 0, 1),
+      muteAll: !!(s.muteAll ?? base.muteAll),
     };
   })();
 
@@ -82,6 +426,14 @@
     if (!settings.vibration) return;
     if (!("vibrate" in navigator)) return;
     try { navigator.vibrate(ms); } catch {}
+  }
+
+  function applyAudioSettingsNow() {
+    try {
+      AudioSys.setMute(!!settings.muteAll);
+      AudioSys.setMusicOn(!!settings.musicOn);
+      AudioSys.setVolumes({ music: settings.musicVol, sfx: settings.sfxVol });
+    } catch {}
   }
 
   // ───────────────────────── Auth ─────────────────────────
@@ -217,7 +569,7 @@
   let playerPulse = 0;
   let zonePulse = 0;
 
-  // ✅ Shake: YA NO mueve el grid (solo player)
+  // Shake: solo player
   let shakeT = 0;
   let shakePow = 0;
 
@@ -238,13 +590,16 @@
   let overlayLoading, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
 
   let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
-  let btnResume, btnQuitToStart;
+  let btnResume, btnQuitToStart, btnPausedRestart;
 
   let upTitle, upSub, upgradeChoices, btnReroll, btnSkipUpgrade;
 
   let goStats, goScoreBig, goBestBig, btnBackToStart, btnRetry;
 
   let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal, btnRepairPWA;
+
+  // NEW AUDIO opts
+  let optMusicOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
 
   let errMsg, btnErrClose, btnErrReload;
 
@@ -302,7 +657,7 @@
     if (levelProgPct) levelProgPct.textContent = `${Math.round(v * 100)}%`;
   }
 
-  // ✅ Pills a 10Hz (reduce jank)
+  // Pills a 10Hz
   let pillAccMs = 0;
   function updatePillsNow() {
     setPill(pillScore, score | 0);
@@ -323,9 +678,17 @@
     if (optFx) optFx.value = String(settings.fx);
     if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
 
+    if (optMusicOn) optMusicOn.checked = !!settings.musicOn;
+    if (optMusicVol) optMusicVol.value = String(settings.musicVol);
+    if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
+    if (optSfxVol) optSfxVol.value = String(settings.sfxVol);
+    if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
+    if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
+
     const isCoarse = matchMedia("(pointer:coarse)").matches;
     if (dpad) dpad.hidden = !(isCoarse && settings.showDpad);
 
+    applyAudioSettingsNow();
     resize();
   }
 
@@ -511,11 +874,16 @@
       showToast("Trampa", 650);
       flash("#ff6b3d", 220);
       shake(220, 7);
+      AudioSys.sfx("trap");
       return;
     }
 
     streak++;
     vibrate(10);
+
+    if (t === CellType.Coin) AudioSys.sfx("coin");
+    else if (t === CellType.Gem) AudioSys.sfx("gem");
+    else if (t === CellType.Bonus) AudioSys.sfx("bonus");
 
     if (checkCombo) {
       if (combo[comboIdx] === t) {
@@ -523,7 +891,7 @@
         comboTime = comboTimeMax;
         if (comboIdx >= combo.length) {
           mult = clamp(mult + 0.15, 1.0, 4.0);
-          showToast("Combo completado: +MULT", 900);
+          showToast("Combo: +MULT", 900);
           shake(140, 3.2);
           flash("#6ab0ff", 140);
           rerollCombo();
@@ -602,7 +970,11 @@
           vibrate(24);
           shake(190, 6);
           flash("#6ab0ff", 140);
-        } else gameOverNow("KO");
+          AudioSys.sfx("pick");
+        } else {
+          AudioSys.sfx("ko");
+          gameOverNow("KO");
+        }
         return;
       }
 
@@ -712,6 +1084,7 @@
   function pauseForOverlay(on) {
     if (!running || gameOver) return;
     paused = !!on;
+    AudioSys.duckMusic(paused || inLevelUp || gameOver);
   }
 
   function openUpgrade() {
@@ -729,6 +1102,8 @@
     renderUpgradeChoices();
     overlayShow(overlayUpgrades);
     updatePillsNow();
+
+    AudioSys.sfx("level");
   }
 
   function closeUpgrade() {
@@ -758,6 +1133,7 @@
         showToast(`Mejora: ${u.name}`, 950);
         shake(120, 3);
         flash("#6ab0ff", 120);
+        AudioSys.sfx("pick");
         closeUpgrade();
       });
       upgradeChoices?.appendChild(card);
@@ -774,6 +1150,7 @@
     showToast("Reroll", 650);
     shake(90, 2);
     flash("#ffd35a", 110);
+    AudioSys.sfx("reroll");
   }
 
   // ───────────────────────── Rendering ─────────────────────────
@@ -787,15 +1164,6 @@
     ctx.drawImage(img, x, y, w, h);
     ctx.restore();
     return true;
-  }
-
-  function clearScreen() {
-    if (!ctx) return;
-    ctx.save();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "#05050a";
-    ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
-    ctx.restore();
   }
 
   function drawParticles(dtMs) {
@@ -888,9 +1256,8 @@
 
   function draw(dtMs = 16) {
     if (!ctx) return;
-    if (!gridReady || !ensureGridValid()) { clearScreen(); return; }
+    if (!gridReady || !ensureGridValid()) return;
 
-    // ✅ shake (solo player): calculamos offset pero NO movemos el grid
     let psx = 0, psy = 0;
     if (shakeT > 0) {
       const k = shakeT / 280;
@@ -919,24 +1286,20 @@
       ctx.restore();
     }
 
-    // panel grid
     ctx.fillStyle = "rgba(255,255,255,0.028)";
     ctx.fillRect(offX, offY, gridW, gridH);
 
-    // zona de movimiento
     const zTop = offY + zoneY0 * cellPx;
     const zoneA = 0.070 + 0.06 * zonePulse;
     ctx.fillStyle = `rgba(106,176,255,${zoneA.toFixed(3)})`;
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
-    // borde zona
     ctx.globalAlpha = 0.35;
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
     ctx.lineWidth = 1;
     ctx.strokeRect(offX + 0.5, zTop + 0.5, gridW - 1, zoneH * cellPx - 1);
     ctx.globalAlpha = 1;
 
-    // tiles
     for (let r = 0; r < ROWS; r++) {
       const y = offY + r * cellPx + scrollPx;
       for (let c = 0; c < COLS; c++) {
@@ -964,7 +1327,6 @@
       }
     }
 
-    // grid lines
     ctx.globalAlpha = 0.28;
     ctx.strokeStyle = "rgba(255,255,255,0.075)";
     ctx.lineWidth = 1;
@@ -984,7 +1346,6 @@
     }
     ctx.globalAlpha = 1;
 
-    // player (con shake local)
     let px = offX + colF * cellPx + psx;
     let py = offY + (zoneY0 + rowF) * cellPx + psy;
 
@@ -1019,7 +1380,6 @@
 
     ctx.restore();
 
-    // FX
     ctx.globalCompositeOperation = "lighter";
     drawParticles(dtMs);
     ctx.globalCompositeOperation = "source-over";
@@ -1079,11 +1439,15 @@
     targetRow = clampInt(targetRow + dy, 0, zoneH - 1);
     vibrate(8);
     playerPulse = 0.65;
+    // desbloquea audio con cualquier interacción
+    AudioSys.unlock();
   }
 
   function bindInputs() {
     window.addEventListener("keydown", (e) => {
       const k = e.key;
+      AudioSys.unlock();
+
       if (k === "Escape") { togglePause(); return; }
       if (k === "r" || k === "R") { if (!isAnyBlockingOverlayOpen()) { resetRun(false); startRun(); } return; }
 
@@ -1109,6 +1473,7 @@
     let sx = 0, sy = 0, st = 0, active = false;
 
     canvas.addEventListener("pointerdown", (e) => {
+      AudioSys.unlock();
       if (!canControl()) return;
       active = true;
       sx = e.clientX;
@@ -1142,12 +1507,13 @@
     if (!running || gameOver || inLevelUp) return;
     if (overlayOptions && !overlayOptions.hidden) return;
     paused = !paused;
-    if (paused) overlayShow(overlayPaused);
-    else overlayHide(overlayPaused);
+    if (paused) { overlayShow(overlayPaused); AudioSys.duckMusic(true); }
+    else { overlayHide(overlayPaused); AudioSys.duckMusic(false); }
+    AudioSys.sfx("ui");
   }
 
-  function showOptions() { overlayShow(overlayOptions); pauseForOverlay(true); }
-  function hideOptions() { overlayHide(overlayOptions); if (!inLevelUp && !gameOver && running) pauseForOverlay(false); }
+  function showOptions() { overlayShow(overlayOptions); pauseForOverlay(true); AudioSys.sfx("ui"); }
+  function hideOptions() { overlayHide(overlayOptions); if (!inLevelUp && !gameOver && running) pauseForOverlay(false); AudioSys.sfx("ui"); }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
   let pendingReload = false;
@@ -1198,9 +1564,15 @@
 
     updatePillsNow();
     draw(16);
+    AudioSys.duckMusic(showMenu);
   }
 
   async function startRun() {
+    // desbloquea audio SIEMPRE al empezar
+    await AudioSys.unlock();
+    applyAudioSettingsNow();
+    AudioSys.startMusic();
+
     if (overlayStart && !overlayStart.hidden) await overlayFadeOut(overlayStart, 170);
     overlayHide(overlayGameOver);
     overlayHide(overlayPaused);
@@ -1220,6 +1592,9 @@
     setState("playing");
     updatePillsNow();
     draw(16);
+
+    AudioSys.duckMusic(false);
+    AudioSys.sfx("ui");
   }
 
   function gameOverNow(reason) {
@@ -1232,6 +1607,8 @@
     shake(360, 12);
     flash("#ff2b4d", 360);
     vibrate(32);
+
+    AudioSys.duckMusic(true);
 
     if (score > best) {
       best = score;
@@ -1398,6 +1775,7 @@
       });
 
       btnInstall?.addEventListener("click", async () => {
+        AudioSys.unlock();
         if (!deferredPrompt) return;
         btnInstall.disabled = true;
         try { deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch {}
@@ -1408,6 +1786,7 @@
     }
 
     pillUpdate?.addEventListener("click", () => {
+      AudioSys.unlock();
       if (running && !gameOver) {
         pendingReload = true;
         showToast("Se aplicará al terminar.", 900);
@@ -1494,6 +1873,7 @@
     };
 
     profileSelect.addEventListener("change", () => {
+      AudioSys.unlock();
       if (profileSelect.value !== "__new__") {
         Auth.setActiveProfile?.(profileSelect.value);
         syncFromAuth();
@@ -1503,6 +1883,7 @@
     });
 
     btnNewProfile?.addEventListener("click", () => {
+      AudioSys.unlock();
       profileSelect.value = "__new__";
       refreshNewWrap();
       startName?.focus();
@@ -1544,8 +1925,8 @@
 
     btnOptions = $("btnOptions");
     btnPause = $("btnPause");
-    btnRestart = $("btnRestart");
-    btnInstall = $("btnInstall");
+    btnRestart = $("btnRestart"); // ahora está en GameOver
+    btnInstall = $("btnInstall"); // ahora está en Opciones
 
     overlayLoading = $("overlayLoading");
     loadingSub = $("loadingSub");
@@ -1564,6 +1945,7 @@
 
     btnResume = $("btnResume");
     btnQuitToStart = $("btnQuitToStart");
+    btnPausedRestart = $("btnPausedRestart");
 
     upTitle = $("upTitle");
     upSub = $("upSub");
@@ -1585,6 +1967,15 @@
     optFxValue = $("optFxValue");
     btnClearLocal = $("btnClearLocal");
     btnRepairPWA = $("btnRepairPWA");
+
+    // NEW AUDIO
+    optMusicOn = $("optMusicOn");
+    optMusicVol = $("optMusicVol");
+    optMusicVolValue = $("optMusicVolValue");
+    optSfxVol = $("optSfxVol");
+    optSfxVolValue = $("optSfxVolValue");
+    optMuteAll = $("optMuteAll");
+    btnTestAudio = $("btnTestAudio");
 
     errMsg = $("errMsg");
     btnErrClose = $("btnErrClose");
@@ -1621,6 +2012,9 @@
 
       syncFromAuth();
 
+      // aplica audio settings temprano (sin forzar unlock)
+      applyAudioSettingsNow();
+
       recomputeZone();
       makeGrid();
       rerollCombo();
@@ -1635,14 +2029,16 @@
       bindInputs();
 
       btnPause?.addEventListener("click", togglePause);
-      btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
       btnOptions?.addEventListener("click", showOptions);
 
-      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); });
-      btnQuitToStart?.addEventListener("click", async () => { await overlayFadeOut(overlayPaused); resetRun(true); });
+      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); });
+      btnQuitToStart?.addEventListener("click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused); resetRun(true); });
+
+      btnPausedRestart?.addEventListener("click", () => { AudioSys.sfx("ui"); resetRun(false); startRun(); });
 
       btnRetry?.addEventListener("click", () => { resetRun(false); startRun(); });
       btnBackToStart?.addEventListener("click", () => { resetRun(true); });
+      btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
 
       btnCloseOptions?.addEventListener("click", hideOptions);
       overlayOptions?.addEventListener("click", (e) => { if (e.target === overlayOptions) hideOptions(); });
@@ -1654,6 +2050,41 @@
         settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
         if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
         saveSettings();
+      });
+
+      // AUDIO binds
+      optMusicOn?.addEventListener("change", () => {
+        AudioSys.unlock();
+        settings.musicOn = !!optMusicOn.checked;
+        applyAudioSettingsNow();
+        saveSettings();
+      });
+      optMusicVol?.addEventListener("input", () => {
+        AudioSys.unlock();
+        settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.6"), 0, 1);
+        if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
+        applyAudioSettingsNow();
+        saveSettings();
+      });
+      optSfxVol?.addEventListener("input", () => {
+        AudioSys.unlock();
+        settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.9"), 0, 1);
+        if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
+        applyAudioSettingsNow();
+        saveSettings();
+      });
+      optMuteAll?.addEventListener("change", () => {
+        AudioSys.unlock();
+        settings.muteAll = !!optMuteAll.checked;
+        applyAudioSettingsNow();
+        saveSettings();
+      });
+      btnTestAudio?.addEventListener("click", async () => {
+        await AudioSys.unlock();
+        applyAudioSettingsNow();
+        AudioSys.startMusic();
+        AudioSys.sfx("coin");
+        showToast("Audio OK", 700);
       });
 
       btnRepairPWA?.addEventListener("click", repairPWA);
@@ -1669,9 +2100,11 @@
       btnErrReload?.addEventListener("click", () => location.reload());
 
       btnReroll?.addEventListener("click", rerollUpgrades);
-      btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast("Saltar", 650); });
+      btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast("Saltar", 650); AudioSys.sfx("ui"); });
 
       btnStart?.addEventListener("click", async () => {
+        await AudioSys.unlock();
+
         if (Auth && profileSelect) {
           if (profileSelect.value === "__new__") {
             const nm = (startName?.value || "").trim();
@@ -1705,7 +2138,7 @@
       lastT = performance.now();
       requestAnimationFrame(frame);
 
-      const SPLASH_MIN_MS = 5000;
+      const SPLASH_MIN_MS = 1400;
       const elapsed = performance.now() - bootStartedAt;
       const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
 

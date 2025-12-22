@@ -1,13 +1,13 @@
-/* sw.js — Grid Runner (v0.1.3)
+/* sw.js — Grid Runner (v0.1.5)
    ✅ Core cache-first + refresh en background (sin romper cache-bust ?v=)
    ✅ Navegación: network-first + fallback index.html (APP_SHELL)
    ✅ Runtime: stale-while-revalidate (assets)
    ✅ Update: SKIP_WAITING por mensaje + clients.claim + navigationPreload
    ✅ GH Pages/subcarpetas: usa registration.scope (claves absolutas)
-   ✅ Robustez: no revienta si falla algún asset; APP_SHELL siempre prioritario
+   ✅ Audio: añadido a CORE_ASSETS como best-effort (no rompe si falta)
 */
 
-const VERSION = "v0.1.3";
+const VERSION = "v0.1.5";
 const CACHE_PREFIX = "gridrunner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
@@ -15,7 +15,6 @@ const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
 const SCOPE = self.registration.scope;
 const APP_SHELL = new URL("index.html", SCOPE).toString();
 
-// ✅ Lista “core” (sin query). OJO: si tu index inyecta ?v=, aquí lo ignoramos.
 const CORE_ASSETS = [
   APP_SHELL,
   new URL("styles.css", SCOPE).toString(),
@@ -27,6 +26,17 @@ const CORE_ASSETS = [
   new URL("assets/icons/icon-512.png", SCOPE).toString(),
   new URL("assets/icons/apple-touch-icon-180.png", SCOPE).toString(),
   new URL("assets/icons/favicon-32.png", SCOPE).toString(),
+
+  // ✅ Audio (best-effort)
+  new URL("assets/audio/bgm_loop.mp3", SCOPE).toString(),
+  new URL("assets/audio/sfx_coin.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_gem.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_bonus.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_trap.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_ko.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_levelup.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_pick.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_reroll.wav", SCOPE).toString(),
 ];
 
 const CORE_SET = new Set(CORE_ASSETS.map(stripSearch));
@@ -54,30 +64,27 @@ function shouldIgnoreSearch(urlObj) {
     p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".jpeg") ||
     p.endsWith(".webp") || p.endsWith(".gif") || p.endsWith(".svg") ||
     p.endsWith(".ico") || p.endsWith(".json") || p.endsWith(".webmanifest") ||
-    p.endsWith(".woff2") || p.endsWith(".woff") || p.endsWith(".ttf") || p.endsWith(".otf")
+    p.endsWith(".woff2") || p.endsWith(".woff") || p.endsWith(".ttf") || p.endsWith(".otf") ||
+    p.endsWith(".mp3") || p.endsWith(".wav") || p.endsWith(".ogg")
   );
 }
 
 async function precacheCore() {
   const cache = await caches.open(CORE_CACHE);
 
-  // ✅ APP_SHELL primero: si esto falla, mejor fallar pronto
   const shellRes = await fetch(new Request(APP_SHELL, { cache: "reload" }));
   if (!shellRes || !shellRes.ok) {
     throw new Error(`No se pudo precachear index.html (APP_SHELL). (${shellRes?.status || "?"})`);
   }
   await cache.put(stripSearch(APP_SHELL), shellRes);
 
-  // ✅ Resto: best effort (no bloquea el install si alguno falla)
   await Promise.allSettled(
     CORE_ASSETS.filter((u) => stripSearch(u) !== stripSearch(APP_SHELL)).map(async (url) => {
       try {
         const res = await fetch(new Request(url, { cache: "reload" }));
         if (!res || !res.ok) throw new Error(`Precache failed: ${url} (${res?.status})`);
         await cache.put(stripSearch(url), res);
-      } catch (_) {
-        // ignore (best effort)
-      }
+      } catch (_) {}
     })
   );
 }
@@ -130,16 +137,11 @@ self.addEventListener("fetch", (event) => {
   if (!isSameOrigin(req.url)) return;
 
   const url = new URL(req.url);
-
   const isNav = isHtmlNavigation(req);
 
-  // Clave normalizada: para assets típicos ignoramos ?v= para que el cache-bust no rompa el match
   const normalizedKey = shouldIgnoreSearch(url) ? stripSearch(req.url) : req.url;
-
-  // ¿Es un core asset? (comparamos sin search)
   const looksCore = CORE_SET.has(stripSearch(req.url));
 
-  // ───────────────────── NAV: network-first + fallback shell ─────────────────────
   if (isNav) {
     event.respondWith(
       (async () => {
@@ -148,14 +150,12 @@ self.addEventListener("fetch", (event) => {
         try {
           const preload = await event.preloadResponse;
           if (preload && preload.ok) {
-            // refresca shell en background
             core.put(stripSearch(APP_SHELL), preload.clone()).catch(() => {});
             return preload;
           }
 
           const fresh = await fetch(req);
           if (fresh && fresh.ok) {
-            // refresca shell en background
             core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
             return fresh;
           }
@@ -163,20 +163,13 @@ self.addEventListener("fetch", (event) => {
           throw new Error("Nav fetch not ok");
         } catch (_) {
           const cached = await core.match(stripSearch(APP_SHELL));
-          return (
-            cached ||
-            new Response("Offline", {
-              status: 503,
-              headers: { "Content-Type": "text/plain; charset=utf-8" },
-            })
-          );
+          return cached || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
         }
       })()
     );
     return;
   }
 
-  // ───────────────────── CORE: cache-first + refresh background ─────────────────────
   if (looksCore) {
     event.respondWith(
       (async () => {
@@ -198,7 +191,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ───────────────────── RUNTIME: stale-while-revalidate ─────────────────────
   event.respondWith(
     (async () => {
       const runtime = await caches.open(RUNTIME_CACHE);

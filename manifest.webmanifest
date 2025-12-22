@@ -2,13 +2,13 @@
   "name": "Grid Runner",
   "short_name": "GridRunner",
   "id": "./",
-  "start_url": "./?v=0.1.3",
+  "start_url": "./?v=0.1.5",
   "scope": "./",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#0b0b10",
   "theme_color": "#0b0b10",
-  "description": "Arcade grid runner con upgrades y combos.",
+  "description": "Arcade grid runner con upgrades, combos y audio (SFX + música).",
   "lang": "es-ES",
   "dir": "ltr",
   "orientation": "portrait",
@@ -37,6 +37,18 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "./assets/icons/apple-touch-icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icons/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
