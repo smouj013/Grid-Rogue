@@ -1,12 +1,14 @@
-/* sw.js — Grid Runner PWA (v0.0.9)
-   - App shell precache + navegación offline (index)
-   - Stale-while-revalidate para assets
-   - Mensaje SKIP_WAITING para auto-actualizar
+/* sw.js — Grid Runner PWA v0.1.0
+   - App Shell precache
+   - Navegación offline -> index.html
+   - Assets -> stale-while-revalidate
+   - Update -> SKIP_WAITING por mensaje
 */
-const VERSION = "v0.0.9";
+
+const VERSION = "0.1.0";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
-const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
+const RUNTIME_CACHE = `${CACHE_PREFIX}rt-${VERSION}`;
 
 const CORE_ASSETS = [
   "./",
@@ -14,87 +16,70 @@ const CORE_ASSETS = [
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
-
-  // icons (si faltan, no rompe)
+  "./assets/icon.svg",
   "./assets/icons/icon-192.png",
   "./assets/icons/icon-512.png",
   "./assets/icons/apple-touch-icon-180.png",
-  "./assets/icons/apple-touch-icon-167.png",
-  "./assets/icons/apple-touch-icon-152.png",
-  "./assets/icons/favicon-32.png",
-
-  // sprites opcionales
-  "./assets/sprites/player.svg",
-  "./assets/sprites/tile_empty.svg",
-  "./assets/sprites/tile_block.svg",
-  "./assets/sprites/tile_coin.svg",
-  "./assets/sprites/tile_gem.svg",
-  "./assets/sprites/tile_trap.svg",
-  "./assets/sprites/tile_bonus.svg",
 ];
-
-self.addEventListener("message", (event) => {
-  const data = event.data;
-  if (data && data.type === "SKIP_WAITING") self.skipWaiting();
-});
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CORE_CACHE);
-    await Promise.allSettled(CORE_ASSETS.map(async (u) => {
-      try {
-        const res = await fetch(u, { cache: "no-cache" });
-        if (res.ok) await cache.put(u, res);
-      } catch {}
-    }));
-    self.skipWaiting();
+    await cache.addAll(CORE_ASSETS.map(p => new URL(p, self.location).toString()));
   })());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.map((k) => {
-      if (k.startsWith(CACHE_PREFIX) && k !== CORE_CACHE && k !== RUNTIME_CACHE) {
-        return caches.delete(k);
-      }
-    }));
+    await Promise.all(
+      keys
+        .filter(k => k.startsWith(CACHE_PREFIX) && ![CORE_CACHE, RUNTIME_CACHE].includes(k))
+        .map(k => caches.delete(k))
+    );
     await self.clients.claim();
   })());
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
+  // solo same-origin
   if (url.origin !== self.location.origin) return;
 
-  // Navegación: fallback a index.html
+  // navegación: siempre index offline
   if (req.mode === "navigate") {
     event.respondWith((async () => {
-      const cache = await caches.open(CORE_CACHE);
-      const cached = await cache.match("./index.html");
-      try {
-        const net = await fetch(req);
-        if (net && net.ok) cache.put("./index.html", net.clone());
-        return net;
+      try{
+        const res = await fetch(req);
+        const cache = await caches.open(RUNTIME_CACHE);
+        cache.put(req, res.clone()).catch(()=>{});
+        return res;
       } catch {
-        return cached || Response.error();
+        const cache = await caches.open(CORE_CACHE);
+        const cached = await cache.match(new URL("./index.html", self.location).toString());
+        return cached || new Response("Offline", { status: 200, headers: { "content-type":"text/plain" } });
       }
     })());
     return;
   }
 
-  // Assets: stale-while-revalidate
+  // assets: stale-while-revalidate
   event.respondWith((async () => {
     const cache = await caches.open(RUNTIME_CACHE);
     const cached = await cache.match(req);
+    const fetchPromise = fetch(req).then((res) => {
+      if (res && res.ok) cache.put(req, res.clone()).catch(()=>{});
+      return res;
+    }).catch(() => cached);
 
-    const fetchPromise = fetch(req).then((net) => {
-      if (net && net.ok) cache.put(req, net.clone());
-      return net;
-    }).catch(() => null);
-
-    return cached || (await fetchPromise) || Response.error();
+    return cached || fetchPromise;
   })());
 });

@@ -1,13 +1,14 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
-  "description": "Juego PWA en cuadrícula 8x24 con combos, niveles y mejoras.",
-  "start_url": "./",
+  "description": "Endless grid runner con combos y mejoras roguelike.",
+  "start_url": "./?v=0.1.0",
   "scope": "./",
   "display": "standalone",
   "background_color": "#07070b",
   "theme_color": "#e60012",
   "orientation": "portrait",
+  "categories": ["games", "entertainment"],
   "icons": [
     {
       "src": "./assets/icons/icon-192.png",
