@@ -1,9 +1,9 @@
-/* sw.js — Grid Runner PWA (v0.0.8)
+/* sw.js — Grid Runner PWA (v0.0.9)
    - App shell precache + navegación offline (index)
    - Stale-while-revalidate para assets
    - Mensaje SKIP_WAITING para auto-actualizar
 */
-const VERSION = "v0.0.8";
+const VERSION = "v0.0.9";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
@@ -16,36 +16,33 @@ const CORE_ASSETS = [
   "./manifest.webmanifest",
 
   // icons (si faltan, no rompe)
-  "./assets/icon.svg",
-  "./assets/icons/favicon-32.png",
   "./assets/icons/icon-192.png",
   "./assets/icons/icon-512.png",
   "./assets/icons/apple-touch-icon-180.png",
   "./assets/icons/apple-touch-icon-167.png",
   "./assets/icons/apple-touch-icon-152.png",
+  "./assets/icons/favicon-32.png",
 
-  // sprites opcionales (si no existen, no rompe)
+  // sprites opcionales
   "./assets/sprites/player.svg",
+  "./assets/sprites/tile_empty.svg",
   "./assets/sprites/tile_block.svg",
   "./assets/sprites/tile_coin.svg",
   "./assets/sprites/tile_gem.svg",
   "./assets/sprites/tile_trap.svg",
   "./assets/sprites/tile_bonus.svg",
-  "./assets/sprites/tile_empty.svg",
 ];
 
 self.addEventListener("message", (event) => {
   const data = event.data;
-  if (data && data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
+  if (data && data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CORE_CACHE);
     await Promise.allSettled(CORE_ASSETS.map(async (u) => {
-      try{
+      try {
         const res = await fetch(u, { cache: "no-cache" });
         if (res.ok) await cache.put(u, res);
       } catch {}
@@ -58,7 +55,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.map((k) => {
-      if (k.startsWith(CACHE_PREFIX) && k !== CORE_CACHE && k !== RUNTIME_CACHE){
+      if (k.startsWith(CACHE_PREFIX) && k !== CORE_CACHE && k !== RUNTIME_CACHE) {
         return caches.delete(k);
       }
     }));
@@ -73,11 +70,11 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   // Navegación: fallback a index.html
-  if (req.mode === "navigate"){
+  if (req.mode === "navigate") {
     event.respondWith((async () => {
       const cache = await caches.open(CORE_CACHE);
       const cached = await cache.match("./index.html");
-      try{
+      try {
         const net = await fetch(req);
         if (net && net.ok) cache.put("./index.html", net.clone());
         return net;
