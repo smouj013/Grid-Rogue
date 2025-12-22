@@ -1,5 +1,6 @@
-/* app.js — Grid Runner (PWA) v0.1.5 STABLE+FULLSCREEN + AUDIO
-   - Audio completo: SFX + música (WebAudio) con fallback procedural
+/* app.js — Grid Runner (PWA) v0.1.5 STABLE+FULLSCREEN + AUDIO (MUSIC FIX)
+   - FIX música “lenta/borrosa”: BGM via HTMLAudio (nativo) + duck por volumen
+   - SFX via WebAudio (buffers) + fallback procedural
    - Unlock móvil/iOS: audio se activa con el primer gesto (Start/tap/tecla)
    - Header más limpio: solo acciones esenciales arriba (Pausa + Opciones)
    - btnRestart movido a Pausa y GameOver
@@ -59,7 +60,8 @@
 
   // ───────────────────────── Audio (robusto) ─────────────────────────
   const AudioSys = (() => {
-    const supports = (() => {
+    // ✅ WebAudio solo para SFX (latencia baja). Música con HTMLAudio (evita “slow/pitch raro”).
+    const supportsCtx = (() => {
       try { return !!(window.AudioContext || window.webkitAudioContext); } catch { return false; }
     })();
 
@@ -76,10 +78,16 @@
       ui:    "assets/audio/sfx_ui.wav",
     };
 
+    // WebAudio (SFX)
     let ctx = null;
     let master = null;
-    let musicGain = null;
     let sfxGain = null;
+
+    // HTMLAudio (Music)
+    let musicEl = null;
+    let musicMode = "none"; // "html" | "procedural" | "none"
+    let duckFactor = 1.0;
+    let volAnimRaf = 0;
 
     let unlocked = false;
     let muted = false;
@@ -90,56 +98,139 @@
     let sfxVol = 0.90;
 
     const buffers = new Map();
-    let musicNode = null;
-    let musicMode = "none"; // "buffer" | "procedural" | "none"
+    let proceduralNode = null;
 
     const urlOf = (rel) => new URL(rel, location.href).toString();
 
     function ensureCtx() {
-      if (!supports) return null;
+      if (!supportsCtx) return null;
       if (ctx) return ctx;
 
       const AC = window.AudioContext || window.webkitAudioContext;
       ctx = new AC({ latencyHint: "interactive" });
 
       master = ctx.createGain();
-      musicGain = ctx.createGain();
       sfxGain = ctx.createGain();
 
       master.gain.value = muted ? 0 : 1;
-      musicGain.gain.value = musicOn ? musicVol : 0;
       sfxGain.gain.value = sfxOn ? sfxVol : 0;
 
-      musicGain.connect(master);
       sfxGain.connect(master);
       master.connect(ctx.destination);
 
       return ctx;
     }
 
-    async function unlock() {
-      if (!supports) return false;
-      const c = ensureCtx();
-      if (!c) return false;
+    function ensureMusicEl() {
+      if (musicEl) return musicEl;
+
       try {
-        if (c.state !== "running") await c.resume();
-        unlocked = true;
-        return true;
+        const el = new Audio();
+        el.src = urlOf(FILES.bgm);
+        el.loop = true;
+        el.preload = "auto";
+        el.autoplay = false;
+
+        // iOS inline
+        el.playsInline = true;
+        try { el.setAttribute("playsinline", ""); } catch {}
+        try { el.setAttribute("webkit-playsinline", ""); } catch {}
+
+        // ✅ CLAVE: evita rate “arrastrado”
+        try { el.defaultPlaybackRate = 1; } catch {}
+        try { el.playbackRate = 1; } catch {}
+        // ✅ CLAVE: preserva pitch (si alguien tocase playbackRate)
+        try { el.preservesPitch = true; } catch {}
+        try { el.mozPreservesPitch = true; } catch {}
+        try { el.webkitPreservesPitch = true; } catch {}
+
+        el.muted = true;   // se aplicará luego
+        el.volume = 0;
+
+        musicEl = el;
+        musicMode = "html";
+        return musicEl;
       } catch {
-        return false;
+        musicEl = null;
+        return null;
       }
+    }
+
+    function effectiveMusicVolume() {
+      if (muted || !musicOn) return 0;
+      return clamp(musicVol * duckFactor, 0, 1);
+    }
+
+    function setMusicVolumeImmediate(v) {
+      const el = ensureMusicEl();
+      if (!el) return;
+      const vv = clamp(v, 0, 1);
+      try {
+        el.muted = vv <= 0.0001;
+        el.volume = vv;
+      } catch {}
+    }
+
+    function setMusicVolumeSmooth(target, ms = 140) {
+      const el = ensureMusicEl();
+      if (!el) return;
+
+      if (volAnimRaf) cancelAnimationFrame(volAnimRaf);
+      const t0 = performance.now();
+      let from = 0;
+
+      try { from = Number.isFinite(el.volume) ? el.volume : 0; } catch { from = 0; }
+      const to = clamp(target, 0, 1);
+
+      const step = () => {
+        const t = performance.now();
+        const k = clamp((t - t0) / Math.max(1, ms), 0, 1);
+        // easeOut
+        const e = 1 - Math.pow(1 - k, 2);
+        const v = from + (to - from) * e;
+        setMusicVolumeImmediate(v);
+        if (k < 1) volAnimRaf = requestAnimationFrame(step);
+        else volAnimRaf = 0;
+      };
+
+      volAnimRaf = requestAnimationFrame(step);
+    }
+
+    async function unlock() {
+      // “unlocked” = hubo gesto; sirve para SFX (resume ctx) y para intentar play luego
+      unlocked = true;
+
+      if (supportsCtx) {
+        const c = ensureCtx();
+        if (c) {
+          try { if (c.state !== "running") await c.resume(); } catch {}
+        }
+      }
+      return true;
     }
 
     function setMute(v) {
       muted = !!v;
+
+      // SFX
       if (master) master.gain.value = muted ? 0 : 1;
+
+      // Music
+      if (muted) {
+        // pausa para ahorrar batería (y evitar “repro en silencio”)
+        stopMusic();
+      } else {
+        // vuelve a aplicar volumen
+        const vv = effectiveMusicVolume();
+        setMusicVolumeImmediate(vv);
+        // no auto-play aquí: startRun / toggle music ya lo lanzan con gesto
+      }
     }
 
     function setMusicOn(v) {
       musicOn = !!v;
-      if (musicGain) musicGain.gain.value = musicOn ? musicVol : 0;
       if (!musicOn) stopMusic();
-      else startMusic();
+      else startMusic(); // intentará (puede bloquear sin gesto, se ignora)
     }
 
     function setSfxOn(v) {
@@ -150,18 +241,25 @@
     function setVolumes({ music, sfx }) {
       if (Number.isFinite(music)) musicVol = clamp(music, 0, 1);
       if (Number.isFinite(sfx)) sfxVol = clamp(sfx, 0, 1);
-      if (musicGain) musicGain.gain.value = (musicOn ? musicVol : 0);
-      if (sfxGain) sfxGain.gain.value = (sfxOn ? sfxVol : 0);
+
+      if (sfxGain) sfxGain.gain.value = sfxOn ? sfxVol : 0;
+
+      // Music: aplica volumen efectivo
+      const vv = effectiveMusicVolume();
+      setMusicVolumeImmediate(vv);
     }
 
     function duckMusic(on) {
-      if (!musicGain) return;
-      const target = on ? (musicOn ? Math.max(0, musicVol * 0.35) : 0) : (musicOn ? musicVol : 0);
-      musicGain.gain.setTargetAtTime(target, ctx ? ctx.currentTime : 0, 0.08);
+      const targetDuck = on ? 0.35 : 1.0;
+      duckFactor = targetDuck;
+
+      // suave (para que no “pegue”)
+      const vv = effectiveMusicVolume();
+      setMusicVolumeSmooth(vv, 140);
     }
 
     async function loadBuffer(key, relPath) {
-      if (!supports) return null;
+      if (!supportsCtx) return null;
       if (buffers.has(key)) return buffers.get(key);
 
       const c = ensureCtx();
@@ -242,8 +340,9 @@
     }
 
     async function sfx(name) {
-      if (!supports) return false;
-      await unlock();
+      await unlock(); // asegura gesto/ctx
+
+      if (!supportsCtx) return false;
 
       const map = {
         coin: "coin",
@@ -262,61 +361,83 @@
       if (file) {
         const buf = await loadBuffer(k, file);
         if (buf) {
-          // ligeras variaciones
           const rate = 0.94 + Math.random() * 0.12;
           const gain = (k === "ko" || k === "trap") ? 0.95 : 0.70;
-          return playBuffer(buf, { gain, rate, pan: (Math.random()*2-1)*0.15 });
+          return playBuffer(buf, { gain, rate, pan: (Math.random() * 2 - 1) * 0.15 });
         }
       }
 
       // fallback por tipo
-      if (k === "coin")  return beep({ f: 820, ms: 60, type:"square", gain: 0.14, slideTo: 980 });
-      if (k === "gem")   return beep({ f: 620, ms: 85, type:"triangle", gain: 0.16, slideTo: 920 });
-      if (k === "bonus") return beep({ f: 520, ms: 120, type:"sawtooth", gain: 0.12, slideTo: 1040 });
-      if (k === "trap")  return beep({ f: 220, ms: 140, type:"square", gain: 0.16, slideTo: 110 });
-      if (k === "ko")    return beep({ f: 150, ms: 220, type:"sawtooth", gain: 0.18, slideTo: 60 });
-      if (k === "level") return beep({ f: 440, ms: 140, type:"triangle", gain: 0.14, slideTo: 880 });
-      if (k === "pick")  return beep({ f: 520, ms: 80, type:"square", gain: 0.12, slideTo: 700 });
-      if (k === "reroll")return beep({ f: 360, ms: 90, type:"triangle", gain: 0.12, slideTo: 520 });
-      return beep({ f: 520, ms: 55, type:"square", gain: 0.09, slideTo: 610 });
+      if (k === "coin")  return beep({ f: 820, ms: 60, type: "square", gain: 0.14, slideTo: 980 });
+      if (k === "gem")   return beep({ f: 620, ms: 85, type: "triangle", gain: 0.16, slideTo: 920 });
+      if (k === "bonus") return beep({ f: 520, ms: 120, type: "sawtooth", gain: 0.12, slideTo: 1040 });
+      if (k === "trap")  return beep({ f: 220, ms: 140, type: "square", gain: 0.16, slideTo: 110 });
+      if (k === "ko")    return beep({ f: 150, ms: 220, type: "sawtooth", gain: 0.18, slideTo: 60 });
+      if (k === "level") return beep({ f: 440, ms: 140, type: "triangle", gain: 0.14, slideTo: 880 });
+      if (k === "pick")  return beep({ f: 520, ms: 80, type: "square", gain: 0.12, slideTo: 700 });
+      if (k === "reroll")return beep({ f: 360, ms: 90, type: "triangle", gain: 0.12, slideTo: 520 });
+      return beep({ f: 520, ms: 55, type: "square", gain: 0.09, slideTo: 610 });
+    }
+
+    function stopProceduralMusic() {
+      if (!proceduralNode) return;
+      try { proceduralNode.stop?.(); } catch {}
+      try { proceduralNode.disconnect?.(); } catch {}
+      proceduralNode = null;
+      if (musicMode === "procedural") musicMode = "none";
     }
 
     function stopMusic() {
-      if (!ctx) return;
-      try {
-        if (musicNode) {
-          musicNode.stop?.();
-          musicNode.disconnect?.();
-        }
-      } catch {}
-      musicNode = null;
-      musicMode = "none";
+      // HTML music
+      if (musicEl) {
+        try {
+          musicEl.pause();
+          musicEl.currentTime = 0;
+        } catch {}
+        // deja el volumen correcto (por si luego vuelve)
+        try {
+          musicEl.defaultPlaybackRate = 1;
+          musicEl.playbackRate = 1;
+        } catch {}
+      }
+      stopProceduralMusic();
     }
 
     async function startMusic() {
-      if (!supports) return;
       if (!musicOn || muted) return;
+
       await unlock();
-      if (!ctx || !unlocked) return;
-      if (musicNode) return;
 
-      // intenta buffer loop
-      const buf = await loadBuffer("bgm", FILES.bgm);
-      if (buf) {
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.loop = true;
-        src.playbackRate.value = 1.0;
+      // ✅ preferencia: HTMLAudio siempre
+      const el = ensureMusicEl();
+      if (el) {
+        // aplica settings antes de play
+        try {
+          el.defaultPlaybackRate = 1;
+          el.playbackRate = 1;
+        } catch {}
+        const vv = effectiveMusicVolume();
+        setMusicVolumeImmediate(vv);
+        if (vv <= 0.0001) return;
 
-        src.connect(musicGain);
-        src.start();
+        try {
+          // Si ya está sonando, no fuerces
+          if (!el.paused) return;
 
-        musicNode = src;
-        musicMode = "buffer";
-        return;
+          const p = el.play();
+          if (p && typeof p.then === "function") await p;
+          musicMode = "html";
+          return;
+        } catch {
+          // Si autoplay/gesto bloquea, se ignora (se resolverá al pulsar Start/Test Audio)
+          // Si no soporta el formato, caemos a procedural:
+        }
       }
 
-      // fallback procedural: pad suave + lfo
+      // Fallback procedural (solo si HTMLAudio no funciona)
+      if (!supportsCtx || !ctx) return;
+      if (proceduralNode) return;
+
       try {
         const o1 = ctx.createOscillator();
         const o2 = ctx.createOscillator();
@@ -327,7 +448,6 @@
         o1.frequency.value = 110;
         o2.frequency.value = 220;
 
-        // LFO
         const lfo = ctx.createOscillator();
         const lfoG = ctx.createGain();
         lfo.type = "sine";
@@ -339,19 +459,20 @@
 
         g.gain.value = 0.10;
 
+        // mezcla a destino (no a musicGain)
         o1.connect(g);
         o2.connect(g);
-        g.connect(musicGain);
+        g.connect(master);
 
         o1.start();
         o2.start();
         lfo.start();
 
-        // pequeño secuenciador de notas (muy light)
         const notes = [110, 123.47, 130.81, 146.83, 164.81, 146.83, 130.81, 123.47];
         let idx = 0;
+
         const step = () => {
-          if (!ctx || !musicNode || !musicOn || muted) return;
+          if (!ctx || !proceduralNode || !musicOn || muted) return;
           const f = notes[idx++ % notes.length];
           const t = ctx.currentTime;
           o1.frequency.setTargetAtTime(f, t, 0.12);
@@ -359,7 +480,7 @@
           setTimeout(step, 680);
         };
 
-        const node = {
+        proceduralNode = {
           stop() {
             try { o1.stop(); o2.stop(); lfo.stop(); } catch {}
             try { o1.disconnect(); o2.disconnect(); lfo.disconnect(); lfoG.disconnect(); g.disconnect(); } catch {}
@@ -367,7 +488,6 @@
           disconnect() {},
         };
 
-        musicNode = node;
         musicMode = "procedural";
         step();
       } catch {
@@ -376,7 +496,7 @@
     }
 
     return {
-      supports,
+      supports: true,
       unlock,
       sfx,
       startMusic,
@@ -1439,7 +1559,6 @@
     targetRow = clampInt(targetRow + dy, 0, zoneH - 1);
     vibrate(8);
     playerPulse = 0.65;
-    // desbloquea audio con cualquier interacción
     AudioSys.unlock();
   }
 
@@ -1568,7 +1687,6 @@
   }
 
   async function startRun() {
-    // desbloquea audio SIEMPRE al empezar
     await AudioSys.unlock();
     applyAudioSettingsNow();
     AudioSys.startMusic();
@@ -1925,8 +2043,8 @@
 
     btnOptions = $("btnOptions");
     btnPause = $("btnPause");
-    btnRestart = $("btnRestart"); // ahora está en GameOver
-    btnInstall = $("btnInstall"); // ahora está en Opciones
+    btnRestart = $("btnRestart");
+    btnInstall = $("btnInstall");
 
     overlayLoading = $("overlayLoading");
     loadingSub = $("loadingSub");
