@@ -1,7 +1,7 @@
 /* auth.js — Grid Runner (PWA) v0.1.2
-   - Perfiles locales (sin servidor): crear / seleccionar
-   - Migra desde gridrunner_name_v1 + gridrunner_best_v1 si existe
-   - Estado robusto (si se corrompe, se repara)
+   - Perfiles locales
+   - Migra desde gridrunner_name_v1 + gridrunner_best_v1
+   - Estado robusto
 */
 (() => {
   "use strict";
@@ -11,8 +11,7 @@
   const LEGACY_BEST_KEY = "gridrunner_best_v1";
 
   const now = () => Date.now();
-  const uid = () =>
-    "p_" + Math.random().toString(16).slice(2) + "_" + Math.random().toString(16).slice(2);
+  const uid = () => "p_" + Math.random().toString(16).slice(2) + "_" + Math.random().toString(16).slice(2);
 
   function safeParse(raw, fallback) {
     try { return JSON.parse(raw); } catch { return fallback; }
@@ -75,9 +74,7 @@
   const state = ensureMigration(loadState());
 
   function listProfiles() {
-    return state.profiles
-      .slice()
-      .sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
+    return state.profiles.slice().sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
   }
 
   function getActiveProfile() {
@@ -105,35 +102,6 @@
     return p;
   }
 
-  function deleteProfile(id) {
-    const idx = state.profiles.findIndex(p => p.id === id);
-    if (idx < 0) return false;
-
-    state.profiles.splice(idx, 1);
-
-    if (state.activeId === id) {
-      state.activeId = state.profiles[0]?.id || null;
-      if (state.activeId) {
-        const p = state.profiles.find(x => x.id === state.activeId);
-        if (p) p.lastLoginAt = now();
-      }
-    }
-
-    saveState(state);
-    return true;
-  }
-
-  function renameProfile(id, name) {
-    const nm = normalizeName(name);
-    if (nm.length < 2) return false;
-    const p = state.profiles.find(x => x.id === id);
-    if (!p) return false;
-    p.name = nm;
-    p.lastLoginAt = now();
-    saveState(state);
-    return true;
-  }
-
   function getBestForActive() {
     const p = getActiveProfile();
     return p ? (p.best | 0) : 0;
@@ -157,8 +125,6 @@
     getActiveProfile,
     setActiveProfile,
     createProfile,
-    deleteProfile,
-    renameProfile,
     getBestForActive,
     setBestForActive,
   };

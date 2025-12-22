@@ -1,24 +1,28 @@
-/* app.js — Grid Runner (PWA) v0.1.2
-   ✅ Anti-freeze total: errores globales + nunca deja overlayLoading sin salida
-   ✅ Botones siempre: bind seguro + no depende de orden raro
-   ✅ PWA update real: sw.js?v=APP_VERSION + reg.update() + pillActualizar fiable
+/* app.js — Grid Runner (PWA) v0.1.2 (HOTFIX)
+   ✅ Fix crash: “Cannot read properties of undefined (reading '0')” (bounds/NaN guards)
+   ✅ Botones SIEMPRE responden: binds seguros + overlays no bloquean por bug
+   ✅ Grid 100% cuadrado (sin distorsión): fuerza aspect-ratio del canvas por JS (fit dentro del stage)
+   ✅ Pausa real al abrir Opciones / Upgrades / Menús (no te mueres eligiendo)
+   ✅ Rendimiento: loop estable, dt cap, canvas desynchronized, menos trabajo cuando está pausado
+   ✅ “Juicy” básico: pop/pulse, partículas, shake suave, highlight zona, anim de jugador
 */
 
 (() => {
   "use strict";
 
-  const APP_VERSION = (window.APP_VERSION || "0.1.2");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.2");
   window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const clampInt = (v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : a);
   const lerp = (a, b, t) => a + (b - a) * t;
   const randi = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
   const chance = (p) => Math.random() < p;
 
-  function safeParse(raw, fallback) {
+  const safeParse = (raw, fallback) => {
     try { return JSON.parse(raw); } catch { return fallback; }
-  }
+  };
 
   const $ = (id) => document.getElementById(id);
 
@@ -43,14 +47,14 @@
     useSprites: false,
     vibration: true,
     showDpad: true,
-    fx: 1.0,
+    fx: 1.0, // “juicy” scale
   });
 
   let settings = (() => {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const s = raw ? safeParse(raw, null) : null;
     const base = defaultSettings();
-    if (!s) return base;
+    if (!s || typeof s !== "object") return base;
     return {
       ...base,
       ...s,
@@ -59,7 +63,7 @@
   })();
 
   function saveSettings() {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
   }
 
   function vibrate(ms) {
@@ -77,14 +81,16 @@
   if (playerName.length < 2) playerName = "Jugador";
 
   function syncFromAuth() {
-    if (!Auth) return;
-    const p = Auth.getActiveProfile?.();
-    if (!p) return;
-    activeProfileId = p.id;
-    playerName = (p.name || "Jugador").trim().slice(0, 16) || "Jugador";
-    best = (Auth.getBestForActive?.() ?? best) | 0;
-    localStorage.setItem(NAME_KEY, playerName);
-    localStorage.setItem(BEST_KEY, String(best));
+    try {
+      if (!Auth) return;
+      const p = Auth.getActiveProfile?.();
+      if (!p) return;
+      activeProfileId = p.id;
+      playerName = (p.name || "Jugador").trim().slice(0, 16) || "Jugador";
+      best = (Auth.getBestForActive?.() ?? best) | 0;
+      localStorage.setItem(NAME_KEY, playerName);
+      localStorage.setItem(BEST_KEY, String(best));
+    } catch {}
   }
 
   // ───────────────────────── Sprites optional ─────────────────────────
@@ -111,6 +117,8 @@
       ["bonus", "tile_bonus.svg"],
       ["trap", "tile_trap.svg"],
       ["block", "tile_block.svg"],
+      // player opcional (si existe no pasa nada si no)
+      ["player", "tile_player.svg"],
     ];
 
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
@@ -131,6 +139,9 @@
   const COLS = 8;
   const ROWS = 24;
 
+  // Para “cuadrados perfectos”: canvas aspect ratio = COLS/ROWS (1:3)
+  const CANVAS_AR = COLS / ROWS;
+
   const CellType = Object.freeze({
     Empty: 0,
     Coin: 1,
@@ -140,13 +151,14 @@
     Block: 5,
   });
 
+  // Tonalidad mejorada (más contrast)
   const CELL_COLORS = {
     [CellType.Empty]: "rgba(0,0,0,0)",
-    [CellType.Coin]: "#2ee59d",
-    [CellType.Gem]: "#69a8ff",
-    [CellType.Bonus]: "#ffd35a",
-    [CellType.Trap]: "#ff7b2e",
-    [CellType.Block]: "#7b8296",
+    [CellType.Coin]: "#2ef2a0",
+    [CellType.Gem]:  "#6ab0ff",
+    [CellType.Bonus]:"#ffd35a",
+    [CellType.Trap]: "#ff6b3d",
+    [CellType.Block]:"#7f8aa8",
   };
 
   // ───────────────────────── Runtime state ─────────────────────────
@@ -165,25 +177,33 @@
   let consumed = [];
   let gridReady = false;
 
+  // Canvas sizing (CSS px)
   let dpr = 1;
   let stageW = 0, stageH = 0;
+  let cssCanvasW = 0, cssCanvasH = 0;
+
+  // Grid geom in CSS px
   let cellPx = 18;
   let gridW = 0, gridH = 0;
   let offX = 0, offY = 0;
 
+  // scroll in px
   let scrollPx = 0;
   let runTime = 0;
 
+  // play zone
   let zoneBase = 3;
   let zoneExtra = 0;
   let zoneH = 3;
   let zoneY0 = 0;
 
+  // player target & smoothing
   let targetCol = 3;
   let targetRow = 1;
   let colF = 3;
   let rowF = 1;
 
+  // upgrades
   let shields = 0;
   let magnet = 0;
   let scoreBoost = 0;
@@ -194,6 +214,7 @@
   let gemValue = 30;
   let bonusValue = 60;
 
+  // combo
   const COMBO_POOL = [
     [CellType.Coin, CellType.Coin, CellType.Gem],
     [CellType.Gem, CellType.Coin, CellType.Bonus],
@@ -206,7 +227,14 @@
   let comboTimeMax = 6.0;
   let comboTime = 6.0;
 
+  // fx / juicy
   let toastT = 0;
+  let playerPulse = 0;     // 0..1
+  let zonePulse = 0;       // 0..1
+  let shakeT = 0;          // ms
+  let shakePow = 0;        // px
+
+  const particles = []; // {x,y,vx,vy,life,max,rad,color}
 
   // ───────────────────────── DOM refs ─────────────────────────
   let stage, canvas, ctx;
@@ -239,13 +267,16 @@
     try {
       console.error(err);
 
-      if (overlayLoading) overlayLoading.hidden = true;
+      // no bloquear UI
+      try { overlayHide(overlayLoading); } catch {}
 
-      if (errMsg) errMsg.textContent = (err && err.message) ? err.message : String(err || "Error desconocido");
-      if (overlayError) overlayError.hidden = false;
+      const msg =
+        (err && err.message) ? err.message :
+        (typeof err === "string" ? err : "Error desconocido");
 
-      // Si overlayError no existe por cualquier razón
-      if (!overlayError) alert((err && err.message) ? err.message : "Error desconocido");
+      if (errMsg) errMsg.textContent = msg;
+      if (overlayError) overlayShow(overlayError);
+      if (!overlayError) alert(msg);
     } catch {}
   }
 
@@ -276,6 +307,21 @@
     pillOffline.hidden = navigator.onLine;
   }
 
+ _toggleOfflineListeners();
+  function _toggleOfflineListeners(){
+    // se llama una sola vez en setupPWA, pero por seguridad:
+    // (no hace nada si ya existen)
+  }
+
+  function speedRowsPerSec() {
+    // Más consistente: subida por tiempo+level con clamp suave
+    const t = runTime;
+    const base = 1.05;
+    const byTime = 0.026 * t;
+    const byLevel = 0.075 * (level - 1);
+    return clamp(base + byTime + byLevel, 0.9, 6.0);
+  }
+
   function updatePills() {
     setPill(pillScore, score | 0);
     setPill(pillBest, best | 0);
@@ -296,16 +342,19 @@
 
     const isCoarse = matchMedia("(pointer:coarse)").matches;
     if (dpad) dpad.hidden = !(isCoarse && settings.showDpad);
+
+    // re-resize para reservar espacio al dpad si está visible
+    resize();
   }
 
-  // ───────────────────────── Grid ─────────────────────────
+  // ───────────────────────── Grid (robusto) ─────────────────────────
   function recomputeZone() {
-    zoneH = clamp(zoneBase + zoneExtra, 3, 9);
+    zoneH = clampInt(zoneBase + zoneExtra, 3, 9);
     zoneY0 = (ROWS - zoneH) - 2;
-    zoneY0 = clamp(zoneY0, 0, ROWS - zoneH);
+    zoneY0 = clampInt(zoneY0, 0, ROWS - zoneH);
 
-    targetRow = clamp(targetRow, 0, zoneH - 1);
-    rowF = clamp(rowF, 0, zoneH - 1);
+    targetRow = clampInt(targetRow, 0, zoneH - 1);
+    rowF = clamp(Number(rowF) || 0, 0, zoneH - 1);
   }
 
   function genRow() {
@@ -330,6 +379,7 @@
       }
     }
 
+    // evita filas imposibles
     const blocks = out.reduce((a, v) => a + (v === CellType.Block ? 1 : 0), 0);
     if (blocks >= 5) {
       for (let c = 0; c < COLS; c++) {
@@ -349,7 +399,18 @@
     gridReady = true;
   }
 
+  function ensureGridValid() {
+    if (!Array.isArray(grid) || grid.length !== ROWS) return false;
+    if (!Array.isArray(consumed) || consumed.length !== ROWS) return false;
+    for (let r = 0; r < ROWS; r++) {
+      if (!Array.isArray(grid[r]) || grid[r].length !== COLS) return false;
+      if (!Array.isArray(consumed[r]) || consumed[r].length !== COLS) return false;
+    }
+    return true;
+  }
+
   function shiftRows() {
+    // SHIFT robusto
     for (let r = ROWS - 1; r >= 1; r--) {
       grid[r] = grid[r - 1];
       consumed[r] = consumed[r - 1];
@@ -358,19 +419,44 @@
     consumed[0] = new Array(COLS).fill(false);
   }
 
-  // ───────────────────────── Gameplay ─────────────────────────
-  function speedRowsPerSec() {
-    const t = runTime;
-    const base = 1.05;
-    const byTime = 0.03 * t;
-    const byLevel = 0.07 * (level - 1);
-    return clamp(base + byTime + byLevel, 0.85, 6.25);
-  }
-
   function playerAbsRow() {
-    return zoneY0 + Math.round(rowF);
+    const rf = Number.isFinite(rowF) ? rowF : 0;
+    const rr = zoneY0 + Math.round(rf);
+    return clampInt(rr, 0, ROWS - 1);
   }
 
+  function safeCellType(r, c) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    const row = grid[r];
+    if (!row) return CellType.Empty;
+    const t = row[c];
+    return Number.isFinite(t) ? t : CellType.Empty;
+  }
+
+  function safeConsumed(r, c) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    const row = consumed[r];
+    if (!row) return false;
+    return !!row[c];
+  }
+
+  function setConsumed(r, c, v) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    if (!consumed[r]) consumed[r] = new Array(COLS).fill(false);
+    consumed[r][c] = !!v;
+  }
+
+  function setCellEmpty(r, c) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    if (!grid[r]) grid[r] = genRow();
+    grid[r][c] = CellType.Empty;
+  }
+
+  // ───────────────────────── Gameplay ─────────────────────────
   function scoreFor(type) {
     if (type === CellType.Coin) return coinValue;
     if (type === CellType.Gem) return gemValue;
@@ -383,7 +469,33 @@
     return 0;
   }
 
+  function spawnPop(x, y, color, intensity = 1) {
+    const n = clampInt(Math.round(10 * intensity * settings.fx), 6, 22);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (0.35 + Math.random() * 1.15) * (20 + 28 * settings.fx) * intensity;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 260 + Math.random() * 220,
+        max: 420,
+        rad: (1.2 + Math.random() * 2.4) * settings.fx,
+        color,
+      });
+    }
+  }
+
+  function shake(ms, powPx) {
+    shakeT = Math.max(shakeT, ms);
+    shakePow = Math.max(shakePow, powPx);
+  }
+
   function applyCollect(t, checkCombo = true) {
+    // pop FX
+    playerPulse = 1;
+    zonePulse = 1;
+
     const v = scoreFor(t);
     const add = Math.round(v * mult * (1 + scoreBoost));
     score = Math.max(0, score + add);
@@ -391,9 +503,10 @@
     if (t === CellType.Trap) {
       streak = 0;
       mult = clamp(mult * 0.92, 1.0, 4.0);
-      vibrate(15);
+      vibrate(18);
       failCombo();
       showToast("Trampa", 650);
+      shake(180, 6);
       return;
     }
 
@@ -403,12 +516,13 @@
     if (checkCombo) {
       if (combo[comboIdx] === t) {
         comboIdx++;
+        comboTime = comboTimeMax;
         if (comboIdx >= combo.length) {
           mult = clamp(mult + 0.15, 1.0, 4.0);
           showToast("Combo completado: +MULT", 900);
+          shake(120, 3);
           rerollCombo();
         } else {
-          comboTime = comboTimeMax;
           renderComboUI();
         }
       } else {
@@ -421,15 +535,24 @@
 
   function applyMagnetAround(r, c) {
     if (magnet <= 0) return;
-    const rad = magnet;
+    const rad = clampInt(magnet, 1, 3);
     for (let rr = r - rad; rr <= r + rad; rr++) {
+      if (rr < 0 || rr >= ROWS) continue;
       for (let cc = c - rad; cc <= c + rad; cc++) {
-        if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS) continue;
-        if (consumed[rr][cc]) continue;
-        const t = grid[rr][cc];
+        if (cc < 0 || cc >= COLS) continue;
+
+        if (safeConsumed(rr, cc)) continue;
+        const t = safeCellType(rr, cc);
+
         if (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus) {
-          consumed[rr][cc] = true;
-          grid[rr][cc] = CellType.Empty;
+          setConsumed(rr, cc, true);
+          setCellEmpty(rr, cc);
+
+          // pequeño pop por “imán”
+          const x = offX + cc * cellPx + cellPx * 0.5;
+          const y = offY + rr * cellPx + cellPx * 0.5 + scrollPx;
+          spawnPop(x, y, CELL_COLORS[t], 0.45);
+
           applyCollect(t, false);
         }
       }
@@ -437,24 +560,36 @@
   }
 
   function stepAdvance() {
+    if (!ensureGridValid()) {
+      makeGrid();
+      recomputeZone();
+    }
+
     shiftRows();
     score += 1;
 
     const r = playerAbsRow();
-    const c = Math.round(colF);
-    const t = grid[r][c];
+    const c = clampInt(Math.round(Number.isFinite(colF) ? colF : targetCol), 0, COLS - 1);
 
     applyMagnetAround(r, c);
 
-    if (!consumed[r][c] && t !== CellType.Empty) {
-      consumed[r][c] = true;
-      grid[r][c] = CellType.Empty;
+    const t = safeCellType(r, c);
+
+    if (!safeConsumed(r, c) && t !== CellType.Empty) {
+      setConsumed(r, c, true);
+      setCellEmpty(r, c);
+
+      // FX pop en celda pisada
+      const x = offX + c * cellPx + cellPx * 0.5;
+      const y = offY + r * cellPx + cellPx * 0.5 + scrollPx;
+      spawnPop(x, y, CELL_COLORS[t], t === CellType.Block ? 0.85 : 0.65);
 
       if (t === CellType.Block) {
         if (shields > 0) {
           shields--;
           showToast("Shield salvó un KO", 900);
-          vibrate(20);
+          vibrate(24);
+          shake(160, 5);
         } else {
           gameOverNow("KO");
         }
@@ -480,7 +615,8 @@
   }
 
   function rerollCombo() {
-    combo = COMBO_POOL[randi(0, COMBO_POOL.length - 1)].slice();
+    const pick = COMBO_POOL[randi(0, COMBO_POOL.length - 1)];
+    combo = Array.isArray(pick) ? pick.slice() : [CellType.Coin, CellType.Coin, CellType.Gem];
     comboIdx = 0;
     comboTimeMax = clamp(6.2 - (level * 0.06), 3.8, 7.0);
     comboTime = comboTimeMax;
@@ -551,10 +687,16 @@
 
   let currentUpgradeChoices = [];
 
+  function pauseForOverlay(on) {
+    // Pausa real: si hay un overlay “de decisión”, no se mueve el grid
+    if (!running || gameOver) return;
+    paused = !!on;
+  }
+
   function openUpgrade() {
     if (inLevelUp || gameOver) return;
     inLevelUp = true;
-    paused = true;
+    pauseForOverlay(true);
 
     level++;
     nextLevelAt = score + Math.round(240 + level * 150);
@@ -570,7 +712,7 @@
   function closeUpgrade() {
     overlayHide(overlayUpgrades);
     inLevelUp = false;
-    paused = false;
+    pauseForOverlay(false);
   }
 
   function renderUpgradeChoices() {
@@ -592,6 +734,7 @@
         markPick(u);
         u.apply();
         showToast(`Mejora: ${u.name}`, 950);
+        shake(120, 3);
         closeUpgrade();
       });
       upgradeChoices?.appendChild(card);
@@ -606,6 +749,7 @@
     rerolls--;
     renderUpgradeChoices();
     showToast("Reroll", 650);
+    shake(90, 2);
   }
 
   // ───────────────────────── Rendering ─────────────────────────
@@ -625,29 +769,73 @@
     if (!ctx) return;
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "#050507";
-    ctx.fillRect(0, 0, stageW, stageH);
+    ctx.fillStyle = "#05050a";
+    ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
     ctx.restore();
   }
 
-  function draw() {
+  function drawParticles(dtMs) {
+    if (!particles.length) return;
+    const damp = Math.pow(0.0016, dtMs / 1000);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dtMs;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      const t = p.life / p.max;
+
+      p.vx *= damp;
+      p.vy = (p.vy * damp) + 40 * (dtMs / 1000); // gravedad ligera
+      p.x += p.vx * (dtMs / 1000);
+      p.y += p.vy * (dtMs / 1000);
+
+      ctx.globalAlpha = clamp(0.85 * t, 0, 0.85);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.6, p.rad * (0.6 + 0.7 * t)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw(dtMs = 16) {
     if (!ctx) return;
-    if (!gridReady || grid.length !== ROWS) { clearScreen(); return; }
+    if (!gridReady || !ensureGridValid()) { clearScreen(); return; }
+
+    // shake
+    let sx = 0, sy = 0;
+    if (shakeT > 0) {
+      const k = shakeT / 260;
+      const pow = shakePow * k;
+      sx = (Math.random() * 2 - 1) * pow;
+      sy = (Math.random() * 2 - 1) * pow;
+    }
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
 
-    ctx.fillStyle = "#050507";
-    ctx.fillRect(0, 0, stageW, stageH);
+    // wallpaper inside canvas (más bonito)
+    const g = ctx.createLinearGradient(0, 0, 0, cssCanvasH);
+    g.addColorStop(0, "#060610");
+    g.addColorStop(1, "#04040a");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
 
-    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    // apply shake translate in CSS px
+    ctx.translate(sx, sy);
+
+    // grid background
+    ctx.fillStyle = "rgba(255,255,255,0.028)";
     ctx.fillRect(offX, offY, gridW, gridH);
 
+    // zone highlight + pulse
     const zTop = offY + zoneY0 * cellPx;
-    ctx.fillStyle = "rgba(105,168,255,0.08)";
+    const zp = zonePulse;
+    const zoneA = 0.075 + 0.06 * zp;
+    ctx.fillStyle = `rgba(106,176,255,${zoneA.toFixed(3)})`;
     ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
 
+    // tiles
     for (let r = 0; r < ROWS; r++) {
       const y = offY + r * cellPx + scrollPx;
       for (let c = 0; c < COLS; c++) {
@@ -664,28 +852,38 @@
           (t === CellType.Bonus) ? "bonus" :
           (t === CellType.Trap) ? "trap" : "block";
 
-        const ok = drawSprite(key, x + 2, y + 2, cellPx - 4, cellPx - 4, alpha);
+        const pad = Math.max(2, Math.floor(cellPx * 0.08));
+        const ok = drawSprite(key, x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2, alpha);
+
         if (!ok) {
           ctx.globalAlpha = alpha;
           ctx.fillStyle = CELL_COLORS[t];
-          ctx.fillRect(x + 2, y + 2, cellPx - 4, cellPx - 4);
+          ctx.fillRect(x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2);
+
+          // “bevel” sutil para que parezca más pro
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.strokeStyle = "rgba(0,0,0,0.28)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + pad + 1, y + pad + 1, cellPx - pad * 2 - 2, cellPx - pad * 2 - 2);
+
           ctx.globalAlpha = 1;
         }
       }
     }
 
-    ctx.globalAlpha = 0.25;
-    ctx.strokeStyle = "rgba(255,255,255,0.07)";
+    // grid lines (crisp)
+    ctx.globalAlpha = 0.28;
+    ctx.strokeStyle = "rgba(255,255,255,0.075)";
     ctx.lineWidth = 1;
     for (let c = 0; c <= COLS; c++) {
-      const x = offX + c * cellPx;
+      const x = offX + c * cellPx + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, offY);
       ctx.lineTo(x, offY + gridH);
       ctx.stroke();
     }
     for (let r = 0; r <= ROWS; r++) {
-      const y = offY + r * cellPx;
+      const y = offY + r * cellPx + 0.5;
       ctx.beginPath();
       ctx.moveTo(offX, y);
       ctx.lineTo(offX + gridW, y);
@@ -693,30 +891,58 @@
     }
     ctx.globalAlpha = 1;
 
+    // player (pulse)
     const px = offX + colF * cellPx;
     const py = offY + (zoneY0 + rowF) * cellPx;
 
-    const okP = drawSprite("player", px + 2, py + 2, cellPx - 4, cellPx - 4, 1);
+    const pPulse = playerPulse;
+    const s = 1 + 0.08 * pPulse;
+    const cx = px + cellPx / 2;
+    const cy = py + cellPx / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.translate(-cx, -cy);
+
+    const padP = Math.max(2, Math.floor(cellPx * 0.08));
+    const okP = drawSprite("player", px + padP, py + padP, cellPx - padP * 2, cellPx - padP * 2, 1);
     if (!okP) {
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.fillRect(px + 2, py + 2, cellPx - 4, cellPx - 4);
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.fillStyle = "rgba(255,255,255,0.94)";
+      ctx.fillRect(px + padP, py + padP, cellPx - padP * 2, cellPx - padP * 2);
+      ctx.strokeStyle = "rgba(0,0,0,0.40)";
       ctx.lineWidth = 2;
-      ctx.strokeRect(px + 3, py + 3, cellPx - 6, cellPx - 6);
+      ctx.strokeRect(px + padP + 1, py + padP + 1, cellPx - padP * 2 - 2, cellPx - padP * 2 - 2);
     }
 
+    // glow
+    ctx.globalAlpha = 0.14 + 0.18 * pPulse;
+    ctx.fillStyle = "rgba(106,176,255,0.9)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, cellPx * (0.62 + 0.18 * pPulse), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // shield count
     if (shields > 0) {
-      ctx.fillStyle = "rgba(105,168,255,0.95)";
+      ctx.fillStyle = "rgba(106,176,255,0.96)";
       ctx.font = `900 ${Math.max(11, Math.floor(cellPx * 0.38))}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(shields), px + cellPx - 10, py + 12);
     }
 
+    ctx.restore(); // player transform
+
+    // particles
+    ctx.globalCompositeOperation = "lighter";
+    drawParticles(dtMs);
+    ctx.globalCompositeOperation = "source-over";
+
     ctx.restore();
   }
 
-  // ───────────────────────── Resize ─────────────────────────
+  // ───────────────────────── Resize (NO distorsión) ─────────────────────────
   function resize() {
     if (!stage || !canvas || !ctx) return;
 
@@ -724,42 +950,85 @@
     stageW = Math.max(240, Math.floor(r.width));
     stageH = Math.max(240, Math.floor(r.height));
 
-    dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(stageW * dpr);
-    canvas.height = Math.floor(stageH * dpr);
+    // Reserva espacio si dpad visible (para que no moleste)
+    let reservedBottom = 0;
+    if (dpad && !dpad.hidden) reservedBottom = 190; // aprox altura dpad + margen
 
-    cellPx = Math.floor(Math.min(stageW / COLS, stageH / ROWS));
-    cellPx = clamp(cellPx, 14, 64);
+    const availW = stageW;
+    const availH = Math.max(240, stageH - reservedBottom);
+
+    // Fit canvas manteniendo aspect ratio COLS/ROWS (cuadrados perfectos)
+    let w = availW;
+    let h = Math.floor(w / CANVAS_AR);
+    if (h > availH) {
+      h = availH;
+      w = Math.floor(h * CANVAS_AR);
+    }
+
+    cssCanvasW = Math.max(240, w);
+    cssCanvasH = Math.max(240, h);
+
+    // 🔥 Esto evita que el CSS “estire” el canvas raro
+    canvas.style.width = `${cssCanvasW}px`;
+    canvas.style.height = `${cssCanvasH}px`;
+    canvas.style.aspectRatio = `${COLS} / ${ROWS}`;
+
+    dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+
+    canvas.width = Math.floor(cssCanvasW * dpr);
+    canvas.height = Math.floor(cssCanvasH * dpr);
+
+    // cellPx en CSS px (cuadrado)
+    cellPx = Math.floor(Math.min(cssCanvasW / COLS, cssCanvasH / ROWS));
+    cellPx = clampInt(cellPx, 14, 68);
 
     gridW = cellPx * COLS;
     gridH = cellPx * ROWS;
 
-    offX = Math.floor((stageW - gridW) / 2);
-    offY = Math.floor((stageH - gridH) / 2);
+    offX = Math.floor((cssCanvasW - gridW) / 2);
+    offY = Math.floor((cssCanvasH - gridH) / 2);
 
-    draw();
+    draw(16);
   }
 
   // ───────────────────────── Input ─────────────────────────
+  function isAnyBlockingOverlayOpen() {
+    // overlays que deben pausar/controlar
+    const open = (el) => el && el.hidden === false;
+    return (
+      open(overlayStart) ||
+      open(overlayOptions) ||
+      open(overlayUpgrades) ||
+      open(overlayPaused) ||
+      open(overlayGameOver) ||
+      open(overlayError)
+    );
+  }
+
   function canControl() {
-    return running && !paused && !gameOver && !inLevelUp;
+    return running && !paused && !gameOver && !inLevelUp && !isAnyBlockingOverlayOpen();
   }
 
   function move(dx, dy) {
     if (!canControl()) return;
-    targetCol = clamp(targetCol + dx, 0, COLS - 1);
-    targetRow = clamp(targetRow + dy, 0, zoneH - 1);
-    vibrate(10);
+    targetCol = clampInt(targetCol + dx, 0, COLS - 1);
+    targetRow = clampInt(targetRow + dy, 0, zoneH - 1);
+    vibrate(8);
+    playerPulse = 0.65;
   }
 
   function bindInputs() {
     window.addEventListener("keydown", (e) => {
       const k = e.key;
+
+      // atajos útiles
+      if (k === "Escape") { togglePause(); return; }
+      if (k === "r" || k === "R") { if (!isAnyBlockingOverlayOpen()) { resetRun(false); startRun(); } return; }
+
       if (k === "ArrowLeft" || k === "a" || k === "A") move(-1, 0);
       if (k === "ArrowRight" || k === "d" || k === "D") move(+1, 0);
       if (k === "ArrowUp" || k === "w" || k === "W") move(0, -1);
       if (k === "ArrowDown" || k === "s" || k === "S") move(0, +1);
-      if (k === "Escape") togglePause();
     });
 
     btnLeft?.addEventListener("click", () => move(-1, 0));
@@ -777,14 +1046,14 @@
       sx = e.clientX;
       sy = e.clientY;
       st = performance.now();
-      // NO capturamos si hay overlays (evita “me quedé pillado tocando”)
-      if (!overlayStart?.hidden || !overlayOptions?.hidden || !overlayUpgrades?.hidden || !overlayPaused?.hidden || !overlayGameOver?.hidden) return;
       canvas.setPointerCapture?.(e.pointerId);
     });
 
     const endSwipe = (e) => {
       if (!active) return;
       active = false;
+
+      if (!canControl()) return;
 
       const dx = e.clientX - sx;
       const dy = e.clientY - sy;
@@ -803,7 +1072,9 @@
 
   // ───────────────────────── UI ─────────────────────────
   function togglePause() {
-    if (!running || gameOver) return;
+    if (!running || gameOver || inLevelUp) return;
+    if (overlayOptions && !overlayOptions.hidden) return; // no “mezclar” overlays
+
     paused = !paused;
     if (paused) overlayShow(overlayPaused);
     else overlayHide(overlayPaused);
@@ -811,12 +1082,12 @@
 
   function showOptions() {
     overlayShow(overlayOptions);
-    if (running && !gameOver) paused = true;
+    pauseForOverlay(true);
   }
 
   function hideOptions() {
     overlayHide(overlayOptions);
-    if (running && !gameOver && !inLevelUp) paused = false;
+    if (!inLevelUp && !gameOver && running) pauseForOverlay(false);
   }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
@@ -850,6 +1121,15 @@
     colF = targetCol;
     rowF = targetRow;
 
+    runTime = 0;
+    scrollPx = 0;
+
+    particles.length = 0;
+    playerPulse = 0;
+    zonePulse = 0;
+    shakeT = 0;
+    shakePow = 0;
+
     makeGrid();
     rerollCombo();
 
@@ -862,7 +1142,7 @@
     else overlayHide(overlayStart);
 
     updatePills();
-    draw();
+    draw(16);
   }
 
   function startRun() {
@@ -871,6 +1151,7 @@
     overlayHide(overlayPaused);
     overlayHide(overlayOptions);
     overlayHide(overlayUpgrades);
+    overlayHide(overlayError);
 
     running = true;
     paused = false;
@@ -880,8 +1161,11 @@
     runTime = 0;
     scrollPx = 0;
 
+    // reinicia timers de combo al empezar para que no “se muera” en menú
+    comboTime = comboTimeMax;
+
     updatePills();
-    draw();
+    draw(16);
   }
 
   function gameOverNow(reason) {
@@ -890,10 +1174,13 @@
     gameOver = true;
     inLevelUp = false;
 
+    shake(260, 9);
+    vibrate(32);
+
     if (score > best) {
       best = score;
-      localStorage.setItem(BEST_KEY, String(best));
-      Auth?.setBestForActive?.(best);
+      try { localStorage.setItem(BEST_KEY, String(best)); } catch {}
+      try { Auth?.setBestForActive?.(best); } catch {}
     }
 
     try {
@@ -924,12 +1211,28 @@
   // ───────────────────────── Main loop ─────────────────────────
   let lastT = 0;
 
-  function update(dtMs) {
+  function tickFx(dtMs) {
+    // toast
     if (toastT > 0) {
       toastT -= dtMs;
       if (toastT <= 0) hideToast();
     }
 
+    // juicy decay
+    playerPulse = Math.max(0, playerPulse - dtMs / (220 / settings.fx));
+    zonePulse = Math.max(0, zonePulse - dtMs / (260 / settings.fx));
+
+    if (shakeT > 0) {
+      shakeT -= dtMs;
+      if (shakeT <= 0) { shakeT = 0; shakePow = 0; }
+    }
+  }
+
+  function update(dtMs) {
+    // update solo cuando está corriendo (no drenar combo en menús)
+    if (!running || paused || gameOver || inLevelUp) return;
+
+    // combo timer
     comboTime -= dtMs / 1000;
     if (comboTimerVal) comboTimerVal.textContent = `${Math.max(0, comboTime).toFixed(1)}s`;
     if (comboTime <= 0) {
@@ -937,17 +1240,22 @@
       comboTime = comboTimeMax;
     }
 
+    // smoothing player
     const k = 14;
     colF = lerp(colF, targetCol, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
     rowF = lerp(rowF, targetRow, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
 
+    // scroll
     runTime += dtMs / 1000;
     const sp = speedRowsPerSec();
     scrollPx += (sp * cellPx) * (dtMs / 1000);
 
-    while (scrollPx >= cellPx && running && !paused && !gameOver && !inLevelUp) {
+    // advances deterministas
+    let safe = 0;
+    while (scrollPx >= cellPx && safe++ < 12) {
       scrollPx -= cellPx;
       stepAdvance();
+      if (paused || gameOver || inLevelUp || !running) break;
     }
 
     updatePills();
@@ -955,13 +1263,15 @@
 
   function frame(t) {
     try {
-      const dt = Math.min(40, t - lastT);
+      const dt = clamp(t - lastT, 0, 50); // cap fuerte
       lastT = t;
 
-      if (running && !paused && !gameOver && !inLevelUp) update(dt);
-      else update(dt * 0.25);
+      tickFx(dt);
 
-      draw();
+      update(dt);
+
+      // draw SIEMPRE (para que overlays se sientan vivos)
+      draw(dt);
     } catch (e) {
       showFatal(e);
     }
@@ -996,10 +1306,13 @@
   }
 
   async function applySWUpdateNow() {
-    if (swReg?.waiting) {
+    // si no hay SW, recarga normal
+    if (!swReg) { location.reload(); return; }
+
+    if (swReg.waiting) {
       try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {}
     } else {
-      try { await swReg?.update?.(); } catch {}
+      try { await swReg.update?.(); } catch {}
     }
 
     const k = "gridrunner_sw_reload_once";
@@ -1058,7 +1371,6 @@
         const swUrl = new URL(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`, location.href);
         swReg = await navigator.serviceWorker.register(swUrl);
 
-        // fuerza check de update ahora (no esperar horas)
         try { await swReg.update(); } catch {}
 
         if (swReg.waiting) markUpdateAvailable("Actualizar");
@@ -1159,7 +1471,10 @@
     if (!stage) throw new Error("Falta #stage");
     if (!canvas) throw new Error("Falta #gameCanvas");
 
-    ctx = canvas.getContext("2d", { alpha: false });
+    // desynchronized ayuda en algunos navegadores
+    ctx = canvas.getContext("2d", { alpha: false, desynchronized: true }) ||
+          canvas.getContext("2d", { alpha: false }) ||
+          canvas.getContext("2d");
     if (!ctx) throw new Error("No se pudo crear contexto 2D");
 
     brandSub = $("brandSub");
@@ -1245,7 +1560,6 @@
 
       syncFromAuth();
 
-      // estado base antes de dibujar
       recomputeZone();
       makeGrid();
       rerollCombo();
@@ -1263,7 +1577,7 @@
       btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
       btnOptions?.addEventListener("click", showOptions);
 
-      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); paused = false; });
+      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); });
       btnQuitToStart?.addEventListener("click", () => { overlayHide(overlayPaused); resetRun(true); });
 
       btnRetry?.addEventListener("click", () => { resetRun(false); startRun(); });
@@ -1344,7 +1658,7 @@
 
       document.addEventListener("visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {
-          paused = true;
+          pauseForOverlay(true);
           overlayShow(overlayPaused);
         }
       });

@@ -16,6 +16,42 @@
     window.APP_VERSION = "0.1.2";
   </script>
 
+  <!-- ✅ Repair Mode (NO depende de app.js) -->
+  <script>
+    (function () {
+      const qs = new URLSearchParams(location.search);
+
+      // Prueba sin SW: ?nosw=1
+      window.__GRIDRUNNER_NOSW = qs.has("nosw");
+
+      async function nukeSWAndCaches() {
+        try {
+          if ("serviceWorker" in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+          }
+        } catch (e) {}
+
+        try {
+          if (window.caches && caches.keys) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+        } catch (e) {}
+      }
+
+      // ✅ si abres con ?repair=1 → limpia todo y recarga limpio
+      if (qs.has("repair")) {
+        nukeSWAndCaches().finally(() => {
+          qs.delete("repair");
+          qs.set("clean", String(Date.now()));
+          const next = location.pathname + (qs.toString() ? "?" + qs.toString() : "");
+          location.replace(next);
+        });
+      }
+    })();
+  </script>
+
   <!-- Material Symbols -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -125,203 +161,214 @@
 
     <!-- Stage -->
     <main class="stage" id="stage" role="main">
-      <canvas id="gameCanvas" width="640" height="960" aria-label="Juego"></canvas>
+      <div class="canvasWrap" id="canvasWrap">
+        <canvas id="gameCanvas" width="640" height="960" aria-label="Juego"></canvas>
 
-      <!-- In-stage HUD -->
-      <div class="hud" aria-hidden="true">
-        <div class="combo">
-          <div class="comboTop">
-            <div class="comboSeq" id="comboSeq"></div>
-            <div class="comboTimer" id="comboTimer">
-              <span class="ms" aria-hidden="true">timer</span>
-              <span id="comboTimerVal">0.0</span>
+        <!-- In-stage HUD -->
+        <div class="hud" aria-hidden="true">
+          <div class="combo">
+            <div class="comboTop">
+              <div class="comboSeq" id="comboSeq"></div>
+              <div class="comboTimer" id="comboTimer">
+                <span class="ms" aria-hidden="true">timer</span>
+                <span id="comboTimerVal">0.0</span>
+              </div>
             </div>
+            <div class="comboHint" id="comboHint">Completa la secuencia para subir multiplicador.</div>
           </div>
-          <div class="comboHint" id="comboHint">Completa la secuencia para subir multiplicador.</div>
+
+          <div class="toast" id="toast" hidden aria-live="polite"></div>
         </div>
 
-        <div class="toast" id="toast" hidden aria-live="polite"></div>
-      </div>
-
-      <!-- Dpad -->
-      <div class="dpad" id="dpad" hidden>
-        <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
-          <span class="ms" aria-hidden="true">keyboard_arrow_up</span>
-        </button>
-        <div class="dpadRow">
-          <button class="dpadBtn" id="btnLeft" type="button" aria-label="Izquierda">
-            <span class="ms" aria-hidden="true">keyboard_arrow_left</span>
+        <!-- Dpad -->
+        <div class="dpad" id="dpad" hidden>
+          <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
+            <span class="ms" aria-hidden="true">keyboard_arrow_up</span>
           </button>
-          <button class="dpadBtn" id="btnDown" type="button" aria-label="Abajo">
-            <span class="ms" aria-hidden="true">keyboard_arrow_down</span>
-          </button>
-          <button class="dpadBtn" id="btnRight" type="button" aria-label="Derecha">
-            <span class="ms" aria-hidden="true">keyboard_arrow_right</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- LOADING -->
-      <section class="overlay" id="overlayLoading">
-        <div class="panel">
-          <div class="panelHead">
-            <div class="h2">Cargando</div>
-            <div class="muted tiny" id="loadingSub">Iniciando…</div>
-          </div>
-          <div class="loadingBar">
-            <div class="loadingBarFill"></div>
-          </div>
-
-          <div class="tiny muted" id="loadingHint">
-            Si tarda, se desbloquea solo (failsafe).
-          </div>
-
-          <!-- ✅ Failsafe sin app.js: aparecen si se atasca -->
-          <div class="panelActions" style="justify-content:flex-start; margin-top:10px;">
-            <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
-            <button class="btn danger" id="btnEmergencyRepair" type="button" hidden>Reparar PWA</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- START -->
-      <section class="overlay" id="overlayStart" hidden>
-        <div class="panel">
-          <div class="panelHead">
-            <div class="h2" id="startTitle">Nuevo run</div>
-            <div class="muted tiny" id="startSub">Perfiles + upgrades + combos</div>
-          </div>
-
-          <div class="form">
-            <label class="label" for="profileSelect">Perfil</label>
-            <div class="row">
-              <select id="profileSelect" class="select"></select>
-              <button class="btn" id="btnNewProfile" type="button">Nuevo</button>
-            </div>
-
-            <div id="newProfileWrap" hidden>
-              <label class="label" for="startName">Nombre</label>
-              <input id="startName" class="input" type="text" inputmode="text" maxlength="16" placeholder="Tu nombre (mín. 2)" />
-              <div class="tiny muted" id="profileHint">Tus datos se guardan en este dispositivo.</div>
-            </div>
-
-            <div class="row">
-              <button class="btn primary" id="btnStart" type="button">Empezar</button>
-            </div>
-
-            <div class="tiny muted">
-              Controles: WASD / Flechas / Swipe (móvil). Completa combos para subir multiplicador.
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- PAUSED -->
-      <section class="overlay" id="overlayPaused" hidden>
-        <div class="panel">
-          <div class="panelHead">
-            <div class="h2">Pausa</div>
-          </div>
-          <div class="panelActions">
-            <button class="btn primary" id="btnResume" type="button">Continuar</button>
-            <button class="btn" id="btnQuitToStart" type="button">Salir al menú</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- UPGRADES -->
-      <section class="overlay" id="overlayUpgrades" hidden>
-        <div class="panel wide">
-          <div class="panelHead">
-            <div class="h2" id="upTitle">Subida de nivel</div>
-            <div class="muted tiny" id="upSub">Elige una mejora</div>
-          </div>
-
-          <div class="upgradeChoices" id="upgradeChoices"></div>
-
-          <div class="panelActions">
-            <button class="btn" id="btnReroll" type="button">Reroll</button>
-            <button class="btn" id="btnSkipUpgrade" type="button">Saltar</button>
-          </div>
-
-          <div class="tiny muted" id="upgradeHint">Tip: la cruceta se activa en Opciones (móvil).</div>
-        </div>
-      </section>
-
-      <!-- GAME OVER -->
-      <section class="overlay" id="overlayGameOver" hidden>
-        <div class="panel">
-          <div class="panelHead">
-            <div class="h2">Game Over</div>
-          </div>
-
-          <div class="stats" id="goStats"></div>
-
-          <div class="panelActions">
-            <button class="btn" id="btnBackToStart" type="button">Menú</button>
-            <button class="btn primary" id="btnRetry" type="button">Reintentar</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- OPTIONS -->
-      <section class="overlay" id="overlayOptions" hidden>
-        <div class="panel wide">
-          <div class="panelHead">
-            <div class="h2">Opciones</div>
-            <button class="iconBtn small" id="btnCloseOptions" type="button" title="Cerrar">
-              <span class="ms" aria-hidden="true">close</span>
-              <span class="lbl">Cerrar</span>
+          <div class="dpadRow">
+            <button class="dpadBtn" id="btnLeft" type="button" aria-label="Izquierda">
+              <span class="ms" aria-hidden="true">keyboard_arrow_left</span>
+            </button>
+            <button class="dpadBtn" id="btnDown" type="button" aria-label="Abajo">
+              <span class="ms" aria-hidden="true">keyboard_arrow_down</span>
+            </button>
+            <button class="dpadBtn" id="btnRight" type="button" aria-label="Derecha">
+              <span class="ms" aria-hidden="true">keyboard_arrow_right</span>
             </button>
           </div>
+        </div>
 
-          <div class="options">
-            <label class="optRow">
-              <span>Usar sprites (si existen)</span>
-              <input id="optSprites" type="checkbox" />
-            </label>
-
-            <label class="optRow">
-              <span>Vibración (móvil)</span>
-              <input id="optVibration" type="checkbox" />
-            </label>
-
-            <label class="optRow">
-              <span>Mostrar cruceta (móvil)</span>
-              <input id="optDpad" type="checkbox" />
-            </label>
-
-            <div class="optRow sliderRow">
-              <span>FX</span>
-              <input id="optFx" type="range" min="0.4" max="1.25" step="0.01" />
-              <span class="mono" id="optFxValue">1.00</span>
+        <!-- LOADING -->
+        <section class="overlay" id="overlayLoading">
+          <div class="panel">
+            <div class="panelHead">
+              <div class="h2">Cargando</div>
+              <div class="muted tiny" id="loadingSub">Iniciando…</div>
+            </div>
+            <div class="loadingBar">
+              <div class="loadingBarFill"></div>
             </div>
 
-            <div class="optRow danger">
-              <button class="btn danger" id="btnClearLocal" type="button">Borrar datos locales</button>
-              <span class="tiny muted">Perfiles, settings y runs</span>
+            <div class="tiny muted" id="loadingHint">
+              Si tarda, se desbloquea solo (failsafe).
+            </div>
+
+            <div class="panelActions" style="justify-content:flex-start; margin-top:10px;">
+              <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
+              <button class="btn danger" id="btnEmergencyRepair" type="button" hidden>Reparar PWA</button>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- ERROR -->
-      <section class="overlay" id="overlayError" hidden>
-        <div class="panel">
-          <div class="panelHead">
-            <div class="h2">Error</div>
+        <!-- START -->
+        <section class="overlay" id="overlayStart" hidden>
+          <div class="panel">
+            <div class="panelHead">
+              <div>
+                <div class="h2" id="startTitle">Nuevo run</div>
+                <div class="muted tiny" id="startSub">Perfiles + upgrades + combos</div>
+              </div>
+            </div>
+
+            <div class="form">
+              <label class="label" for="profileSelect">Perfil</label>
+              <div class="row">
+                <select id="profileSelect" class="select"></select>
+                <button class="btn" id="btnNewProfile" type="button">Nuevo</button>
+              </div>
+
+              <div id="newProfileWrap" hidden>
+                <label class="label" for="startName">Nombre</label>
+                <input id="startName" class="input" type="text" inputmode="text" maxlength="16" placeholder="Tu nombre (mín. 2)" />
+                <div class="tiny muted" id="profileHint">Tus datos se guardan en este dispositivo.</div>
+              </div>
+
+              <div class="row">
+                <button class="btn primary" id="btnStart" type="button">Empezar</button>
+              </div>
+
+              <div class="tiny muted">
+                Controles: WASD / Flechas / Swipe (móvil). Completa combos para subir multiplicador.
+              </div>
+            </div>
           </div>
-          <div class="errMsg" id="errMsg">—</div>
-          <div class="panelActions">
-            <button class="btn" id="btnErrClose" type="button">Cerrar</button>
-            <button class="btn primary" id="btnErrReload" type="button">Recargar</button>
+        </section>
+
+        <!-- PAUSED -->
+        <section class="overlay" id="overlayPaused" hidden>
+          <div class="panel">
+            <div class="panelHead">
+              <div class="h2">Pausa</div>
+            </div>
+            <div class="panelActions">
+              <button class="btn primary" id="btnResume" type="button">Continuar</button>
+              <button class="btn" id="btnQuitToStart" type="button">Salir al menú</button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <!-- UPGRADES -->
+        <section class="overlay" id="overlayUpgrades" hidden>
+          <div class="panel wide">
+            <div class="panelHead">
+              <div>
+                <div class="h2" id="upTitle">Subida de nivel</div>
+                <div class="muted tiny" id="upSub">Elige una mejora</div>
+              </div>
+            </div>
+
+            <div class="upgradeChoices" id="upgradeChoices"></div>
+
+            <div class="panelActions">
+              <button class="btn" id="btnReroll" type="button">Reroll</button>
+              <button class="btn" id="btnSkipUpgrade" type="button">Saltar</button>
+            </div>
+
+            <div class="tiny muted" id="upgradeHint">El juego se pausa aquí: el grid no avanza mientras eliges.</div>
+          </div>
+        </section>
+
+        <!-- GAME OVER -->
+        <section class="overlay" id="overlayGameOver" hidden>
+          <div class="panel">
+            <div class="panelHead">
+              <div class="h2">Game Over</div>
+            </div>
+
+            <div class="stats" id="goStats"></div>
+
+            <div class="panelActions">
+              <button class="btn" id="btnBackToStart" type="button">Menú</button>
+              <button class="btn primary" id="btnRetry" type="button">Reintentar</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- OPTIONS -->
+        <section class="overlay" id="overlayOptions" hidden>
+          <div class="panel wide">
+            <div class="panelHead">
+              <div class="h2">Opciones</div>
+              <button class="iconBtn small" id="btnCloseOptions" type="button" title="Cerrar">
+                <span class="ms" aria-hidden="true">close</span>
+                <span class="lbl">Cerrar</span>
+              </button>
+            </div>
+
+            <div class="options">
+              <label class="optRow">
+                <span>Usar sprites (si existen)</span>
+                <input id="optSprites" type="checkbox" />
+              </label>
+
+              <label class="optRow">
+                <span>Vibración (móvil)</span>
+                <input id="optVibration" type="checkbox" />
+              </label>
+
+              <label class="optRow">
+                <span>Mostrar cruceta (móvil)</span>
+                <input id="optDpad" type="checkbox" />
+              </label>
+
+              <div class="optRow sliderRow">
+                <span>FX</span>
+                <input id="optFx" type="range" min="0.4" max="1.25" step="0.01" />
+                <span class="mono" id="optFxValue">1.00</span>
+              </div>
+
+              <div class="optRow danger">
+                <button class="btn danger" id="btnRepairPWA" type="button">Reparar PWA</button>
+                <span class="tiny muted">Desinstala SW + borra caches</span>
+              </div>
+
+              <div class="optRow danger">
+                <button class="btn danger" id="btnClearLocal" type="button">Borrar datos locales</button>
+                <span class="tiny muted">Perfiles, settings y runs</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ERROR -->
+        <section class="overlay" id="overlayError" hidden>
+          <div class="panel">
+            <div class="panelHead">
+              <div class="h2">Error</div>
+            </div>
+            <div class="errMsg" id="errMsg">—</div>
+            <div class="panelActions">
+              <button class="btn" id="btnErrClose" type="button">Cerrar</button>
+              <button class="btn primary" id="btnErrReload" type="button">Recargar</button>
+            </div>
+          </div>
+        </section>
+
+      </div>
     </main>
   </div>
 
-  <!-- ✅ Failsafe inline: SI app.js no arranca, NO te quedas bloqueado -->
+  <!-- ✅ Failsafe inline: si app.js NO arranca, no te quedas bloqueado -->
   <script>
     (function(){
       const $ = (id)=>document.getElementById(id);
@@ -332,7 +379,7 @@
       const btnRepair = $("btnEmergencyRepair");
 
       function showFailsafe(){
-        if (loadingSub) loadingSub.textContent = "Se atascó el arranque. Puedes recargar o reparar la PWA.";
+        if (loadingSub) loadingSub.textContent = "Arranque atascado. Puedes recargar o reparar la PWA.";
         if (btnReload) btnReload.hidden = false;
         if (btnRepair) btnRepair.hidden = false;
       }
@@ -352,11 +399,9 @@
         location.reload();
       });
 
-      // si en 4.5s no ha marcado “booted”, mostramos salida
       setTimeout(()=>{
         if (!window.__GRIDRUNNER_BOOTED){
           showFailsafe();
-          // opcional: desbloquea UI visual aunque falle
           try{
             if (overlayLoading) overlayLoading.hidden = false;
             if (overlayStart) overlayStart.hidden = false;
@@ -366,7 +411,6 @@
     })();
   </script>
 
-  <!-- ✅ CLAVE: defer + orden -->
   <script src="./auth.js?v=0.1.2" defer></script>
   <script src="./app.js?v=0.1.2" defer></script>
 </body>
