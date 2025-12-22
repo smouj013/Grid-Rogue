@@ -1,9 +1,8 @@
-/* sw.js — Grid Runner PWA (v0.0.2)
+/* sw.js — Grid Runner PWA (v0.0.3)
    - App shell precache + navegación offline (index)
    - Stale-while-revalidate para assets
-   - Precache robusto (no rompe si falla 1 asset)
 */
-const VERSION = "v0.0.2";
+const VERSION = "v0.0.3";
 const CACHE_PREFIX = "grid-runner-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
@@ -20,15 +19,12 @@ const CORE_ASSETS = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CORE_CACHE);
-
-    // addAll puede fallar por 1 archivo; aquí lo hacemos robusto
     await Promise.allSettled(CORE_ASSETS.map(async (u) => {
       try {
         const res = await fetch(u, { cache: "no-cache" });
         if (res.ok) await cache.put(u, res);
       } catch {}
     }));
-
     self.skipWaiting();
   })());
 });
@@ -51,7 +47,6 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // navegación
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       const cache = await caches.open(CORE_CACHE);
@@ -67,7 +62,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // assets
   event.respondWith((async () => {
     const cache = await caches.open(RUNTIME_CACHE);
     const cached = await cache.match(req);

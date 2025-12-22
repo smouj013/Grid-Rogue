@@ -1,8 +1,8 @@
 {
   "name": "Grid Runner",
   "short_name": "GridRunner",
-  "description": "Juego PWA en cuadrícula: esquiva bloques, consigue bonus y sube combos.",
-  "start_url": "./?v=0.0.2",
+  "description": "Runner PWA en cuadrícula: esquiva bloques KO, combos, rachas y ranking online.",
+  "start_url": "./?v=0.0.3",
   "scope": "./",
   "display": "standalone",
   "background_color": "#07070b",

@@ -7,7 +7,6 @@
   <meta name="theme-color" content="#e60012" />
   <meta name="format-detection" content="telephone=no" />
 
-  <!-- iOS PWA-ish -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Grid Runner" />
@@ -30,41 +29,63 @@
   <header class="topbar">
     <div class="brand">
       <span class="dot"></span>
-      <span class="title">Grid Runner</span>
-      <span class="pill" id="pillOffline" hidden>Offline</span>
-      <span class="pill subtle" id="pillVersion">v0.0.2</span>
+      <div class="brandText">
+        <div class="title">Grid Runner</div>
+        <div class="subline">
+          <span class="pill" id="pillOffline" hidden>Offline</span>
+          <span class="pill subtle" id="pillVersion">v0.0.3</span>
+          <span class="pill subtle" id="pillSpeed">Vel 1.0×</span>
+        </div>
+      </div>
     </div>
 
     <div class="hud">
       <div class="hudItem">
         <div class="hudLabel">Puntos</div>
         <div class="hudValue" id="hudScore">0</div>
+        <div class="hudSub" id="hudScoreDelta">+0</div>
       </div>
+
       <div class="hudItem">
         <div class="hudLabel">Racha</div>
         <div class="hudValue" id="hudStreak">0</div>
+        <div class="hudSub" id="hudComboText">Combo 0/8</div>
       </div>
+
       <div class="hudItem">
         <div class="hudLabel">x</div>
         <div class="hudValue" id="hudMult">1</div>
+        <div class="meter" aria-hidden="true">
+          <div class="meterFill" id="hudComboFill"></div>
+        </div>
       </div>
+
       <div class="hudItem">
         <div class="hudLabel">Mejor</div>
         <div class="hudValue" id="hudBest">0</div>
+        <div class="hudSub">Local</div>
       </div>
     </div>
 
     <div class="actions">
-      <button class="btn ghost" id="btnPause" aria-label="Pausar o reanudar">⏸</button>
-      <button class="btn ghost" id="btnRestart" aria-label="Reiniciar">↻</button>
-      <button class="btn primary" id="btnInstall" hidden>Instalar</button>
+      <button class="iconBtn ghost" id="btnLeaderboard" aria-label="Ranking mundial">
+        <span class="ico">🏆</span><span class="lbl">Ranking</span>
+      </button>
+      <button class="iconBtn ghost" id="btnPause" aria-label="Pausar o reanudar">
+        <span class="ico">⏸</span><span class="lbl">Pausa</span>
+      </button>
+      <button class="iconBtn ghost" id="btnRestart" aria-label="Reiniciar">
+        <span class="ico">↻</span><span class="lbl">Reset</span>
+      </button>
+      <button class="iconBtn primary" id="btnInstall" hidden>
+        <span class="ico">⬇️</span><span class="lbl">Instalar</span>
+      </button>
     </div>
   </header>
 
   <main class="gameWrap">
     <canvas id="game" aria-label="Juego Grid Runner" role="img"></canvas>
 
-    <!-- Zonas táctiles (tap izquierda/derecha) -->
     <div class="touchZones" aria-hidden="true">
       <div class="zone left" id="zoneLeft"></div>
       <div class="zone right" id="zoneRight"></div>
@@ -72,19 +93,29 @@
 
     <div class="toast" id="toast" hidden></div>
 
+    <!-- Leyenda SIEMPRE visible -->
+    <div class="legendBar" id="legendBar" aria-label="Leyenda de casillas">
+      <div class="legendItem"><span class="chip cCoin"></span><span class="txt">+10</span></div>
+      <div class="legendItem"><span class="chip cGem"></span><span class="txt">+30</span></div>
+      <div class="legendItem"><span class="chip cBonus"></span><span class="txt">+60</span></div>
+      <div class="legendItem"><span class="chip cTrap"></span><span class="txt">-25</span></div>
+      <div class="legendItem"><span class="chip cBlock"></span><span class="txt">KO</span></div>
+      <div class="legendHint">Tap izq/der o swipe</div>
+    </div>
+
     <!-- START -->
     <div class="overlay" id="overlayStart">
       <div class="panel">
         <h1>Grid Runner</h1>
         <p>
           Avanza hacia arriba. Evita los bloques. Pisa celdas para ganar puntos.
-          Encadena buenas para subir multiplicador.
+          Encadena buenas para subir multiplicador y activar combos.
         </p>
 
         <ul class="legend">
-          <li><span class="chip cCoin"></span> Moneda (+10)</li>
-          <li><span class="chip cGem"></span> Gema (+30)</li>
-          <li><span class="chip cBonus"></span> Bonus (+60 + combo)</li>
+          <li><span class="chip cCoin"></span> Moneda (+10 × mult)</li>
+          <li><span class="chip cGem"></span> Gema (+30 × mult)</li>
+          <li><span class="chip cBonus"></span> Bonus (+60 × mult)</li>
           <li><span class="chip cTrap"></span> Trampa (-25 y resetea racha)</li>
           <li><span class="chip cBlock"></span> Bloque (Game Over)</li>
         </ul>
@@ -94,7 +125,7 @@
         </div>
 
         <div class="row hint">
-          <span>Control: swipe o tap izquierda/derecha (PC: ← → / A D)</span>
+          <span>PC: ← → / A D · Pausa: Espacio</span>
         </div>
       </div>
     </div>
@@ -118,6 +149,32 @@
         <div class="row">
           <button class="btn primary big" id="btnResume">Continuar</button>
         </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div class="overlay" id="overlayLeaderboard" hidden>
+      <div class="panel leaderboard">
+        <div class="leaderTop">
+          <h1>Ranking mundial</h1>
+          <button class="iconBtn ghost" id="btnCloseLeaderboard" aria-label="Cerrar ranking">
+            <span class="ico">✕</span><span class="lbl">Cerrar</span>
+          </button>
+        </div>
+
+        <p class="muted" id="lbStatus">Cargando…</p>
+
+        <div class="lbRow">
+          <label class="lbLabel" for="playerName">Nombre</label>
+          <input id="playerName" class="lbInput" maxlength="16" placeholder="Tu nombre (para enviar score)" />
+          <button class="btn primary" id="btnSubmitScore">Enviar score</button>
+        </div>
+
+        <div class="lbList" id="lbList"></div>
+
+        <p class="muted small" id="lbHint">
+          El ranking solo funciona con internet y un endpoint configurado.
+        </p>
       </div>
     </div>
   </main>
