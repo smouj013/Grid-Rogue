@@ -91,12 +91,12 @@ a{ color:inherit; }
 
 /* ───────────────── App layout ───────────────── */
 #app{
+  height:100vh;
   height:100svh;
-  min-height:100dvh;
+  height:100dvh;
   display:flex;
   flex-direction:column;
 }
-
 /* ───────────────── Topbar (más pro/menos intrusivo) ───────────────── */
 .topbar{
   position:relative;
@@ -149,6 +149,7 @@ a{ color:inherit; }
 
 .pill{
   display:inline-flex;
+  flex: 0 0 auto;
   align-items:center;
   gap:8px;
   padding:7px 10px;
@@ -219,6 +220,31 @@ a{ color:inherit; }
   #pillBest{ display:none; }
 }
 
+
+
+/* responsive: evita aplastamiento en móvil estrecho (topbar a 2 filas + scroll suave) */
+@media (max-width:560px){
+  .topbar{
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "brand actions"
+      "stats stats";
+    row-gap: 8px;
+  }
+  .miniStats{
+    justify-content:flex-start;
+    overflow-x:auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+    mask-image: linear-gradient(90deg, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  }
+  .miniStats::-webkit-scrollbar{ display:none; }
+}
+@media (max-width:380px){
+  /* deja el pill de jugador en modo icono para ahorrar ancho */
+  #pillPlayer .pv{ display:none; }
+  .pill.mini{ padding:6px 8px; }
+}
 /* ───────────────── Stage ───────────────── */
 .stage{
   position:relative;
@@ -255,7 +281,7 @@ a{ color:inherit; }
   overflow:hidden;
 
   display:flex;
-  justify-content: space-between;
+  justify-content: center;
   gap:10px;
 }
 
@@ -390,6 +416,33 @@ a{ color:inherit; }
   .comboHint{ display:none; }
 }
 
+
+
+/* pantallas bajas (landscape / móviles pequeños): prioriza el gameplay */
+@media (max-height:720px){
+  :root{ --hudH: 104px; }
+  .canvasWrap{
+    gap: 6px;
+    padding:
+      6px
+      6px
+      calc(6px + env(safe-area-inset-bottom))
+      6px;
+  }
+  .combo{ padding: 8px 10px; }
+  .comboHint{ display:none; }
+}
+@media (max-height:600px){
+  :root{ --hudH: 84px; }
+  #levelProg{ display:none; }
+  .comboTop{ gap: 8px; }
+  .toast{
+    top: 6px;
+    right: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+}
 /* ───────────────── GameArea ───────────────── */
 .gameArea{
   position:relative;
@@ -407,6 +460,8 @@ a{ color:inherit; }
 
 #gameCanvas{
   display:block;
+  max-width: 100%;
+  max-height: 100%;
   border-radius: var(--r);
   border:1px solid rgba(255,255,255,0.12);
   background:
@@ -660,13 +715,35 @@ a{ color:inherit; }
   align-items:center;
   justify-content: space-between;
   gap:12px;
+  flex-wrap: wrap;
+  align-content: center;
   padding:10px 12px;
   border-radius:14px;
   background: rgba(0,0,0,0.22);
   border:1px solid rgba(255,255,255,0.10);
 }
-.sliderRow{ align-items:center; justify-content:flex-start; }
-.sliderRow input[type="range"]{ flex:1; }
+/* sliders: grid para que no se pisen en pantallas pequeñas */
+.optRow.sliderRow{
+  display:grid;
+  grid-template-columns: minmax(90px, 140px) 1fr auto;
+  align-items:center;
+  justify-content: initial;
+}
+.optRow.sliderRow input[type="range"]{ width:100%; }
+
+@media (max-width:420px){
+  .optRow.sliderRow{
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "lab val"
+      "range range";
+    row-gap: 8px;
+  }
+  .optRow.sliderRow > span:first-child{ grid-area: lab; }
+  .optRow.sliderRow > span.mono{ grid-area: val; justify-self: end; }
+  .optRow.sliderRow input[type="range"]{ grid-area: range; }
+}
+
 .optRow input[type="checkbox"]{ width:22px; height:22px; }
 .optRow.danger{
   border-color: rgba(255,59,89,0.22);
