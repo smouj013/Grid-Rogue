@@ -1,4 +1,4 @@
-<!-- index.html — Grid Rogue v0.1.7 -->
+<!-- index.html — Grid Rogue v0.1.8 -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -15,7 +15,7 @@
 
   <!-- ✅ Version global -->
   <script>
-    window.APP_VERSION = "0.1.7";
+    window.APP_VERSION = "0.1.8";
   </script>
 
   <!-- ✅ Repair Mode (NO depende de app.js) -->
@@ -61,12 +61,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.1.7" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.1.8" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.1.7" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.8" />
 </head>
 
 <body>
@@ -77,7 +77,7 @@
   </noscript>
 
   <div id="app">
-    <!-- Topbar (más limpio) -->
+    <!-- Topbar -->
     <header class="topbar" role="banner">
       <div class="brand">
         <div class="brandDot" aria-hidden="true"></div>
@@ -87,7 +87,7 @@
         </div>
       </div>
 
-      <!-- Mini-stats esenciales -->
+      <!-- Mini-stats -->
       <div class="miniStats" aria-label="Estado">
         <span class="pill mini" id="pillScore" title="Score">
           <span class="ms" aria-hidden="true">flag</span>
@@ -114,7 +114,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.7</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.8</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -126,12 +126,12 @@
           <span class="pv">Update</span>
         </span>
 
-        <!-- (opcionales: siguen existiendo para no romper app.js, pero ocultos) -->
+        <!-- opcionales -->
         <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
         <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
       </div>
 
-      <!-- Acciones mínimas -->
+      <!-- Acciones -->
       <div class="actions" aria-label="Acciones">
         <button class="iconBtn small" id="btnPause" type="button" title="Pausa">
           <span class="ms" aria-hidden="true">pause</span>
@@ -147,7 +147,7 @@
     <main class="stage" id="stage" role="main">
       <div class="canvasWrap" id="canvasWrap">
 
-        <!-- HUD fuera del grid y con altura fija -->
+        <!-- HUD -->
         <div class="hud" id="hud" aria-hidden="true">
           <div class="combo">
             <div class="comboTop">
@@ -179,7 +179,6 @@
 
         <!-- Área de juego -->
         <div class="gameArea" id="gameArea">
-          <!-- ✅ Wrapper rail: ayuda a “rellenar” mejor en PC sin tocar app.js -->
           <div class="railFrame" id="railFrame" aria-hidden="true">
             <canvas id="gameCanvas"
                     width="640"
@@ -364,15 +363,7 @@
               </button>
             </div>
 
-            <div class="options" id="optionsBody"
-                 style="
-                   max-height:min(72vh, calc(100vh - 170px));
-                   overflow:auto;
-                   -webkit-overflow-scrolling:touch;
-                   overscroll-behavior:contain;
-                   padding:10px 8px 12px 8px;
-                 ">
-
+            <div class="options" id="optionsBody">
               <!-- AUDIO -->
               <div class="optGroupTitle">
                 <span class="ms" aria-hidden="true">volume_up</span>
@@ -512,8 +503,8 @@
       });
 
       setTimeout(()=>{
-        // Compat interna: app.js marca esto cuando termina boot.
-        if (!window.__GRIDRUNNER_BOOTED){
+        const ok = (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true);
+        if (!ok){
           showFailsafe();
           try{
             if (overlayLoading) overlayLoading.hidden = false;
@@ -524,23 +515,12 @@
     })();
   </script>
 
-  <!-- ORDEN DE CARGA (v0.1.7) -->
-  <!-- 1) utils: helpers globales -->
-  <script src="./utils.js?v=0.1.7" defer></script>
-
-  <!-- 2) localization: textos/idioma (si lo usas) -->
-  <script src="./localization.js?v=0.1.7" defer></script>
-
-  <!-- 3) auth: perfiles (puede usar Utils si existe) -->
-  <script src="./auth.js?v=0.1.7" defer></script>
-
-  <!-- 4) audio core (AudioSys) -->
-  <script src="./audio_sys.js?v=0.1.7" defer></script>
-
-  <!-- 5) binds UI de audio -->
-  <script src="./audio.js?v=0.1.7" defer></script>
-
-  <!-- 6) app principal -->
-  <script src="./app.js?v=0.1.7" defer></script>
+  <!-- ORDEN DE CARGA (v0.1.8) -->
+  <script src="./utils.js?v=0.1.8" defer></script>
+  <script src="./localization.js?v=0.1.8" defer></script>
+  <script src="./auth.js?v=0.1.8" defer></script>
+  <script src="./audio_sys.js?v=0.1.8" defer></script>
+  <script src="./audio.js?v=0.1.8" defer></script>
+  <script src="./app.js?v=0.1.8" defer></script>
 </body>
 </html>

@@ -90,19 +90,50 @@ Incluye modo “Repair” si alguna vez una caché antigua se queda pegada tras 
 
 ## 🔖 Versión
 
-## ✅ Update v0.1.7 (nuevo)
+```
+✅ Update v0.1.8 (nuevo)
 
-- **Arquitectura modular (split de app):** el juego queda dividido en **app.js (core)** + **utils.js** + **localization.js** + **audio_sys.js** para tener código más limpio, mantenible y sin “mezclas” raras al actualizar.
-- **Inicialización más robusta:** orden de carga revisado para que **utils/localization/audio_sys** estén listos antes del core; arranque más estable sin depender de timing del DOM ni de que existan todos los elementos.
-- **Audio separado y sólido:**
-  - **audio_sys.js** centraliza el motor de audio (unlock por gesto, música/SFX, fallbacks).
-  - **audio.js** gestiona **UI + settings** (Music/SFX, volúmenes, Mute, Test) sin romper si falta DOM o si AudioSys aún no está listo.
-  - Settings compatibles con clave nueva **gridrogue_settings_v1** + legacy **gridrunner_settings_v1**.
-  - Si hay **perfil activo**, guarda/lee audio también en **prefs del perfil** (sin depender de Auth si no existe).
-- **Service Worker v0.1.7 mejorado:**
-  - Prefijo de caché **gridrogue-** (evita mezclar con builds viejos).
-  - Core con normalización de `?v=` (cache estable) + runtime **stale-while-revalidate**.
-  - Limpieza agresiva de caches antiguas (**gridrunner-** y previas).
-  - Navegación PWA/SPA: **network-first** con fallback seguro a `index.html`.
-- **Repair Mode + failsafes:** modo `?repair` / `?nosw` y botón de “Reparar PWA” para desregistrar SW y borrar caches si alguna actualización se queda pegada.
-- **Branding correcto:** todo el proyecto pasa a llamarse **Grid Rogue** (sin referencias a Grid Runner) manteniendo compatibilidad con datos antiguos cuando conviene.
+Mejoras de UI en “Mejoras / Upgrades”:
+
+Panel de upgrades más legible y compacto, con mejor jerarquía visual (título → rareza → nombre → descripción).
+
+Tags (Defensa / QoL / Puntos / Movilidad / Combo) más claros y consistentes.
+
+Mejor soporte para textos largos (wrap correcto + cortes elegantes).
+
+Escudo con feedback visual (aura protectora):
+
+Si el jugador tiene Escudo activo, el tile del player muestra un aura/brillo sutil para que se entienda al instante que está protegido.
+
+Al consumir el escudo, el aura desaparece con un feedback visual limpio.
+
+Mobile: zona de juego más grande y sin “scroll raro”:
+
+Ajustes de layout para que el juego se vea más grande en móvil y no “quede enano”.
+
+Correcciones para evitar scroll accidental y problemas con viewport-fit/safe-area.
+
+El canvas/grid se adapta mejor al alto real de pantalla.
+
+Mobile: grid más compacto (mejor proporción):
+
+En móvil el tablero pasa a un formato más “usable” (ej. de 8×24 → 8×16) para evitar que sea demasiado alto y se vea pequeño.
+
+En escritorio se mantiene el grid original (sin afectar la experiencia).
+
+Controles táctiles solo en móvil (y no tapan el juego):
+
+El D-Pad/controles aparecen solo en móviles.
+
+Flechas colocadas en los bordes (izquierda/derecha/arriba/abajo) para no cubrir el grid.
+
+Mejor respuesta táctil (hitbox más cómoda sin invadir el área de juego).
+
+Localización ampliada:
+
+Añadidos idiomas extra (incluyendo chino, japonés, coreano, ruso, árabe y más), manteniendo fallback seguro a en/es si falta alguna clave.
+
+Manifest / versión:
+
+start_url actualizado a ?v=0.1.8 y versionado alineado con el resto del proyecto para evitar cachés “mezcladas”.
+```

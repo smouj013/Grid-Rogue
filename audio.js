@@ -1,21 +1,27 @@
-/* audio.js — Grid Rogue v0.1.7
-   ✅ Binds de opciones de audio (Music/SFX + volúmenes + Mute All + Test)
-   ✅ Compatible con app.js v0.1.7 y AudioSys (audio_sys.js)
+/* audio.js — Grid Rogue v0.1.8
+   ✅ UI/Bindings de opciones de audio (Music/SFX + volúmenes + Mute All + Test)
+   ✅ Compatible con app.js v0.1.8 y AudioSys (audio_sys.js)
    ✅ Compatible con auth.js (prefs por perfil) SIN romper si no existe Auth
-   ✅ Si existe utils.js (window.Utils), lo aprovecha, si no -> fallback interno
-   ✅ No rompe si faltan elementos DOM o si AudioSys aún no está listo
-   ✅ No toca playbackRate; solo aplica settings y arranca con gesto
-   ✅ v0.1.7:
-      - Soporta clave nueva gridrogue_settings_v1 + legacy gridrunner_settings_v1
-      - Guarda audio también en prefs del perfil activo (si Auth está disponible)
-      - Watcher ligero: si cambias de perfil, re-sincroniza audio/UI automáticamente
+   ✅ Best-effort: si faltan elementos DOM / AudioSys aún no listo / localStorage falla -> NO explota
+   ✅ Guarda en:
+      - gridrogue_settings_v1 (nuevo)
+      - gridrunner_settings_v1 (legacy compat)
+      - prefs del perfil activo (si Auth disponible)
+   ✅ Watcher ligero: cambio de perfil => re-sync audio/UI
+   ✅ v0.1.8:
+      - Integración “SIN música procedural”: si el motor interno cae a procedural, NO iniciamos música.
+      - Preferencia por music_loop.mp3; si no se puede reproducir => silencio (no fallback procedural)
+      - Mejor unlock iOS/Android: no insiste si no hay AudioSys, reintenta con gesto
+      - sfx(): usa nombres/alias robustos (ui/click/upgrade/etc.)
 */
 
 (() => {
   "use strict";
 
+  const VERSION = "0.1.8";
+
   // ───────────────────────── Utils (best-effort) ─────────────────────────
-  const U = window.Utils || null;
+  const U = window.GRUtils || window.Utils || null;
 
   const clamp = U?.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
   const $ = U?.$ || ((id) => document.getElementById(id));
@@ -30,11 +36,7 @@
   const safeParse =
     U?.safeParse ||
     ((raw, fallback) => {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return fallback;
-      }
+      try { return JSON.parse(raw); } catch { return fallback; }
     });
 
   const canLS =
@@ -58,8 +60,8 @@
   }
 
   // ───────────────────────── Keys ─────────────────────────
-  const SETTINGS_KEY = "gridrogue_settings_v1";     // nuevo
-  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1"; // legacy (compat)
+  const SETTINGS_KEY = "gridrogue_settings_v1";          // nuevo
+  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1";  // legacy (compat)
 
   // ───────────────────────── Defaults ─────────────────────────
   const defaultSettings = () => ({
@@ -86,12 +88,12 @@
   }
 
   function getAudioSys() {
-    // audio_sys.js debería exponer window.AudioSys
+    // audio_sys.js expone window.AudioSys
     return window.AudioSys || null;
   }
 
   function getAuth() {
-    // auth.js debería exponer window.Auth
+    // auth.js expone window.Auth
     return window.Auth || null;
   }
 
@@ -188,20 +190,38 @@
     saveAudioToProfilePrefs(settings); // best-effort
   }
 
+  // ───────────────────────── Helpers: “No procedural music” ─────────────────────────
+  // Si AudioSys es el motor interno que podría caer a procedural, nosotros NO lo forzamos:
+  // - Solo intentamos startMusic si hay engine externo o si AudioSys declara que usa HTML (musicMode === "html")
+  // - Si no podemos saberlo, intentamos una vez y si falla => silencio.
+  let musicAttempted = false;
+
+  function canTryMusicStart(A) {
+    try {
+      const st = A?.getState?.() || {};
+      // si es el wrapper externo, normalmente no tendrá musicMode o no será "procedural"
+      if (!("musicMode" in st)) return true;
+      // motor interno: permitimos solo si está en html o none (none se convertirá a html si puede)
+      if (st.musicMode === "html" || st.musicMode === "none") return true;
+      // procedural => NO
+      if (st.musicMode === "procedural") return false;
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
   // ───────────────────────── Apply ─────────────────────────
   function applyAudioSettingsNow() {
     const A = getAudioSys();
     if (!A) return;
 
     try {
-      if (typeof A.applySettings === "function") {
-        A.applySettings(settings);
-      } else {
-        A.setMute?.(!!settings.muteAll);
-        A.setSfxOn?.(settings.sfxOn !== false);
-        A.setMusicOn?.(!!settings.musicOn);
-        A.setVolumes?.({ music: settings.musicVol, sfx: settings.sfxVol });
-      }
+      // API estándar (AudioSys)
+      A.setMute?.(!!settings.muteAll);
+      A.setSfxOn?.(settings.sfxOn !== false);
+      A.setMusicOn?.(!!settings.musicOn);
+      A.setVolumes?.({ music: settings.musicVol, sfx: settings.sfxVol });
 
       if (settings.muteAll || !settings.musicOn || settings.musicVol <= 0.001) {
         A.stopMusic?.();
@@ -214,14 +234,29 @@
     try { await A?.unlock?.(); } catch {}
   }
 
-  function maybeStartMusic() {
+  async function maybeStartMusic() {
     const A = getAudioSys();
     if (!A) return;
+
+    if (!settings.musicOn || settings.muteAll || settings.musicVol <= 0.001) return;
+
+    // v0.1.8: NO insistimos con música si vemos que caería a procedural.
+    if (!canTryMusicStart(A)) return;
+
+    // no spamear startMusic cada vez
+    if (musicAttempted) return;
+    musicAttempted = true;
+
     try {
-      if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) {
-        A.startMusic?.();
+      await A.startMusic?.();
+      // Re-check: si tras startMusic el motor cae a procedural, paramos y silencio.
+      if (!canTryMusicStart(A)) {
+        try { A.stopMusic?.(); } catch {}
       }
-    } catch {}
+    } catch {
+      // silencio
+      try { A.stopMusic?.(); } catch {}
+    }
   }
 
   // ✅ Auto-unlock en primer gesto (pero NO “consume” el gesto si AudioSys aún no existe)
@@ -237,7 +272,7 @@
 
       await unlockGesture();
       applyAudioSettingsNow();
-      maybeStartMusic();
+      await maybeStartMusic();
 
       window.removeEventListener("pointerdown", handler, true);
       window.removeEventListener("keydown", handler, true);
@@ -276,6 +311,13 @@
     if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
   }
 
+  async function playUiClick() {
+    const A = getAudioSys();
+    try {
+      if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui");
+    } catch {}
+  }
+
   // ───────────────────────── Binds ─────────────────────────
   function bind() {
     // Music ON/OFF
@@ -283,16 +325,20 @@
       await unlockGesture();
 
       settings.musicOn = !!optMusic.checked;
+      musicAttempted = false; // permitir reintento si se vuelve a activar
       saveSettingsEverywhere();
       applyAudioSettingsNow();
 
       const A = getAudioSys();
       try {
-        if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) A?.startMusic?.();
-        else A?.stopMusic?.();
+        if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) {
+          await maybeStartMusic();
+        } else {
+          A?.stopMusic?.();
+        }
       } catch {}
 
-      try { if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui", { cooldownMs: 60 }); } catch {}
+      await playUiClick();
     });
 
     // SFX ON/OFF
@@ -303,8 +349,7 @@
       saveSettingsEverywhere();
       applyAudioSettingsNow();
 
-      const A = getAudioSys();
-      try { if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui", { cooldownMs: 60 }); } catch {}
+      await playUiClick();
     });
 
     // Music volume
@@ -316,7 +361,12 @@
 
       saveSettingsEverywhere();
       applyAudioSettingsNow();
-      maybeStartMusic();
+
+      // si sube desde 0, intentamos una vez (sin procedural)
+      if (settings.musicVol > 0.001) {
+        musicAttempted = false;
+        await maybeStartMusic();
+      }
     });
 
     // SFX volume
@@ -329,8 +379,7 @@
       saveSettingsEverywhere();
       applyAudioSettingsNow();
 
-      const A = getAudioSys();
-      try { if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui", { cooldownMs: 80, gain: 0.75 }); } catch {}
+      await playUiClick();
     });
 
     // Mute All
@@ -352,15 +401,15 @@
       syncUIFromSettings();
       applyAudioSettingsNow();
 
+      // Música: solo si se puede sin procedural
+      musicAttempted = false;
+      await maybeStartMusic();
+
       const A = getAudioSys();
       try {
-        if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) A?.startMusic?.();
-      } catch {}
-
-      try {
         if (settings.sfxOn && !settings.muteAll) {
-          await A?.sfx?.("coin", { cooldownMs: 120 });
-          await A?.sfx?.("ui", { cooldownMs: 120 });
+          await A?.sfx?.("coin");
+          await A?.sfx?.("ui");
         }
       } catch {}
     });
@@ -380,19 +429,26 @@
       const fromProfile = loadAudioFromProfilePrefs();
       settings = fromProfile ? fromProfile : loadFromLocalStorage();
 
+      // reset para permitir startMusic si corresponde
+      musicAttempted = false;
+
       syncUIFromSettings();
       applyAudioSettingsNow();
+      // no autostart aquí; esperamos gesto o botón (menos intrusivo en mobile)
     }, 1500);
   }
 
   // ───────────────────────── Public API ─────────────────────────
   window.AudioUI = {
+    VERSION,
     getSettings: () => ({ ...settings }),
     setSettings: (partial) => {
       settings = sanitizeSettings({ ...settings, ...(partial || {}) });
+      musicAttempted = false;
       saveSettingsEverywhere();
       syncUIFromSettings();
       applyAudioSettingsNow();
+      // NO forzamos startMusic aquí; dependerá de gesto / UI
       return { ...settings };
     },
     sync: () => {
@@ -402,7 +458,14 @@
     unlock: async () => {
       await unlockGesture();
       applyAudioSettingsNow();
-      maybeStartMusic();
+      musicAttempted = false;
+      await maybeStartMusic();
+    },
+    sfx: async (name) => {
+      await unlockGesture();
+      const A = getAudioSys();
+      try { if (settings.sfxOn && !settings.muteAll) return await A?.sfx?.(name); } catch {}
+      return false;
     },
   };
 

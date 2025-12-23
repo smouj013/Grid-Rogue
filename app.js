@@ -1,16 +1,32 @@
-/* app.js — Grid Rogue v0.1.7 STABLE+FULLSCREEN + AUDIO + I18N
-   Refactor v0.1.7: separa utils/i18n/audio en archivos externos sin romper.
+/* app.js — Grid Rogue v0.1.8 STABLE+FULLSCREEN + AUDIO + I18N
+   v0.1.8:
+   - Keys renombradas a gridrogue_* con migración desde gridrunner_* (sin perder datos)
+   - Panel de Upgrades: (CSS pasa a styles.css, NO inyección en JS)
+   - Aura de escudo alrededor del player (visual protector cuando shields > 0)
+   - Mobile: layout compacto 8x16 (en vez de 8x24) para que el juego se vea más grande
+   - Anti-scroll/overscroll: bloqueo de scroll en juego, manteniendo scroll dentro de Opciones
+   - Dpad SOLO móvil + colocación en bordes (CSS en styles.css)
+   - Compat: mantiene window.__GRIDRUNNER_BOOTED (failsafe antiguo) y añade __GRIDROGUE_BOOTED
 */
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.7");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.8");
+
+  // Compat flags (failsafe/index antiguo)
   window.__GRIDRUNNER_BOOTED = false;
+  window.__GRIDROGUE_BOOTED = false;
 
   // ───────────────────────── Imports (globals) ─────────────────────────
   const U = window.GRUtils || {};
+
   const clamp = U.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
-  const clampInt = U.clampInt || ((v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : a));
+  const clampInt = U.clampInt || ((v, a, b) => {
+    v = Number(v);
+    if (!Number.isFinite(v)) v = a;
+    v = v | 0;
+    return Math.max(a, Math.min(b, v));
+  });
   const lerp = U.lerp || ((a, b, t) => a + (b - a) * t);
   const randi = U.randi || ((a, b) => Math.floor(a + Math.random() * (b - a + 1)));
   const chance = U.chance || ((p) => Math.random() < p);
@@ -19,13 +35,22 @@
 
   const overlayShow = U.overlayShow || ((el) => { if (!el) return; el.hidden = false; });
   const overlayHide = U.overlayHide || ((el) => { if (!el) return; el.hidden = true; });
-  const overlayFadeOut = U.overlayFadeOut || ((el) => Promise.resolve(overlayHide(el)));
-  const setPill = U.setPill || ((el, v) => { if (el) el.textContent = String(v); });
+  const overlayFadeOut = U.overlayFadeOut || ((el, _ms = 0) => Promise.resolve(overlayHide(el)));
+
+  // ⛑️ Importante: NO romper pills con iconos. Si existe .pv, solo actualiza eso.
+  const setPill = U.setPill || ((el, v) => {
+    if (!el) return;
+    const pv = el.querySelector?.(".pv");
+    if (pv) pv.textContent = String(v);
+    else el.textContent = String(v);
+  });
+
   const setState = U.setState || ((s) => { try { document.body.dataset.state = s; } catch {} });
 
   const I18n = window.I18n || {
-    setLang() {}, getLang() { return "es"; },
-    t(k) { return k; },
+    setLang() {},
+    getLang() { return "es"; },
+    t(k, a) { return (a != null) ? `${k} ${a}` : k; },
     languageOptions() { return []; },
     applyDataAttrs() {},
   };
@@ -43,11 +68,57 @@
     getState: () => ({}),
   };
 
-  // ───────────────────────── Storage keys ─────────────────────────
-  const BEST_KEY = "gridrunner_best_v1";
-  const NAME_KEY = "gridrunner_name_v1";
-  const SETTINGS_KEY = "gridrunner_settings_v1";
-  const RUNS_KEY = "gridrunner_runs_v1";
+  // ───────────────────────── Storage keys (Grid Rogue + legacy Grid Runner) ─────────────────────────
+  const BEST_KEY       = "gridrogue_best_v1";
+  const NAME_KEY       = "gridrogue_name_v1";
+  const SETTINGS_KEY   = "gridrogue_settings_v1";
+  const RUNS_KEY       = "gridrogue_runs_v1";
+
+  const BEST_KEY_OLD     = "gridrunner_best_v1";
+  const NAME_KEY_OLD     = "gridrunner_name_v1";
+  const SETTINGS_KEY_OLD = "gridrunner_settings_v1";
+  const RUNS_KEY_OLD     = "gridrunner_runs_v1";
+
+  const SW_RELOAD_KEY = "gridrogue_sw_reload_once";
+  const SW_RELOAD_KEY_OLD = "gridrunner_sw_reload_once";
+
+  function readLS(k) { try { return localStorage.getItem(k); } catch { return null; } }
+  function writeLS(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }
+
+  function migrateKeyIfNeeded(newKey, oldKey) {
+    const n = readLS(newKey);
+    if (n != null) return n;
+    const o = readLS(oldKey);
+    if (o != null) {
+      writeLS(newKey, o);
+      return o;
+    }
+    return null;
+  }
+
+  // ───────────────────────── Device / Layout ─────────────────────────
+  function isCoarsePointer() {
+    try { return matchMedia("(pointer:coarse)").matches; } catch { return false; }
+  }
+  function isPortrait() {
+    try { return matchMedia("(orientation: portrait)").matches; } catch { return (innerHeight >= innerWidth); }
+  }
+  function isMobileUA() {
+    const ua = navigator.userAgent || "";
+    return /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+  }
+
+  // ✅ MÁS FIABLE: si es móvil/coarse y está en portrait => layout móvil (8x16)
+  function isMobileLayout() {
+    const coarse = isCoarsePointer();
+    const portrait = isPortrait();
+    return (coarse || isMobileUA()) && portrait;
+  }
+
+  function desiredRows() {
+    // ✅ Mobile compacto para que el juego se vea más grande
+    return isMobileLayout() ? 16 : 24;
+  }
 
   // ───────────────────────── Settings ─────────────────────────
   const defaultSettings = () => ({
@@ -55,31 +126,47 @@
     vibration: true,
     showDpad: true,
     fx: 1.0,
+
     musicOn: true,
+    sfxOn: true,
     musicVol: 0.60,
     sfxVol: 0.90,
     muteAll: false,
+
     lang: "auto",
   });
 
   let settings = (() => {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    const raw = migrateKeyIfNeeded(SETTINGS_KEY, SETTINGS_KEY_OLD);
     const s = raw ? safeParse(raw, null) : null;
     const base = defaultSettings();
     if (!s || typeof s !== "object") return base;
+
     return {
       ...base,
       ...s,
       fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
+
       musicOn: (s.musicOn ?? base.musicOn) !== false,
+      sfxOn: (s.sfxOn ?? base.sfxOn) !== false,
+
       musicVol: clamp(Number(s.musicVol ?? base.musicVol) || base.musicVol, 0, 1),
       sfxVol: clamp(Number(s.sfxVol ?? base.sfxVol) || base.sfxVol, 0, 1),
       muteAll: !!(s.muteAll ?? base.muteAll),
+
       lang: (typeof s.lang === "string" ? s.lang : base.lang),
     };
   })();
 
-  function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
+  function saveSettings() {
+    try {
+      const json = JSON.stringify(settings);
+      // Guardar en nuevo + legacy (por si queda un app.js viejo cacheado)
+      writeLS(SETTINGS_KEY, json);
+      writeLS(SETTINGS_KEY_OLD, json);
+    } catch {}
+  }
+
   function vibrate(ms) {
     if (!settings.vibration) return;
     if (!("vibrate" in navigator)) return;
@@ -89,133 +176,72 @@
   // aplica idioma ya
   I18n.setLang(settings.lang);
 
-  // ───────────────────────── CSS patch v0.1.7 (sin tocar styles.css) ─────────────────────────
-  function injectPatchStyles017() {
-    try {
-      if (document.getElementById("grPatch017")) return;
-      const st = document.createElement("style");
-      st.id = "grPatch017";
-      st.textContent = `
-        #stage{
-          background:
-            radial-gradient(1200px 800px at 30% 10%, rgba(106,176,255,.10), rgba(0,0,0,0) 60%),
-            radial-gradient(900px 700px at 70% 90%, rgba(255,211,90,.08), rgba(0,0,0,0) 55%),
-            linear-gradient(180deg, #050512, #030309);
-        }
-        [id^="overlay"]{
-          padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-        }
-        #overlayOptions{ overflow: auto !important; -webkit-overflow-scrolling: touch; }
-        #overlayOptions .panel,
-        #overlayOptions .card,
-        #overlayOptions #optionsBody{
-          max-height: calc(100dvh - 140px);
-          overflow: auto;
-          overscroll-behavior: contain;
-          -webkit-overflow-scrolling: touch;
-          border-radius: 14px;
-          border: 1px solid rgba(255,255,255,.10);
-          background: rgba(10,10,18,.86);
-          backdrop-filter: blur(10px);
-          box-shadow: 0 12px 40px rgba(0,0,0,.35);
-        }
-        #upgradeChoices{
-          display: grid !important;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 12px;
-          align-items: stretch;
-          justify-items: stretch;
-          width: 100%;
-          max-width: 980px;
-          margin: 12px auto 0;
-        }
-        @media (max-width: 680px){
-          #upgradeChoices{ grid-template-columns: 1fr !important; max-width: 520px; }
-        }
-        .upCard{
-          position: relative;
-          border-radius: 14px;
-          border: 1px solid rgba(255,255,255,.10);
-          background:
-            radial-gradient(600px 320px at 20% 10%, rgba(106,176,255,.10), rgba(0,0,0,0) 60%),
-            linear-gradient(180deg, rgba(18,18,30,.92), rgba(10,10,18,.92));
-          box-shadow: 0 10px 26px rgba(0,0,0,.35);
-          transform: translateZ(0);
-          will-change: transform, box-shadow;
-          transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-        }
-        .upCard:hover{
-          transform: translateY(-2px);
-          box-shadow: 0 14px 34px rgba(0,0,0,.42);
-          border-color: rgba(255,255,255,.18);
-        }
-        .upCard:active{ transform: translateY(0); }
-        .upCard .upTitle{
-          font-weight: 900;
-          letter-spacing: .2px;
-          text-shadow: 0 2px 10px rgba(0,0,0,.35);
-        }
-        .upCard[data-rarity="common"] .upTitle{ color: rgba(255,255,255,.92); }
-        .upCard[data-rarity="rare"] .upTitle{ color: rgba(106,176,255,.96); }
-        .upCard[data-rarity="epic"] .upTitle{ color: rgba(214,133,255,.96); }
-        .upCard[data-rarity="legendary"] .upTitle{ color: rgba(255,211,90,.98); }
-        .upCard[data-rarity="rare"]{ border-color: rgba(106,176,255,.22); }
-        .upCard[data-rarity="epic"]{ border-color: rgba(214,133,255,.22); }
-        .upCard[data-rarity="legendary"]{
-          border-color: rgba(255,211,90,.26);
-          box-shadow: 0 14px 40px rgba(255,211,90,.08), 0 12px 30px rgba(0,0,0,.40);
-        }
-        .upRarityBadge{
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,.14);
-          background: rgba(0,0,0,.18);
-          font-weight: 800;
-          font-size: 12px;
-        }
-        .upCard[data-rarity="common"] .upRarityBadge{ color: rgba(255,255,255,.85); }
-        .upCard[data-rarity="rare"] .upRarityBadge{ color: rgba(106,176,255,.95); border-color: rgba(106,176,255,.24); }
-        .upCard[data-rarity="epic"] .upRarityBadge{ color: rgba(214,133,255,.95); border-color: rgba(214,133,255,.24); }
-        .upCard[data-rarity="legendary"] .upRarityBadge{ color: rgba(255,211,90,.98); border-color: rgba(255,211,90,.28); }
-        #overlayUpgrades{
-          background:
-            radial-gradient(1100px 800px at 50% 20%, rgba(106,176,255,.10), rgba(0,0,0,0) 62%),
-            radial-gradient(900px 700px at 70% 80%, rgba(255,211,90,.08), rgba(0,0,0,0) 60%),
-            rgba(0,0,0,.55);
-          backdrop-filter: blur(10px);
-        }
-        #overlayUpgrades .panel,
-        #overlayUpgrades .card{
-          border: 1px solid rgba(255,255,255,.12);
-          background: rgba(10,10,18,.88);
-          box-shadow: 0 16px 46px rgba(0,0,0,.45);
-        }
-        #toast.show{
-          box-shadow: 0 12px 30px rgba(0,0,0,.35);
-          border: 1px solid rgba(255,255,255,.14);
-        }
-      `;
-      document.head.appendChild(st);
-    } catch {}
-  }
-
   function applyAudioSettingsNow() {
     try {
       AudioSys.setMute(!!settings.muteAll);
       AudioSys.setMusicOn(!!settings.musicOn);
+      AudioSys.setSfxOn(!!settings.sfxOn);
       AudioSys.setVolumes({ music: settings.musicVol, sfx: settings.sfxVol });
     } catch {}
+  }
+
+  // ───────────────────────── Viewport helpers (anti-scroll) ─────────────────────────
+  function updateVhUnit() {
+    try {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty("--vh", `${vh}px`);
+    } catch {}
+  }
+
+  // ✅ Scroll lock más duro (evita “scroll fantasma” en iOS/Android)
+  function lockPageScroll() {
+    try {
+      document.documentElement.style.overscrollBehavior = "none";
+      document.documentElement.style.overflow = "hidden";
+
+      const y = window.scrollY || 0;
+      document.body.style.overflow = "hidden";
+      document.body.style.position = "fixed";
+      document.body.style.top = `-${y}px`;
+      document.body.style.left = "0";
+      document.body.style.right = "0";
+      document.body.style.width = "100%";
+      // NO "none": así permitimos gestos dentro de overlays con scroll propio
+      document.body.style.touchAction = "manipulation";
+    } catch {}
+  }
+
+  function installAntiScrollGuards() {
+    const allowScrollInOptions = (target) => {
+      if (!overlayOptions || overlayOptions.hidden) return false;
+      // permitir scroll SOLO dentro del cuerpo de opciones (o elementos internos)
+      const body =
+        overlayOptions.querySelector?.("#optionsBody") ||
+        overlayOptions.querySelector?.(".options") ||
+        overlayOptions;
+      return !!(body && target && (target === body || target.closest?.("#optionsBody") || target.closest?.(".options")));
+    };
+
+    const preventIfNeeded = (e) => {
+      if (!e.cancelable) return;
+      if (allowScrollInOptions(e.target)) return;
+      // bloquea wheel/touchmove en el resto para evitar “scroll fantasma”
+      e.preventDefault();
+    };
+
+    // Wheel (PC trackpad) + Touch (mobile)
+    document.addEventListener("wheel", preventIfNeeded, { passive: false });
+    document.addEventListener("touchmove", preventIfNeeded, { passive: false });
   }
 
   // ───────────────────────── Auth ─────────────────────────
   const Auth = window.Auth || null;
 
   let activeProfileId = null;
-  let playerName = (localStorage.getItem(NAME_KEY) || "").trim().slice(0, 16);
-  let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
+
+  // migra nombre/best
+  let playerName = (migrateKeyIfNeeded(NAME_KEY, NAME_KEY_OLD) || "").trim().slice(0, 16);
+  let best = parseInt(migrateKeyIfNeeded(BEST_KEY, BEST_KEY_OLD) || "0", 10) || 0;
 
   if (playerName.length < 2) playerName = I18n.t("defaultPlayer");
 
@@ -224,11 +250,57 @@
       if (!Auth) return;
       const p = Auth.getActiveProfile?.();
       if (!p) return;
+
       activeProfileId = p.id;
       playerName = (p.name || I18n.t("defaultPlayer")).trim().slice(0, 16) || I18n.t("defaultPlayer");
       best = (Auth.getBestForActive?.() ?? best) | 0;
-      localStorage.setItem(NAME_KEY, playerName);
-      localStorage.setItem(BEST_KEY, String(best));
+
+      // Persist también en storage local (nuevo + legacy)
+      writeLS(NAME_KEY, playerName);
+      writeLS(NAME_KEY_OLD, playerName);
+      writeLS(BEST_KEY, String(best));
+      writeLS(BEST_KEY_OLD, String(best));
+
+      // Prefs por perfil (si existen) -> aplicarlas al settings local (sin romper)
+      const prefs = Auth.getPrefsForActive?.();
+      if (prefs && typeof prefs === "object") {
+        // Sólo lo que nuestro settings entiende
+        if ("useSprites" in prefs) settings.useSprites = !!prefs.useSprites;
+        if ("vibration" in prefs) settings.vibration = !!prefs.vibration;
+        if ("showDpad" in prefs) settings.showDpad = !!prefs.showDpad;
+        if ("fx" in prefs) settings.fx = clamp(Number(prefs.fx ?? settings.fx) || settings.fx, 0.4, 1.25);
+
+        if ("musicOn" in prefs) settings.musicOn = !!prefs.musicOn;
+        if ("sfxOn" in prefs) settings.sfxOn = !!prefs.sfxOn;
+        if ("musicVol" in prefs) settings.musicVol = clamp(Number(prefs.musicVol ?? settings.musicVol) || settings.musicVol, 0, 1);
+        if ("sfxVol" in prefs) settings.sfxVol = clamp(Number(prefs.sfxVol ?? settings.sfxVol) || settings.sfxVol, 0, 1);
+        if ("muteAll" in prefs) settings.muteAll = !!prefs.muteAll;
+
+        if ("lang" in prefs && typeof prefs.lang === "string") settings.lang = prefs.lang;
+
+        saveSettings();
+      }
+    } catch {}
+  }
+
+  function pushPrefsToAuth() {
+    try {
+      if (!Auth) return;
+      // Guardamos settings como prefs del perfil activo (si hay perfil activo)
+      Auth.setPrefsForActive?.({
+        useSprites: !!settings.useSprites,
+        vibration: !!settings.vibration,
+        showDpad: !!settings.showDpad,
+        fx: settings.fx,
+
+        musicOn: !!settings.musicOn,
+        sfxOn: !!settings.sfxOn,
+        musicVol: settings.musicVol,
+        sfxVol: settings.sfxVol,
+        muteAll: !!settings.muteAll,
+
+        lang: String(settings.lang || "auto"),
+      });
     } catch {}
   }
 
@@ -251,7 +323,7 @@
       ["bonus", "tile_bonus.svg"],
       ["trap", "tile_trap.svg"],
       ["block", "tile_block.svg"],
-      ["player", "tile_player.svg"], // si no existe, fallback a cuadrado (no rompe)
+      ["player", "tile_player.svg"], // si no existe, fallback a cuadrado
     ];
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
     try {
@@ -268,10 +340,9 @@
     }
   }
 
-  // ───────────────────────── Game constants ─────────────────────────
+  // ───────────────────────── Game constants (dynamic rows) ─────────────────────────
   const COLS = 8;
-  const ROWS = 24;
-  const CANVAS_AR = COLS / ROWS;
+  let ROWS = desiredRows();
 
   const CellType = Object.freeze({ Empty: 0, Coin: 1, Gem: 2, Bonus: 3, Trap: 4, Block: 5 });
 
@@ -283,6 +354,28 @@
     [CellType.Trap]: "#ff6b3d",
     [CellType.Block]:"#7f8aa8",
   };
+
+  function canvasAR() { return COLS / ROWS; }
+
+  function applyRowsIfNeeded({ forceReset = false } = {}) {
+    const want = desiredRows();
+    if (want === ROWS) return false;
+    ROWS = want;
+
+    // Si cambia layout (portrait/size), reconstruimos de forma segura
+    if (forceReset) {
+      resetRun(true);
+    } else {
+      // Si estás jugando, mejor no “romper” arrays a mitad -> manda a menú
+      if (running && !gameOver) resetRun(true);
+      else {
+        recomputeZone();
+        makeGrid();
+        rerollCombo();
+      }
+    }
+    return true;
+  }
 
   // ───────────────────────── Runtime state ─────────────────────────
   let running = false, paused = false, gameOver = false, inLevelUp = false;
@@ -353,7 +446,7 @@
   const particles = [];
   const floatTexts = [];
 
-  // Background stars (v0.1.7)
+  // Background stars
   const bgStars = [];
   function initBgStars() {
     bgStars.length = 0;
@@ -406,7 +499,7 @@
   let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal, btnRepairPWA;
 
   // AUDIO opts
-  let optMusicOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
+  let optMusicOn, optSfxOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
 
   // I18N opts
   let optLang = null;
@@ -497,6 +590,7 @@
 
       const row = document.createElement("div");
       row.id = "optLangRow";
+      row.className = "optRow";
       row.style.display = "flex";
       row.style.alignItems = "center";
       row.style.justifyContent = "space-between";
@@ -540,6 +634,7 @@
     if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
 
     if (optMusicOn) optMusicOn.checked = !!settings.musicOn;
+    if (optSfxOn) optSfxOn.checked = !!settings.sfxOn;
     if (optMusicVol) optMusicVol.value = String(settings.musicVol);
     if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
     if (optSfxVol) optSfxVol.value = String(settings.sfxVol);
@@ -551,8 +646,9 @@
       optLang.value = String(settings.lang || "auto");
     }
 
-    const isCoarse = matchMedia("(pointer:coarse)").matches;
-    if (dpad) dpad.hidden = !(isCoarse && settings.showDpad);
+    // ✅ Dpad sólo en móvil/coarse
+    const coarse = isCoarsePointer() || isMobileUA();
+    if (dpad) dpad.hidden = !(coarse && settings.showDpad);
 
     I18n.applyDataAttrs(document);
     applyAudioSettingsNow();
@@ -587,7 +683,7 @@
     }
 
     const blocks = out.reduce((a, v) => a + (v === CellType.Block ? 1 : 0), 0);
-    if (blocks >= 5) {
+    if (blocks >= Math.max(4, Math.floor(COLS * 0.6))) {
       for (let c = 0; c < COLS; c++) {
         if (out[c] === CellType.Block && chance(0.55)) out[c] = CellType.Empty;
       }
@@ -695,7 +791,16 @@
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = (0.35 + Math.random() * 1.20) * (26 + 34 * settings.fx) * intensity;
-      particles.push({ kind: "dot", x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 260 + Math.random() * 220, max: 460, rad: (1.2 + Math.random() * 2.8) * settings.fx, color });
+      particles.push({
+        kind: "dot",
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 260 + Math.random() * 220,
+        max: 460,
+        rad: (1.2 + Math.random() * 2.8) * settings.fx,
+        color
+      });
     }
     if (particles.length > 900) particles.splice(0, particles.length - 900);
   }
@@ -706,13 +811,16 @@
       const a = Math.random() * Math.PI * 2;
       const sp = (0.55 + Math.random() * 1.25) * (34 + 44 * settings.fx) * intensity;
       particles.push({
-        kind: "spark", x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-        life: 220 + Math.random() * 180, max: 420,
+        kind: "spark", x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 220 + Math.random() * 180,
+        max: 420,
         w: Math.max(1.4, (1.6 + Math.random() * 1.4) * settings.fx),
         h: Math.max(4.0, (6.0 + Math.random() * 7.0) * settings.fx),
         rot: a + (Math.random() * 0.6 - 0.3),
         vr: (Math.random() * 5.0 - 2.5),
-        color,
+        color
       });
     }
     if (particles.length > 900) particles.splice(0, particles.length - 900);
@@ -1161,6 +1269,11 @@
       const card = document.createElement("div");
       card.className = "upCard";
       card.dataset.rarity = rarity;
+      card.setAttribute("role", "button");
+      card.tabIndex = 0;
+
+      const nextLv = (pickedCount.get(u.id) || 0) + 1;
+      const maxLv = u.max ?? 999;
 
       card.innerHTML = `
         <div class="upTitle">${name}</div>
@@ -1168,11 +1281,11 @@
         <div class="upMeta">
           <span class="upRarityBadge">${rarityText}</span>
           <span class="badge">${tag}</span>
-          <span class="badge">Lv ${(pickedCount.get(u.id) || 0) + 1}/${u.max}</span>
+          <span class="badge">Lv ${nextLv}/${maxLv}</span>
         </div>
       `;
 
-      card.addEventListener("click", () => {
+      const pickThis = () => {
         markPick(u);
         u.apply();
 
@@ -1189,6 +1302,11 @@
         );
         AudioSys.sfx("pick");
         closeUpgrade();
+      };
+
+      card.addEventListener("click", () => pickThis());
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickThis(); }
       });
 
       upgradeChoices?.appendChild(card);
@@ -1306,6 +1424,38 @@
     ctx.beginPath();
     ctx.arc(cx, cy, rad, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // ✅ Aura de escudo (v0.1.8)
+  function drawShieldAura(cx, cy) {
+    if (shields <= 0) return;
+
+    const phase = (running ? runTime : (performance.now() / 1000));
+    const pulse = 0.5 + 0.5 * Math.sin(phase * 3.6);
+    const rad = cellPx * (0.78 + 0.06 * pulse);
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
+    g.addColorStop(0.0, "rgba(106,176,255,0.00)");
+    g.addColorStop(0.38, `rgba(106,176,255,${(0.10 + 0.06 * pulse).toFixed(3)})`);
+    g.addColorStop(1.0, "rgba(106,176,255,0.00)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.58;
+    ctx.strokeStyle = "rgba(106,176,255,0.75)";
+    ctx.lineWidth = Math.max(1.5, cellPx * 0.08);
+    ctx.setLineDash([Math.max(6, cellPx * 0.25), Math.max(4, cellPx * 0.18)]);
+    ctx.lineDashOffset = -phase * 18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+
     ctx.restore();
   }
 
@@ -1459,6 +1609,7 @@
     const cy = py + cellPx / 2;
 
     drawMagnetZone(cx, cy);
+    drawShieldAura(cx, cy);
 
     if (mult > 1.2) {
       ctx.save();
@@ -1512,13 +1663,18 @@
   function resize() {
     if (!gameArea || !canvas || !ctx) return;
 
+    updateVhUnit();
+
+    // si cambia mobile layout (rows) por orientación/tamaño -> reajusta
+    applyRowsIfNeeded({ forceReset: false });
+
     const r = gameArea.getBoundingClientRect();
     const availW = Math.max(240, Math.floor(r.width));
     const availH = Math.max(240, Math.floor(r.height));
 
     let w = availW;
-    let h = Math.floor(w / CANVAS_AR);
-    if (h > availH) { h = availH; w = Math.floor(h * CANVAS_AR); }
+    let h = Math.floor(w / canvasAR());
+    if (h > availH) { h = availH; w = Math.floor(h * canvasAR()); }
 
     cssCanvasW = Math.max(240, w);
     cssCanvasH = Math.max(240, h);
@@ -1531,8 +1687,12 @@
     canvas.width = Math.floor(cssCanvasW * dpr);
     canvas.height = Math.floor(cssCanvasH * dpr);
 
+    // ✅ móvil: permite celdas más grandes
+    const maxCell = isMobileLayout() ? 88 : 72;
+    const minCell = isMobileLayout() ? 16 : 14;
+
     cellPx = Math.floor(Math.min(cssCanvasW / COLS, cssCanvasH / ROWS));
-    cellPx = clampInt(cellPx, 14, 72);
+    cellPx = clampInt(cellPx, minCell, maxCell);
 
     gridW = cellPx * COLS;
     gridH = cellPx * ROWS;
@@ -1585,6 +1745,7 @@
 
     if (!canvas || !gameArea) return;
 
+    // Evita gestos/scroll dentro del área de juego
     const blockIfGame = (e) => { if (e.cancelable) e.preventDefault(); };
     gameArea.addEventListener("wheel", blockIfGame, { passive: false });
     gameArea.addEventListener("touchmove", blockIfGame, { passive: false });
@@ -1749,16 +1910,19 @@
 
     if (score > best) {
       best = score;
-      try { localStorage.setItem(BEST_KEY, String(best)); } catch {}
+      try { writeLS(BEST_KEY, String(best)); writeLS(BEST_KEY_OLD, String(best)); } catch {}
       try { Auth?.setBestForActive?.(best); } catch {}
     }
 
+    // Guardar runs (nuevo + legacy)
     try {
-      const raw = localStorage.getItem(RUNS_KEY);
+      const raw = migrateKeyIfNeeded(RUNS_KEY, RUNS_KEY_OLD);
       const arr = raw ? safeParse(raw, []) : [];
-      arr.unshift({ ts: Date.now(), profileId: activeProfileId, name: playerName, score, level, time: Math.round(runTime) });
+      arr.unshift({ ts: Date.now(), profileId: activeProfileId, name: playerName, score, level, time: Math.round(runTime), rows: ROWS });
       arr.length = Math.min(arr.length, 30);
-      localStorage.setItem(RUNS_KEY, JSON.stringify(arr));
+      const json = JSON.stringify(arr);
+      writeLS(RUNS_KEY, json);
+      writeLS(RUNS_KEY_OLD, json);
     } catch {}
 
     if (goScoreBig) goScoreBig.textContent = String(score | 0);
@@ -1871,8 +2035,10 @@
     if (swReg.waiting) { try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {} }
     else { try { await swReg.update?.(); } catch {} }
 
-    const k = "gridrunner_sw_reload_once";
-    if (sessionStorage.getItem(k) !== "1") {
+    const k = SW_RELOAD_KEY;
+    const kOld = SW_RELOAD_KEY_OLD;
+
+    if (sessionStorage.getItem(k) !== "1" && sessionStorage.getItem(kOld) !== "1") {
       sessionStorage.setItem(k, "1");
       setTimeout(() => location.reload(), 650);
     } else location.reload();
@@ -1960,8 +2126,10 @@
           if (swReloadGuard) return;
           swReloadGuard = true;
 
-          const k = "gridrunner_sw_reload_once";
-          if (sessionStorage.getItem(k) !== "1") {
+          const k = SW_RELOAD_KEY;
+          const kOld = SW_RELOAD_KEY_OLD;
+
+          if (sessionStorage.getItem(k) !== "1" && sessionStorage.getItem(kOld) !== "1") {
             sessionStorage.setItem(k, "1");
             requestAppReload();
           }
@@ -2017,6 +2185,7 @@
       if (profileSelect.value !== "__new__") {
         Auth.setActiveProfile?.(profileSelect.value);
         syncFromAuth();
+        applySettingsToUI();
         updatePillsNow();
       }
       refreshNewWrap();
@@ -2109,6 +2278,7 @@
     btnRepairPWA = $("btnRepairPWA");
 
     optMusicOn = $("optMusicOn");
+    optSfxOn = $("optSfxOn");
     optMusicVol = $("optMusicVol");
     optMusicVolValue = $("optMusicVolValue");
     optSfxVol = $("optSfxVol");
@@ -2143,9 +2313,15 @@
       const bootStartedAt = performance.now();
 
       cacheDOM();
-      window.__GRIDRUNNER_BOOTED = true;
 
-      injectPatchStyles017();
+      // flags para failsafe
+      window.__GRIDRUNNER_BOOTED = true;
+      window.__GRIDROGUE_BOOTED = true;
+
+      lockPageScroll();
+      installAntiScrollGuards();
+      updateVhUnit();
+
       ensureUpgradeFxCanvas();
 
       setPill(pillVersion, `v${APP_VERSION}`);
@@ -2155,8 +2331,10 @@
       setState("loading");
 
       syncFromAuth();
-
       applyAudioSettingsNow();
+
+      // decide rows al boot
+      ROWS = desiredRows();
 
       recomputeZone();
       makeGrid();
@@ -2177,7 +2355,7 @@
       btnOptions?.addEventListener("click", showOptions);
 
       btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); });
-      btnQuitToStart?.addEventListener("click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused); resetRun(true); });
+      btnQuitToStart?.addEventListener("click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused, 120); resetRun(true); });
 
       btnPausedRestart?.addEventListener("click", () => { AudioSys.sfx("ui"); resetRun(false); startRun(); });
 
@@ -2188,13 +2366,27 @@
       btnCloseOptions?.addEventListener("click", hideOptions);
       overlayOptions?.addEventListener("click", (e) => { if (e.target === overlayOptions) hideOptions(); });
 
-      optSprites?.addEventListener("change", () => { settings.useSprites = !!optSprites.checked; saveSettings(); });
-      optVibration?.addEventListener("change", () => { settings.vibration = !!optVibration.checked; saveSettings(); });
-      optDpad?.addEventListener("change", () => { settings.showDpad = !!optDpad.checked; applySettingsToUI(); saveSettings(); });
+      optSprites?.addEventListener("change", () => {
+        settings.useSprites = !!optSprites.checked;
+        saveSettings();
+        pushPrefsToAuth();
+      });
+      optVibration?.addEventListener("change", () => {
+        settings.vibration = !!optVibration.checked;
+        saveSettings();
+        pushPrefsToAuth();
+      });
+      optDpad?.addEventListener("change", () => {
+        settings.showDpad = !!optDpad.checked;
+        applySettingsToUI();
+        saveSettings();
+        pushPrefsToAuth();
+      });
       optFx?.addEventListener("input", () => {
         settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
         if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
         saveSettings();
+        pushPrefsToAuth();
       });
 
       optMusicOn?.addEventListener("change", () => {
@@ -2202,6 +2394,14 @@
         settings.musicOn = !!optMusicOn.checked;
         applyAudioSettingsNow();
         saveSettings();
+        pushPrefsToAuth();
+      });
+      optSfxOn?.addEventListener("change", () => {
+        AudioSys.unlock();
+        settings.sfxOn = !!optSfxOn.checked;
+        applyAudioSettingsNow();
+        saveSettings();
+        pushPrefsToAuth();
       });
       optMusicVol?.addEventListener("input", () => {
         AudioSys.unlock();
@@ -2209,6 +2409,7 @@
         if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
         applyAudioSettingsNow();
         saveSettings();
+        pushPrefsToAuth();
       });
       optSfxVol?.addEventListener("input", () => {
         AudioSys.unlock();
@@ -2216,13 +2417,16 @@
         if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
         applyAudioSettingsNow();
         saveSettings();
+        pushPrefsToAuth();
       });
       optMuteAll?.addEventListener("change", () => {
         AudioSys.unlock();
         settings.muteAll = !!optMuteAll.checked;
         applyAudioSettingsNow();
         saveSettings();
+        pushPrefsToAuth();
       });
+
       btnTestAudio?.addEventListener("click", async () => {
         await AudioSys.unlock();
         applyAudioSettingsNow();
@@ -2236,9 +2440,9 @@
           const v = String(optLang.value || "auto");
           settings.lang = v;
           saveSettings();
+          pushPrefsToAuth();
 
           I18n.setLang(settings.lang);
-
           applySettingsToUI();
 
           updatePillsNow();
@@ -2279,7 +2483,11 @@
           }
         } else {
           const nm = (startName?.value || "").trim().slice(0, 16);
-          if (nm.length >= 2) { playerName = nm; localStorage.setItem(NAME_KEY, playerName); }
+          if (nm.length >= 2) {
+            playerName = nm;
+            writeLS(NAME_KEY, playerName);
+            writeLS(NAME_KEY_OLD, playerName);
+          }
         }
         updatePillsNow();
         await startRun();

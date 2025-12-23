@@ -1,20 +1,23 @@
-/* auth.js — Grid Rogue v0.1.7
+/* auth.js — Grid Rogue v0.1.8
    ✅ Perfiles locales (robusto)
    ✅ Migración:
       - gridrunner_auth_v1  -> gridrogue_auth_v1 (sin perder datos)
       - gridrunner_name_v1 + gridrunner_best_v1 (solo si NO hay perfiles)
    ✅ Validación + saneado de estado (corrige ids/valores raros)
    ✅ API estable (no rompe app.js): list/get/set/create/best + rename/delete/export/import/prefs
-   ✅ Prefs por perfil ampliadas (opcional): particles / reduceMotion / uiHue
+   ✅ Prefs por perfil ampliadas (opcional): particles / reduceMotion / uiHue / mobileControls / mobileGridRows
    ✅ Best-effort: si localStorage falla, NO explota
-   ✅ Compatible con utils.js (window.Utils) si existe (fallback interno si no)
+   ✅ Compatible con utils.js (GRUtils o Utils) si existe (fallback interno si no)
 */
 
 (() => {
   "use strict";
 
+  const VERSION = "0.1.8";
+
   // ───────────────────────── Utils (best-effort) ─────────────────────────
-  const U = window.Utils || null;
+  // Preferimos GRUtils (nuevo), luego Utils (legacy), luego fallback interno.
+  const U = window.GRUtils || window.Utils || null;
 
   const now = U?.now || (() => Date.now());
 
@@ -22,6 +25,12 @@
     U?.safeParse ||
     ((raw, fallback) => {
       try { return JSON.parse(raw); } catch { return fallback; }
+    });
+
+  const safeStringify =
+    U?.safeStringify ||
+    ((obj, fallback = "") => {
+      try { return JSON.stringify(obj); } catch { return fallback; }
     });
 
   const safeString = (v) => (v == null ? "" : String(v));
@@ -67,7 +76,6 @@
   }
 
   // ───────────────────────── Keys ─────────────────────────
-  // Nuevo namespace (Grid Rogue)
   const AUTH_KEY = "gridrogue_auth_v1";
 
   // Compat (Grid Runner)
@@ -100,10 +108,14 @@
 
   // ───────────────────────── Prefs (opcional por perfil) ─────────────────────────
   // Compat: si prefs no existe, OK.
-  // v0.1.7 añade:
+  // v0.1.7:
   // - particles (bool)
   // - reduceMotion (bool)
   // - uiHue (0..360)
+  //
+  // v0.1.8:
+  // - mobileControls: "auto" | "on" | "off"
+  // - mobileGridRows: 16..32 (por defecto lo decide app.js; aquí solo guardamos)
   function sanitizePrefs(prefs) {
     const o = safeObj(prefs);
     if (!o) return null;
@@ -116,7 +128,7 @@
     if ("showDpad" in o) out.showDpad = !!o.showDpad;
     if ("fx" in o) out.fx = clamp(o.fx, 0.4, 1.25);
 
-    // Audio (usado por audio.js)
+    // Audio
     if ("musicOn" in o) out.musicOn = !!o.musicOn;
     if ("sfxOn" in o) out.sfxOn = !!o.sfxOn;
     if ("musicVol" in o) out.musicVol = clamp(o.musicVol, 0, 1);
@@ -130,10 +142,19 @@
       if (code) out.lang = code.slice(0, 8);
     }
 
-    // v0.1.7 (opcional)
+    // v0.1.7
     if ("particles" in o) out.particles = !!o.particles;
     if ("reduceMotion" in o) out.reduceMotion = !!o.reduceMotion;
     if ("uiHue" in o) out.uiHue = clampInt(o.uiHue, 0, 360);
+
+    // v0.1.8 (controles / grid móvil)
+    if ("mobileControls" in o) {
+      const mc = safeString(o.mobileControls).trim().toLowerCase();
+      out.mobileControls = (mc === "on" || mc === "off" || mc === "auto") ? mc : "auto";
+    }
+    if ("mobileGridRows" in o) {
+      out.mobileGridRows = clampInt(o.mobileGridRows, 16, 32);
+    }
 
     return Object.keys(out).length ? out : null;
   }
@@ -205,12 +226,13 @@
   function saveState(st) {
     if (!canLS()) return false;
 
-    const json = JSON.stringify(st);
+    const json = safeStringify(st, "");
+    if (!json) return false;
 
     // ✅ Guardamos siempre en el nuevo
     const okNew = writeLS(AUTH_KEY, json);
 
-    // ✅ Compat: también en el viejo
+    // ✅ Compat: también en el viejo (best-effort)
     writeLS(AUTH_KEY_OLD, json);
 
     return okNew;
@@ -251,11 +273,13 @@
   function listProfiles() {
     return state.profiles
       .slice()
-      .sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
+      .sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0))
+      .map(p => ({ ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) }));
   }
 
   function getActiveProfile() {
-    return state.profiles.find(p => p.id === state.activeId) || null;
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    return p ? { ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) } : null;
   }
 
   function setActiveProfile(id) {
@@ -265,11 +289,12 @@
     state.activeId = p.id;
     p.lastLoginAt = now();
     saveState(state);
+
     return { ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) };
   }
 
   function touchActiveLogin() {
-    const p = getActiveProfile();
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
     if (!p) return false;
     p.lastLoginAt = now();
     saveState(state);
@@ -301,6 +326,7 @@
     p.name = nm;
     p.lastLoginAt = now();
     saveState(state);
+
     return { ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) };
   }
 
@@ -324,12 +350,12 @@
   }
 
   function getBestForActive() {
-    const p = getActiveProfile();
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
     return p ? (p.best | 0) : 0;
   }
 
   function setBestForActive(best) {
-    const p = getActiveProfile();
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
     if (!p) return false;
 
     const b = Math.max(0, best | 0);
@@ -344,12 +370,12 @@
 
   // ───────────────────────── Prefs API (opcional) ─────────────────────────
   function getPrefsForActive() {
-    const p = getActiveProfile();
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
     return p && p.prefs ? { ...p.prefs } : null;
   }
 
   function setPrefsForActive(prefs) {
-    const p = getActiveProfile();
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
     if (!p) return false;
 
     const sp = sanitizePrefs(prefs);
@@ -367,8 +393,17 @@
     return true;
   }
 
+  function patchPrefsForActive(partialPrefs) {
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    if (!p) return false;
+
+    const current = p.prefs ? { ...p.prefs } : {};
+    const merged = { ...current, ...(safeObj(partialPrefs) || {}) };
+    return setPrefsForActive(merged);
+  }
+
   function clearPrefsForActive() {
-    const p = getActiveProfile();
+    const p = state.profiles.find(p => p.id === state.activeId) || null;
     if (!p) return false;
     if ("prefs" in p) delete p.prefs;
     p.lastLoginAt = now();
@@ -383,7 +418,7 @@
       activeId: state.activeId,
       profiles: state.profiles,
     });
-    return JSON.stringify(snap);
+    return safeStringify(snap, "{}") || "{}";
   }
 
   function importAuth(json, { merge = true } = {}) {
@@ -449,6 +484,8 @@
 
   // ───────────────────────── Public API ─────────────────────────
   window.Auth = {
+    VERSION,
+
     // perfiles
     listProfiles,
     getActiveProfile,
@@ -471,6 +508,7 @@
     // prefs (opcional)
     getPrefsForActive,
     setPrefsForActive,
+    patchPrefsForActive,
     clearPrefsForActive,
   };
 })();
