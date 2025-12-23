@@ -1,15 +1,7 @@
-/* sw.js — Grid Rogue (v0.1.8)
-   ✅ Core: cache-first + refresh en background (normaliza ?v=)
-   ✅ Navegación (SPA/PWA): network-first + fallback index.html (APP_SHELL)
-   ✅ Runtime: stale-while-revalidate (assets)
-   ✅ Update: SKIP_WAITING por mensaje + clients.claim + navigationPreload
-   ✅ GH Pages/subcarpetas: usa registration.scope (claves absolutas)
-   ✅ Audio/Sprites: best-effort (no rompe si falta)
-   ✅ Range requests para audio desde cache (206 Partial Content)
-   ✅ Limpieza agresiva de caches antiguos (gridrunner-* + gridrogue-*)
+/* sw.js — Grid Rogue (v0.1.9)
+   ✅ Igual que v0.1.8 pero con bump de VERSION.
 */
-
-const VERSION = "v0.1.8";
+const VERSION = "v0.1.9";
 
 const CACHE_PREFIX = "gridrogue-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
@@ -111,7 +103,6 @@ function isAudioPath(urlObj) {
 
 // ───────────────────────── Range support (audio) ─────────────────────────
 function parseRange(rangeHeader, size) {
-  // "bytes=start-end"
   const m = String(rangeHeader || "").match(/bytes=(\d*)-(\d*)/i);
   if (!m) return null;
 
@@ -154,14 +145,12 @@ async function makeRangedResponse(fullResponse, rangeHeader) {
 async function precacheCore() {
   const cache = await caches.open(CORE_CACHE);
 
-  // 1) APP_SHELL (obligatorio)
   const shellRes = await fetch(new Request(APP_SHELL, { cache: "reload" }));
   if (!shellRes || !shellRes.ok) {
     throw new Error(`No se pudo precachear index.html (APP_SHELL). (${shellRes?.status || "?"})`);
   }
   await cache.put(stripSearch(APP_SHELL), shellRes);
 
-  // 2) resto (best-effort)
   await Promise.allSettled(
     CORE_ASSETS
       .filter((u) => stripSearch(u) !== stripSearch(APP_SHELL))
@@ -227,13 +216,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url, self.location.href);
   const isNav = isHtmlNavigation(req);
 
-  // Normaliza clave cuando hay cache-bust ?v= (para assets estáticos)
   const normalizedKey = shouldIgnoreSearch(url) ? stripSearch(req.url) : req.url;
-
-  // ¿Es core asset? (comparando normalizado)
   const looksCore = CORE_SET.has(stripSearch(req.url));
 
-  // ───────────── Audio RANGE: sirve 206 desde cache cuando haga falta ─────────────
+  // Audio RANGE
   if (isAudioPath(url) && req.headers.has("range")) {
     event.respondWith(
       (async () => {
@@ -255,14 +241,13 @@ self.addEventListener("fetch", (event) => {
           }
         }
 
-        // Si no está cacheado, dejamos que la red gestione el Range (no cacheamos 206)
         return fetch(req);
       })()
     );
     return;
   }
 
-  // ───────────── Navegación: network-first + fallback shell ─────────────
+  // Navegación
   if (isNav) {
     event.respondWith(
       (async () => {
@@ -277,7 +262,6 @@ self.addEventListener("fetch", (event) => {
 
           const fresh = await fetch(req);
           if (fresh && fresh.ok) {
-            // IMPORTANTE: cacheamos el shell (clave estable)
             core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
             return fresh;
           }
@@ -298,7 +282,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ───────────── Core: cache-first + refresh en background ─────────────
+  // Core
   if (looksCore) {
     event.respondWith(
       (async () => {
@@ -320,7 +304,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ───────────── Runtime: stale-while-revalidate ─────────────
+  // Runtime
   event.respondWith(
     (async () => {
       const runtime = await caches.open(RUNTIME_CACHE);

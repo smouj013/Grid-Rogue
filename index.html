@@ -1,4 +1,4 @@
-<!-- index.html — Grid Rogue v0.1.8 -->
+<!-- index.html — Grid Rogue v0.1.9 -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -15,7 +15,7 @@
 
   <!-- ✅ Version global -->
   <script>
-    window.APP_VERSION = "0.1.8";
+    window.APP_VERSION = "0.1.9";
   </script>
 
   <!-- ✅ Repair Mode (NO depende de app.js) -->
@@ -61,12 +61,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.1.8" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.1.9" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.1.8" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.9" />
 </head>
 
 <body>
@@ -83,7 +83,7 @@
         <div class="brandDot" aria-hidden="true"></div>
         <div class="brandText">
           <div class="brandTitle">Grid Rogue</div>
-          <div class="brandSub" id="brandSub">Upgrades • combos • arcade</div>
+          <div class="brandSub" id="brandSub">Corazones • buffs • upgrades • combos</div>
         </div>
       </div>
 
@@ -114,7 +114,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.8</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.9</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -160,7 +160,35 @@
 
             <div class="comboHint" id="comboHint">Completa la secuencia para subir multiplicador.</div>
 
+            <!-- ✅ LEVEL + HP + BUFFS -->
             <div class="levelProg" id="levelProg">
+              <!-- Vida + buffs (nuevo) -->
+              <div class="statusBar" id="statusBar">
+                <div class="hpWrap" id="hpWrap" aria-label="Vida">
+                  <span class="ms hpIcon" aria-hidden="true">favorite</span>
+
+                  <!-- 10 corazones (JS puede marcar como empty / actualizar) -->
+                  <div class="hpHearts" id="hpHearts" aria-hidden="true">
+                    <span class="ms heart full" data-heart="1">favorite</span>
+                    <span class="ms heart full" data-heart="2">favorite</span>
+                    <span class="ms heart full" data-heart="3">favorite</span>
+                    <span class="ms heart full" data-heart="4">favorite</span>
+                    <span class="ms heart full" data-heart="5">favorite</span>
+                    <span class="ms heart full" data-heart="6">favorite</span>
+                    <span class="ms heart full" data-heart="7">favorite</span>
+                    <span class="ms heart full" data-heart="8">favorite</span>
+                    <span class="ms heart full" data-heart="9">favorite</span>
+                    <span class="ms heart full" data-heart="10">favorite</span>
+                  </div>
+
+                  <span class="hpText mono" id="hpText" title="Vida">10/10</span>
+                </div>
+
+                <!-- Buffs activos (nuevo). app.js inyecta badges dentro -->
+                <div class="buffBar" id="buffBar" aria-label="Mejoras activas"></div>
+              </div>
+
+              <!-- Nivel (se mantiene IDs para compat) -->
               <div class="levelRow">
                 <div class="left">
                   <span class="ms" aria-hidden="true">bolt</span>
@@ -168,10 +196,12 @@
                 </div>
                 <span class="tiny muted" id="levelProgPct">0%</span>
               </div>
+
               <div class="progBar" aria-hidden="true">
                 <div class="progFill" id="levelProgFill"></div>
               </div>
             </div>
+
           </div>
 
           <div class="toast" id="toast" hidden aria-live="polite"></div>
@@ -306,7 +336,7 @@
 
         <!-- UPGRADES -->
         <section class="overlay" id="overlayUpgrades" hidden>
-          <div class="panel wide">
+          <div class="panel wide upgradesPanel">
             <div class="panelHead">
               <div>
                 <div class="h2" id="upTitle">Subida de nivel</div>
@@ -314,14 +344,16 @@
               </div>
             </div>
 
-            <div class="upgradeChoices" id="upgradeChoices"></div>
+            <!-- ✅ body scrolleable (mejor UX) -->
+            <div class="panelBody">
+              <div class="upgradeChoices" id="upgradeChoices"></div>
+              <div class="tiny muted" id="upgradeHint">El juego se pausa aquí.</div>
+            </div>
 
-            <div class="panelActions">
+            <div class="panelActions upgradesActions">
               <button class="btn" id="btnReroll" type="button">Reroll</button>
               <button class="btn" id="btnSkipUpgrade" type="button">Saltar</button>
             </div>
-
-            <div class="tiny muted" id="upgradeHint">El juego se pausa aquí.</div>
           </div>
         </section>
 
@@ -515,12 +547,12 @@
     })();
   </script>
 
-  <!-- ORDEN DE CARGA (v0.1.8) -->
-  <script src="./utils.js?v=0.1.8" defer></script>
-  <script src="./localization.js?v=0.1.8" defer></script>
-  <script src="./auth.js?v=0.1.8" defer></script>
-  <script src="./audio_sys.js?v=0.1.8" defer></script>
-  <script src="./audio.js?v=0.1.8" defer></script>
-  <script src="./app.js?v=0.1.8" defer></script>
+  <!-- ORDEN DE CARGA (v0.1.9) -->
+  <script src="./utils.js?v=0.1.9" defer></script>
+  <script src="./localization.js?v=0.1.9" defer></script>
+  <script src="./auth.js?v=0.1.9" defer></script>
+  <script src="./audio_sys.js?v=0.1.9" defer></script>
+  <script src="./audio.js?v=0.1.9" defer></script>
+  <script src="./app.js?v=0.1.9" defer></script>
 </body>
 </html>

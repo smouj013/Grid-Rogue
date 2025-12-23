@@ -1,17 +1,16 @@
-/* app.js — Grid Rogue v0.1.8 STABLE+FULLSCREEN + AUDIO + I18N
-   v0.1.8:
-   - Keys renombradas a gridrogue_* con migración desde gridrunner_* (sin perder datos)
-   - Panel de Upgrades: (CSS pasa a styles.css, NO inyección en JS)
-   - Aura de escudo alrededor del player (visual protector cuando shields > 0)
-   - Mobile: layout compacto 8x16 (en vez de 8x24) para que el juego se vea más grande
-   - Anti-scroll/overscroll: bloqueo de scroll en juego, manteniendo scroll dentro de Opciones
-   - Dpad SOLO móvil + colocación en bordes (CSS en styles.css)
-   - Compat: mantiene window.__GRIDRUNNER_BOOTED (failsafe antiguo) y añade __GRIDROGUE_BOOTED
+/* app.js — Grid Rogue v0.1.9 STABLE+FULLSCREEN + AUDIO + I18N
+   v0.1.9:
+   - Player con VIDA: empieza con 10 corazones (HP). Trampa (cuadrado rojo) = -1 corazón.
+   - UI HP + Buff Badges junto a la barra de nivel (se crea si no existe en el HTML).
+   - Nueva mejora: Corazón (más vida / curación).
+   - Imán ahora es TEMPORAL: duración según rareza + contador en badge.
+   - Panel de mejoras: markup mejorado (icono, duración, metadatos) para que se vea más pro con CSS.
+   - Mantiene migración gridrunner_* -> gridrogue_* y compat flags.
 */
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.8");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.9");
 
   // Compat flags (failsafe/index antiguo)
   window.__GRIDRUNNER_BOOTED = false;
@@ -54,6 +53,17 @@
     languageOptions() { return []; },
     applyDataAttrs() {},
   };
+
+  // Traducción con fallback (para nuevas keys de v0.1.9 si tu i18n aún no las tiene)
+  function T(key, fallback = null, arg = null) {
+    try {
+      const s = I18n.t(key, arg);
+      if (typeof s === "string" && s !== key) return s;
+    } catch {}
+    if (fallback == null) return key;
+    if (arg == null) return String(fallback);
+    return String(fallback).replace("{0}", String(arg));
+  }
 
   const AudioSys = window.AudioSys || {
     unlock: async () => true,
@@ -408,8 +418,18 @@
   let colF = 3;
   let rowF = 1;
 
+  // ✅ VIDA (v0.1.9)
+  const HP_START = 10;
+  const HP_CAP = 24;
+  let hpMax = HP_START;
+  let hp = HP_START;
+
   let shields = 0;
+
+  // ✅ Imán temporal (v0.1.9): radius + tiempo restante (segundos)
   let magnet = 0;
+  let magnetTime = 0;
+
   let scoreBoost = 0;
   let trapResist = 0;
   let rerolls = 0;
@@ -511,6 +531,11 @@
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
 
+  // ✅ HUD extras (v0.1.9): HP + badges junto a nivel
+  let hudStatus = null;
+  let hudHearts = null;
+  let hudBuffs = null;
+
   // ───────────────────────── Error handling global ─────────────────────────
   function showFatal(err) {
     try {
@@ -559,6 +584,242 @@
     if (levelProgPct) levelProgPct.textContent = `${Math.round(v * 100)}%`;
   }
 
+  function fmtTimeShort(sec) {
+    sec = Math.max(0, Number(sec) || 0);
+    if (sec >= 99.5) return "99s";
+    return `${Math.ceil(sec)}s`;
+  }
+
+  // ✅ Asegura HUD status cerca del nivel (se crea dinámicamente)
+  function ensureHudStatusUI() {
+    if (hudStatus && hudStatus.parentElement) return;
+
+    // Intentar colgarlo del contenedor del progreso de nivel
+    const host =
+      levelProgText?.closest?.("#levelProgress") ||
+      levelProgText?.closest?.(".levelProgress") ||
+      levelProgText?.parentElement ||
+      hud ||
+      stage ||
+      document.body;
+
+    if (!host) return;
+
+    const existing = $("hudStatus");
+    if (existing) {
+      hudStatus = existing;
+      hudHearts = $("hudHearts");
+      hudBuffs = $("hudBuffs");
+      return;
+    }
+
+    try {
+      const wrap = document.createElement("div");
+      wrap.id = "hudStatus";
+      wrap.style.display = "flex";
+      wrap.style.alignItems = "center";
+      wrap.style.justifyContent = "space-between";
+      wrap.style.gap = "10px";
+      wrap.style.marginTop = "6px";
+      wrap.style.flexWrap = "wrap";
+
+      const hearts = document.createElement("div");
+      hearts.id = "hudHearts";
+      hearts.style.display = "flex";
+      hearts.style.alignItems = "center";
+      hearts.style.gap = "2px";
+      hearts.style.flexWrap = "wrap";
+      hearts.style.userSelect = "none";
+      hearts.style.webkitUserSelect = "none";
+
+      const buffs = document.createElement("div");
+      buffs.id = "hudBuffs";
+      buffs.style.display = "flex";
+      buffs.style.alignItems = "center";
+      buffs.style.gap = "8px";
+      buffs.style.flexWrap = "wrap";
+      buffs.style.justifyContent = "flex-end";
+
+      wrap.appendChild(hearts);
+      wrap.appendChild(buffs);
+
+      // Insertar justo después del bloque de progreso si se puede
+      const anchor = levelProgText?.parentElement || host;
+      if (anchor && anchor.parentElement) anchor.parentElement.appendChild(wrap);
+      else host.appendChild(wrap);
+
+      hudStatus = wrap;
+      hudHearts = hearts;
+      hudBuffs = buffs;
+    } catch {}
+  }
+
+  function updateHeartsUI() {
+    if (!hudHearts) return;
+
+    const maxShow = isMobileLayout() ? 10 : 14;
+    const showN = Math.min(hpMax, maxShow);
+    const extra = Math.max(0, hpMax - showN);
+
+    const parts = [];
+    for (let i = 0; i < showN; i++) {
+      const full = i < hp;
+      parts.push(
+        `<span style="
+          display:inline-block;
+          font-weight:900;
+          line-height:1;
+          font-size: ${Math.max(12, Math.floor(cellPx * 0.34))}px;
+          color: ${full ? "rgba(255,120,160,0.95)" : "rgba(255,255,255,0.22)"};
+          text-shadow: 0 1px 0 rgba(0,0,0,0.55);
+          margin-right:1px;
+        ">${full ? "♥" : "♡"}</span>`
+      );
+    }
+
+    if (extra > 0) {
+      parts.push(`<span style="opacity:0.75;font-size:${Math.max(11, Math.floor(cellPx * 0.30))}px">+${extra}</span>`);
+    }
+
+    // Texto compacto HP
+    parts.push(`<span style="opacity:0.85;margin-left:6px;font-size:${Math.max(11, Math.floor(cellPx * 0.30))}px">(${hp}/${hpMax})</span>`);
+
+    hudHearts.innerHTML = parts.join("");
+    hudHearts.title = T("hud_hp_title", "Vida: {0}", `${hp}/${hpMax}`);
+  }
+
+  function makeBuffBadge({ icon, count = 0, time = 0, title = "", accent = "rgba(255,255,255,0.18)" }) {
+    const showCount = Number(count) > 1;
+    const showTime = Number(time) > 0;
+
+    const countHtml = showCount
+      ? `<span style="
+          position:absolute;right:-6px;top:-6px;
+          min-width:18px;height:18px;padding:0 4px;
+          display:flex;align-items:center;justify-content:center;
+          border-radius:999px;
+          background:rgba(0,0,0,0.55);
+          border:1px solid rgba(255,255,255,0.18);
+          font-size:11px;font-weight:900;
+        ">${count | 0}</span>`
+      : "";
+
+    const timeHtml = showTime
+      ? `<span style="opacity:0.82;font-size:11px;margin-left:6px">${fmtTimeShort(time)}</span>`
+      : "";
+
+    return `
+      <div title="${title || ""}" style="
+        position:relative;
+        display:inline-flex;
+        align-items:center;
+        gap:6px;
+        padding:6px 9px;
+        border-radius:999px;
+        border:1px solid rgba(255,255,255,0.14);
+        background:rgba(255,255,255,0.06);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        user-select:none;
+      ">
+        <span class="ms" style="
+          font-size:18px;
+          line-height:1;
+          padding:4px;
+          border-radius:999px;
+          background:${accent};
+        ">${icon}</span>
+        ${timeHtml}
+        ${countHtml}
+      </div>
+    `;
+  }
+
+  function updateBuffsUI() {
+    if (!hudBuffs) return;
+
+    const items = [];
+
+    // Shield
+    if (shields > 0) {
+      items.push(makeBuffBadge({
+        icon: "shield",
+        count: shields,
+        title: T("buff_shield", "Escudo"),
+        accent: "rgba(106,176,255,0.22)"
+      }));
+    }
+
+    // Magnet (radius + timer)
+    if (magnet > 0 && magnetTime > 0.01) {
+      items.push(makeBuffBadge({
+        icon: "magnet_on",
+        count: magnet, // si magnet=1 no muestra número, si 2/3 sí
+        time: magnetTime,
+        title: T("buff_magnet", "Imán"),
+        accent: "rgba(106,176,255,0.18)"
+      }));
+    }
+
+    // Score boost (stack)
+    const boostCount = pickedCount.get("boost") || 0;
+    if (boostCount > 0) {
+      items.push(makeBuffBadge({
+        icon: "bolt",
+        count: boostCount,
+        title: T("buff_boost", "Puntos +"),
+        accent: "rgba(255,211,90,0.20)"
+      }));
+    }
+
+    // Trap resist
+    if (trapResist > 0) {
+      items.push(makeBuffBadge({
+        icon: "verified_user",
+        count: trapResist,
+        title: T("buff_trap_resist", "Resistencia a trampas"),
+        accent: "rgba(46,242,160,0.16)"
+      }));
+    }
+
+    // Zone
+    if (zoneExtra > 0) {
+      items.push(makeBuffBadge({
+        icon: "open_with",
+        count: zoneExtra,
+        title: T("buff_zone", "Zona +"),
+        accent: "rgba(214,133,255,0.18)"
+      }));
+    }
+
+    // Rerolls
+    if (rerolls > 0) {
+      items.push(makeBuffBadge({
+        icon: "casino",
+        count: rerolls,
+        title: T("buff_rerolls", "Rerolls"),
+        accent: "rgba(255,255,255,0.12)"
+      }));
+    }
+
+    // HP extra (si aumentaste max)
+    if (hpMax > HP_START) {
+      items.push(makeBuffBadge({
+        icon: "favorite",
+        count: (hpMax - HP_START) + 1, // para que si solo subiste +0 no salga; aquí siempre >=2 si hpMax>10
+        title: T("buff_hp", "Vida máxima"),
+        accent: "rgba(255,120,160,0.18)"
+      }));
+    }
+
+    hudBuffs.innerHTML = items.join("");
+  }
+
+  function updateStatusHUD() {
+    ensureHudStatusUI();
+    updateHeartsUI();
+    updateBuffsUI();
+  }
+
   // Pills a 10Hz
   let pillAccMs = 0;
   function updatePillsNow() {
@@ -571,6 +832,7 @@
     setPill(pillPlayer, playerName || I18n.t("defaultPlayer"));
     setOfflinePill();
     updateLevelProgressUI();
+    updateStatusHUD();
   }
 
   function setupLanguageUI() {
@@ -652,6 +914,7 @@
 
     I18n.applyDataAttrs(document);
     applyAudioSettingsNow();
+    updateStatusHUD();
     resize();
   }
 
@@ -837,15 +1100,54 @@
     if (t === CellType.Bonus){ spawnPop(x, y, col, 1.15 * intensity); spawnSparks(x, y, "rgba(255,245,200,0.95)", 1.0 * intensity); shake(75, 1.6); return; }
   }
 
-  function applyCollect(t, checkCombo = true) {
+  function loseHp(amount, x = null, y = null) {
+    const prev = hp;
+    hp = clampInt(hp - (amount | 0), 0, hpMax);
+    if (x != null && y != null) {
+      spawnFloatText(x, y, `-${amount}♥`, "rgba(255,120,120,0.95)");
+    }
+    updateStatusHUD();
+    if (hp <= 0 && prev > 0) {
+      // muerte por HP
+      AudioSys.sfx("gameover");
+      gameOverNow(T("reason_no_hp", "Sin vida"));
+    }
+  }
+
+  function applyTrapHit(x, y) {
     playerPulse = 1;
     zonePulse = 1;
 
-    const v = scoreFor(t);
+    // puntos negativos por trampa (mantiene mecánica)
+    const v = scoreFor(CellType.Trap);
     const add = Math.round(v * mult * (1 + scoreBoost));
     score = Math.max(0, score + add);
 
+    // ✅ HP -1
+    loseHp(1, x, y);
+    if (gameOver) return;
+
+    streak = 0;
+    mult = clamp(mult * 0.92, 1.0, 4.0);
+
+    vibrate(18);
+    failCombo();
+
+    showToast(T("toast_trap_hp", "¡Trampa! -1♥"), 700);
+    flash("#ff6b3d", 220);
+    shake(220, 7);
+    AudioSys.sfx("trap");
+  }
+
+  function applyCollect(t, checkCombo = true) {
+    // Trampa se gestiona con coordenadas desde stepAdvance (para FX + -1♥)
     if (t === CellType.Trap) {
+      playerPulse = 1;
+      zonePulse = 1;
+      const v = scoreFor(t);
+      const add = Math.round(v * mult * (1 + scoreBoost));
+      score = Math.max(0, score + add);
+
       streak = 0;
       mult = clamp(mult * 0.92, 1.0, 4.0);
       vibrate(18);
@@ -856,6 +1158,13 @@
       AudioSys.sfx("trap");
       return;
     }
+
+    playerPulse = 1;
+    zonePulse = 1;
+
+    const v = scoreFor(t);
+    const add = Math.round(v * mult * (1 + scoreBoost));
+    score = Math.max(0, score + add);
 
     streak++;
     vibrate(10);
@@ -882,7 +1191,7 @@
   }
 
   function applyMagnetAround(r, c) {
-    if (magnet <= 0) return;
+    if (magnet <= 0 || magnetTime <= 0) return;
     const rad = clampInt(magnet, 1, 3);
 
     for (let rr = r - rad; rr <= r + rad; rr++) {
@@ -950,10 +1259,19 @@
           shake(190, 6);
           flash("#6ab0ff", 140);
           AudioSys.sfx("pick");
+          updateStatusHUD();
         } else {
           AudioSys.sfx("ko");
           gameOverNow("KO");
         }
+        return;
+      }
+
+      // ✅ TRAMPA = -1♥
+      if (t === CellType.Trap) {
+        spawnPop(x, y, CELL_COLORS[t], 0.95);
+        spawnSparks(x, y, "rgba(255,160,180,0.95)", 0.65);
+        applyTrapHit(x, y);
         return;
       }
 
@@ -1028,24 +1346,72 @@
   }
 
   // ───────────────────────── Upgrades ─────────────────────────
+  // Duraciones de imán por rareza (v0.1.9)
+  const MAGNET_DUR = {
+    rare: 12,
+    epic: 18,
+    legendary: 26
+  };
+
+  function upgradeIcon(u) {
+    const id = u?.id || "";
+    if (id === "shield") return "shield";
+    if (id === "heart") return "favorite";
+    if (id.startsWith("mag")) return "magnet_on";
+    if (id === "boost") return "bolt";
+    if (id === "trap") return "verified_user";
+    if (id === "zone") return "open_with";
+    if (id === "coin") return "paid";
+    if (id === "gem") return "diamond";
+    if (id === "bonus") return "workspace_premium";
+    if (id === "reroll") return "casino";
+    if (id === "mult") return "functions";
+    return "upgrade";
+  }
+
   const Upgrades = [
-    { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 6, rarity: "common", weight: 10, apply() { shields++; } },
+    { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 12, rarity: "common", weight: 10,
+      apply() { shields++; updateStatusHUD(); } },
 
-    { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, rarity: "rare", weight: 7, apply() { magnet = Math.max(magnet, 1); } },
-    { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, rarity: "epic", weight: 4, apply() { magnet = 2; } },
-    { id: "mag3", nameKey: "up_mag3_name", descKey: "up_mag3_desc", tagKey: "tag_qol", max: 1, rarity: "legendary", weight: 2, apply() { magnet = 3; } },
+    // ✅ NUEVA: Vida / Corazones (v0.1.9)
+    { id: "heart", nameKey: "up_heart_name", descKey: "up_heart_desc", tagKey: "tag_survival", max: 10, rarity: "common", weight: 9,
+      apply() {
+        const beforeMax = hpMax;
+        hpMax = clampInt(hpMax + 1, HP_START, HP_CAP);
+        // Cura 1 (y si sube max, mejor)
+        hp = clampInt(hp + 1 + (hpMax > beforeMax ? 0 : 0), 0, hpMax);
+        updateStatusHUD();
+      } },
 
-    { id: "boost", nameKey: "up_boost_name", descKey: "up_boost_desc", tagKey: "tag_points", max: 10, rarity: "common", weight: 10, apply() { scoreBoost += 0.08; } },
-    { id: "trap", nameKey: "up_trap_name", descKey: "up_trap_desc", tagKey: "tag_defense", max: 4, rarity: "common", weight: 9, apply() { trapResist++; } },
+    // ✅ Imán temporal (v0.1.9) — rare/epic/legendary => más duración
+    { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, rarity: "rare", weight: 7,
+      apply() { magnet = Math.max(magnet, 1); magnetTime += MAGNET_DUR.rare; updateStatusHUD(); } },
+    { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, rarity: "epic", weight: 4,
+      apply() { magnet = Math.max(magnet, 2); magnetTime += MAGNET_DUR.epic; updateStatusHUD(); } },
+    { id: "mag3", nameKey: "up_mag3_name", descKey: "up_mag3_desc", tagKey: "tag_qol", max: 1, rarity: "legendary", weight: 2,
+      apply() { magnet = Math.max(magnet, 3); magnetTime += MAGNET_DUR.legendary; updateStatusHUD(); } },
 
-    { id: "zone", nameKey: "up_zone_name", descKey: "up_zone_desc", tagKey: "tag_mobility", max: 3, rarity: "epic", weight: 4, apply() { zoneExtra++; recomputeZone(); } },
+    { id: "boost", nameKey: "up_boost_name", descKey: "up_boost_desc", tagKey: "tag_points", max: 10, rarity: "common", weight: 10,
+      apply() { scoreBoost += 0.08; updateStatusHUD(); } },
 
-    { id: "coin", nameKey: "up_coin_name", descKey: "up_coin_desc", tagKey: "tag_points", max: 8, rarity: "common", weight: 10, apply() { coinValue += 2; } },
-    { id: "gem", nameKey: "up_gem_name", descKey: "up_gem_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7, apply() { gemValue += 6; } },
-    { id: "bonus", nameKey: "up_bonus_name", descKey: "up_bonus_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7, apply() { bonusValue += 10; } },
+    { id: "trap", nameKey: "up_trap_name", descKey: "up_trap_desc", tagKey: "tag_defense", max: 4, rarity: "common", weight: 9,
+      apply() { trapResist++; updateStatusHUD(); } },
 
-    { id: "reroll", nameKey: "up_reroll_name", descKey: "up_reroll_desc", tagKey: "tag_upgrades", max: 5, rarity: "rare", weight: 6, apply() { rerolls++; } },
-    { id: "mult", nameKey: "up_mult_name", descKey: "up_mult_desc", tagKey: "tag_combo", max: 10, rarity: "epic", weight: 5, apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
+    { id: "zone", nameKey: "up_zone_name", descKey: "up_zone_desc", tagKey: "tag_mobility", max: 3, rarity: "epic", weight: 4,
+      apply() { zoneExtra++; recomputeZone(); updateStatusHUD(); } },
+
+    { id: "coin", nameKey: "up_coin_name", descKey: "up_coin_desc", tagKey: "tag_points", max: 8, rarity: "common", weight: 10,
+      apply() { coinValue += 2; } },
+    { id: "gem", nameKey: "up_gem_name", descKey: "up_gem_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7,
+      apply() { gemValue += 6; } },
+    { id: "bonus", nameKey: "up_bonus_name", descKey: "up_bonus_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7,
+      apply() { bonusValue += 10; } },
+
+    { id: "reroll", nameKey: "up_reroll_name", descKey: "up_reroll_desc", tagKey: "tag_upgrades", max: 5, rarity: "rare", weight: 6,
+      apply() { rerolls++; updateStatusHUD(); } },
+
+    { id: "mult", nameKey: "up_mult_name", descKey: "up_mult_desc", tagKey: "tag_combo", max: 10, rarity: "epic", weight: 5,
+      apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
   ];
 
   const pickedCount = new Map();
@@ -1055,6 +1421,7 @@
     if (u.id === "mag1") return magnet < 1;
     if (u.id === "mag2") return magnet < 2;
     if (u.id === "mag3") return magnet < 3;
+    if (u.id === "heart") return hpMax < HP_CAP;
     return true;
   }
 
@@ -1259,30 +1626,65 @@
     if (upgradeChoices) upgradeChoices.innerHTML = "";
 
     for (const u of currentUpgradeChoices) {
-      const name = I18n.t(u.nameKey);
-      const desc = I18n.t(u.descKey);
-      const tag = I18n.t(u.tagKey);
+      const name = (I18n.t(u.nameKey) !== u.nameKey) ? I18n.t(u.nameKey) : (
+        u.id === "heart" ? T("up_heart_name", "Corazón") :
+        u.id === "shield" ? T("up_shield_name", "Escudo") :
+        u.id.startsWith("mag") ? T("up_mag_name", "Imán") :
+        u.id === "boost" ? T("up_boost_name", "Boost") :
+        u.id === "trap" ? T("up_trap_name", "Resistencia") :
+        u.id === "zone" ? T("up_zone_name", "Zona +") :
+        u.id === "reroll" ? T("up_reroll_name", "Reroll") :
+        u.id === "mult" ? T("up_mult_name", "Multiplicador") :
+        u.id === "coin" ? T("up_coin_name", "Moneda +") :
+        u.id === "gem" ? T("up_gem_name", "Gema +") :
+        u.id === "bonus" ? T("up_bonus_name", "Bonus +") : u.id
+      );
 
+      let desc = I18n.t(u.descKey);
+      if (desc === u.descKey) {
+        if (u.id === "heart") desc = T("up_heart_desc", "Aumenta tu vida máxima y cura 1♥.");
+        else if (u.id.startsWith("mag")) desc = T("up_mag_desc", "Atrae recompensas cercanas temporalmente.");
+        else desc = "—";
+      }
+
+      // Añadir duración visible para imán
+      let extraMeta = "";
+      if (u.id === "mag1") extraMeta = `⏱ ${MAGNET_DUR.rare}s`;
+      if (u.id === "mag2") extraMeta = `⏱ ${MAGNET_DUR.epic}s`;
+      if (u.id === "mag3") extraMeta = `⏱ ${MAGNET_DUR.legendary}s`;
+
+      const tag = I18n.t(u.tagKey);
       const rarity = (u.rarity || "common");
       const rarityText = rarityLabel(rarity);
 
       const card = document.createElement("div");
       card.className = "upCard";
       card.dataset.rarity = rarity;
+      card.dataset.upid = u.id;
       card.setAttribute("role", "button");
       card.tabIndex = 0;
+      card.style.position = "relative";
+      card.style.zIndex = "1";
 
       const nextLv = (pickedCount.get(u.id) || 0) + 1;
       const maxLv = u.max ?? 999;
 
+      const icon = upgradeIcon(u);
+
       card.innerHTML = `
-        <div class="upTitle">${name}</div>
-        <div class="upDesc">${desc}</div>
-        <div class="upMeta">
-          <span class="upRarityBadge">${rarityText}</span>
-          <span class="badge">${tag}</span>
-          <span class="badge">Lv ${nextLv}/${maxLv}</span>
+        <div class="upHead">
+          <div class="upIcon"><span class="ms">${icon}</span></div>
+          <div class="upHeadText">
+            <div class="upTitle">${name}</div>
+            <div class="upSubRow">
+              <span class="upRarityBadge">${rarityText}</span>
+              <span class="badge">${tag}</span>
+              <span class="badge">Lv ${nextLv}/${maxLv}</span>
+              ${extraMeta ? `<span class="badge">${extraMeta}</span>` : ``}
+            </div>
+          </div>
         </div>
+        <div class="upDesc">${desc}</div>
       `;
 
       const pickThis = () => {
@@ -1301,6 +1703,7 @@
           120
         );
         AudioSys.sfx("pick");
+        updatePillsNow();
         closeUpgrade();
       };
 
@@ -1324,6 +1727,7 @@
     shake(90, 2);
     flash("#ffd35a", 110);
     AudioSys.sfx("reroll");
+    updateStatusHUD();
   }
 
   // ───────────────────────── Rendering ─────────────────────────
@@ -1402,7 +1806,7 @@
   }
 
   function drawMagnetZone(cx, cy) {
-    if (magnet <= 0) return;
+    if (magnet <= 0 || magnetTime <= 0) return;
     const rad = (magnet + 0.35) * cellPx;
 
     ctx.save();
@@ -1427,7 +1831,7 @@
     ctx.restore();
   }
 
-  // ✅ Aura de escudo (v0.1.8)
+  // Aura de escudo
   function drawShieldAura(cx, cy) {
     if (shields <= 0) return;
 
@@ -1702,6 +2106,7 @@
 
     initBgStars();
     resizeUpgradeFxCanvas();
+    updateStatusHUD();
     draw(16);
   }
 
@@ -1826,7 +2231,11 @@
     score = 0; streak = 0; mult = 1.0; level = 1;
     levelStartScore = 0; nextLevelAt = 220;
 
-    shields = 0; magnet = 0; scoreBoost = 0; trapResist = 0; rerolls = 0;
+    // ✅ reset HP
+    hpMax = HP_START;
+    hp = HP_START;
+
+    shields = 0; magnet = 0; magnetTime = 0; scoreBoost = 0; trapResist = 0; rerolls = 0;
     pickedCount.clear();
 
     zoneExtra = 0;
@@ -1918,7 +2327,16 @@
     try {
       const raw = migrateKeyIfNeeded(RUNS_KEY, RUNS_KEY_OLD);
       const arr = raw ? safeParse(raw, []) : [];
-      arr.unshift({ ts: Date.now(), profileId: activeProfileId, name: playerName, score, level, time: Math.round(runTime), rows: ROWS });
+      arr.unshift({
+        ts: Date.now(),
+        profileId: activeProfileId,
+        name: playerName,
+        score,
+        level,
+        time: Math.round(runTime),
+        rows: ROWS,
+        hpMax
+      });
       arr.length = Math.min(arr.length, 30);
       const json = JSON.stringify(arr);
       writeLS(RUNS_KEY, json);
@@ -1935,6 +2353,7 @@
         <div class="line"><span>${I18n.t("stats_time")}</span><span>${Math.round(runTime)}s</span></div>
         <div class="line"><span>${I18n.t("stats_streak")}</span><span>${streak}</span></div>
         <div class="line"><span>${I18n.t("stats_mult")}</span><span>${mult.toFixed(2)}</span></div>
+        <div class="line"><span>${T("stats_hp", "HP")}</span><span>${hp}/${hpMax}</span></div>
       `;
     }
 
@@ -1948,6 +2367,24 @@
 
   // ───────────────────────── Main loop ─────────────────────────
   let lastT = 0;
+
+  function tickTimedUpgrades(dtMs) {
+    // ✅ magnet timer (v0.1.9)
+    if (magnetTime > 0 && running && !paused && !gameOver && !inLevelUp) {
+      const prev = magnetTime;
+      magnetTime = Math.max(0, magnetTime - dtMs / 1000);
+      if (prev > 0 && magnetTime <= 0.001) {
+        magnetTime = 0;
+        magnet = 0;
+        updateStatusHUD();
+        showToast(T("toast_magnet_end", "Imán terminado"), 700);
+        AudioSys.sfx("ui");
+      } else {
+        // refresca badge de vez en cuando
+        // (ya se actualiza por updatePillsNow a 10Hz)
+      }
+    }
+  }
 
   function tickFx(dtMs) {
     if (toastT > 0) { toastT -= dtMs; if (toastT <= 0) hideToast(); }
@@ -1963,6 +2400,7 @@
 
     tickBgStars(dtMs);
     tickUpgradeFx(dtMs);
+    tickTimedUpgrades(dtMs);
   }
 
   function update(dtMs) {
@@ -2323,6 +2761,7 @@
       updateVhUnit();
 
       ensureUpgradeFxCanvas();
+      ensureHudStatusUI();
 
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;

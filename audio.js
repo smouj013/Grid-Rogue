@@ -1,24 +1,22 @@
-/* audio.js — Grid Rogue v0.1.8
+/* audio.js — Grid Rogue v0.1.9
    ✅ UI/Bindings de opciones de audio (Music/SFX + volúmenes + Mute All + Test)
-   ✅ Compatible con app.js v0.1.8 y AudioSys (audio_sys.js)
+   ✅ Compatible con app.js v0.1.9 y AudioSys (audio_sys.js)
    ✅ Compatible con auth.js (prefs por perfil) SIN romper si no existe Auth
-   ✅ Best-effort: si faltan elementos DOM / AudioSys aún no listo / localStorage falla -> NO explota
+   ✅ Best-effort: si faltan DOM / AudioSys no listo / localStorage falla -> NO explota
    ✅ Guarda en:
       - gridrogue_settings_v1 (nuevo)
       - gridrunner_settings_v1 (legacy compat)
       - prefs del perfil activo (si Auth disponible)
    ✅ Watcher ligero: cambio de perfil => re-sync audio/UI
-   ✅ v0.1.8:
-      - Integración “SIN música procedural”: si el motor interno cae a procedural, NO iniciamos música.
-      - Preferencia por music_loop.mp3; si no se puede reproducir => silencio (no fallback procedural)
-      - Mejor unlock iOS/Android: no insiste si no hay AudioSys, reintenta con gesto
-      - sfx(): usa nombres/alias robustos (ui/click/upgrade/etc.)
+   ✅ v0.1.9:
+      - “NO música procedural” reforzado: pide al AudioSys interno desactivar fallback procedural.
+      - Alias SFX extra para gameplay/UI: hurt/heal/heart/magnet_on/magnet_off/upgrade_open/upgrade_pick/...
 */
 
 (() => {
   "use strict";
 
-  const VERSION = "0.1.8";
+  const VERSION = "0.1.9";
 
   // ───────────────────────── Utils (best-effort) ─────────────────────────
   const U = window.GRUtils || window.Utils || null;
@@ -52,16 +50,12 @@
       }
     });
 
-  function readLS(key) {
-    try { return localStorage.getItem(key); } catch { return null; }
-  }
-  function writeLS(key, value) {
-    try { localStorage.setItem(key, value); return true; } catch { return false; }
-  }
+  function readLS(key) { try { return localStorage.getItem(key); } catch { return null; } }
+  function writeLS(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } }
 
   // ───────────────────────── Keys ─────────────────────────
-  const SETTINGS_KEY = "gridrogue_settings_v1";          // nuevo
-  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1";  // legacy (compat)
+  const SETTINGS_KEY = "gridrogue_settings_v1";
+  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1";
 
   // ───────────────────────── Defaults ─────────────────────────
   const defaultSettings = () => ({
@@ -87,15 +81,8 @@
     };
   }
 
-  function getAudioSys() {
-    // audio_sys.js expone window.AudioSys
-    return window.AudioSys || null;
-  }
-
-  function getAuth() {
-    // auth.js expone window.Auth
-    return window.Auth || null;
-  }
+  function getAudioSys() { return window.AudioSys || null; }
+  function getAuth() { return window.Auth || null; }
 
   // ───────────────────────── Perfil (prefs) ─────────────────────────
   function getProfileId() {
@@ -191,20 +178,18 @@
   }
 
   // ───────────────────────── Helpers: “No procedural music” ─────────────────────────
-  // Si AudioSys es el motor interno que podría caer a procedural, nosotros NO lo forzamos:
-  // - Solo intentamos startMusic si hay engine externo o si AudioSys declara que usa HTML (musicMode === "html")
-  // - Si no podemos saberlo, intentamos una vez y si falla => silencio.
   let musicAttempted = false;
 
   function canTryMusicStart(A) {
     try {
       const st = A?.getState?.() || {};
-      // si es el wrapper externo, normalmente no tendrá musicMode o no será "procedural"
+      // si no expone musicMode, asumimos engine externo o wrapper => OK
       if (!("musicMode" in st)) return true;
-      // motor interno: permitimos solo si está en html o none (none se convertirá a html si puede)
-      if (st.musicMode === "html" || st.musicMode === "none") return true;
-      // procedural => NO
+
+      // motor interno:
       if (st.musicMode === "procedural") return false;
+      if (st.musicMode === "html" || st.musicMode === "none") return true;
+
       return true;
     } catch {
       return true;
@@ -217,7 +202,11 @@
     if (!A) return;
 
     try {
-      // API estándar (AudioSys)
+      // v0.1.9: fuerza NO procedural si el AudioSys interno soporta el flag
+      A.setAllowProceduralMusic?.(false);
+    } catch {}
+
+    try {
       A.setMute?.(!!settings.muteAll);
       A.setSfxOn?.(settings.sfxOn !== false);
       A.setMusicOn?.(!!settings.musicOn);
@@ -240,21 +229,20 @@
 
     if (!settings.musicOn || settings.muteAll || settings.musicVol <= 0.001) return;
 
-    // v0.1.8: NO insistimos con música si vemos que caería a procedural.
+    // NO insistimos si vemos que caería a procedural.
     if (!canTryMusicStart(A)) return;
 
-    // no spamear startMusic cada vez
     if (musicAttempted) return;
     musicAttempted = true;
 
     try {
       await A.startMusic?.();
+
       // Re-check: si tras startMusic el motor cae a procedural, paramos y silencio.
       if (!canTryMusicStart(A)) {
         try { A.stopMusic?.(); } catch {}
       }
     } catch {
-      // silencio
       try { A.stopMusic?.(); } catch {}
     }
   }
@@ -266,7 +254,7 @@
       if (didAutoUnlock) return;
 
       const A = getAudioSys();
-      if (!A) return; // AudioSys aún no cargó -> esperamos a otro gesto
+      if (!A) return; // aún no cargó -> esperamos a otro gesto
 
       didAutoUnlock = true;
 
@@ -410,6 +398,8 @@
         if (settings.sfxOn && !settings.muteAll) {
           await A?.sfx?.("coin");
           await A?.sfx?.("ui");
+          await A?.sfx?.("hurt"); // nuevo alias (vida/corazones)
+          await A?.sfx?.("heal"); // nuevo alias (vida/corazones)
         }
       } catch {}
     });
@@ -429,12 +419,11 @@
       const fromProfile = loadAudioFromProfilePrefs();
       settings = fromProfile ? fromProfile : loadFromLocalStorage();
 
-      // reset para permitir startMusic si corresponde
       musicAttempted = false;
 
       syncUIFromSettings();
       applyAudioSettingsNow();
-      // no autostart aquí; esperamos gesto o botón (menos intrusivo en mobile)
+      // no autostart aquí; esperamos gesto o botón
     }, 1500);
   }
 
@@ -448,7 +437,6 @@
       saveSettingsEverywhere();
       syncUIFromSettings();
       applyAudioSettingsNow();
-      // NO forzamos startMusic aquí; dependerá de gesto / UI
       return { ...settings };
     },
     sync: () => {
@@ -461,12 +449,22 @@
       musicAttempted = false;
       await maybeStartMusic();
     },
+
+    // sfx general (mantiene compat)
     sfx: async (name) => {
       await unlockGesture();
       const A = getAudioSys();
       try { if (settings.sfxOn && !settings.muteAll) return await A?.sfx?.(name); } catch {}
       return false;
     },
+
+    // helpers (opcionales) para gameplay/UI v0.1.9
+    hurt: async () => window.AudioUI.sfx("hurt"),
+    heal: async () => window.AudioUI.sfx("heal"),
+    magnetOn: async () => window.AudioUI.sfx("magnet_on"),
+    magnetOff: async () => window.AudioUI.sfx("magnet_off"),
+    upgradeOpen: async () => window.AudioUI.sfx("upgrade_open"),
+    upgradePick: async () => window.AudioUI.sfx("upgrade_pick"),
   };
 
   // ───────────────────────── Boot ─────────────────────────

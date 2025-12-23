@@ -1,12 +1,14 @@
-/* utils.js — Grid Rogue v0.1.8
+/* utils.js — Grid Rogue v0.1.9
    Helpers compartidos (clamps, DOM, overlays, viewport-fix móvil, scroll-lock, etc.)
-   - Mantiene compatibilidad con v0.1.7 (GRUtils.* existentes)
-   - Añade utilidades para móvil (isMobile/isStandalone + --vh) y UI (createEl, qs/qsa, pulse)
+   ✅ v0.1.9:
+   - HUD helpers: setHP (corazones) + setBuffs (badges con stack + timer)
+   - Rarity helpers para duraciones (útil para Imán con tiempo por rareza)
+   - overlay fadeIn/fadeOut compatible con styles.css (animaciones)
 */
 (() => {
   "use strict";
 
-  const VERSION = "0.1.8";
+  const VERSION = "0.1.9";
 
   // ───────────────────────── Math / Random ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -15,6 +17,37 @@
   const invLerp = (a, b, v) => (a === b ? 0 : (v - a) / (b - a));
   const randi = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
   const chance = (p) => Math.random() < p;
+
+  // ───────────────────────── Rarity helpers ─────────────────────────
+  const RARITY_MULT = Object.freeze({
+    common: 1.0,
+    rare: 1.5,
+    epic: 2.25,
+    legendary: 3.0,
+  });
+
+  function rarityMult(rarity) {
+    const k = String(rarity || "common").toLowerCase();
+    return RARITY_MULT[k] ?? 1.0;
+  }
+
+  function scaleByRarity(baseSeconds, rarity) {
+    const base = Number(baseSeconds);
+    if (!Number.isFinite(base) || base <= 0) return 0;
+    return base * rarityMult(rarity);
+  }
+
+  // ───────────────────────── Time formatting ─────────────────────────
+  const pad2 = (n) => String(n | 0).padStart(2, "0");
+
+  function fmtSeconds(sec) {
+    sec = Number(sec);
+    if (!Number.isFinite(sec) || sec < 0) sec = 0;
+    if (sec < 10) return sec.toFixed(1);
+    return String(Math.ceil(sec));
+  }
+
+  function now() { return Date.now(); }
 
   // ───────────────────────── JSON / Storage ─────────────────────────
   const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
@@ -93,7 +126,7 @@
     el.classList.remove("fadeIn", "fadeOut");
   }
 
-  function overlayFadeOut(el, ms = 180) {
+  function overlayFadeOut(el, ms = 160) {
     return new Promise((res) => {
       if (!el || el.hidden) return res();
       el.classList.remove("fadeIn");
@@ -105,7 +138,6 @@
   function pulse(el, className = "pulse", ms = 220) {
     if (!el) return;
     el.classList.remove(className);
-    // fuerza reflow para reiniciar animación
     void el.offsetHeight;
     el.classList.add(className);
     if (ms > 0) setTimeout(() => el.classList.remove(className), ms);
@@ -122,8 +154,6 @@
 
   // ───────────────────────── Device / Mobile helpers ─────────────────────────
   function isStandalone() {
-    // iOS Safari: navigator.standalone
-    // Otros: display-mode
     try {
       return (
         (typeof navigator !== "undefined" && navigator.standalone === true) ||
@@ -137,7 +167,6 @@
 
   function isMobileLike() {
     try {
-      // Coarse pointer + ancho moderado suele ser móvil/tablet
       const coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
       const small = typeof matchMedia === "function" && matchMedia("(max-width: 900px)").matches;
       return !!(coarse || small);
@@ -146,20 +175,15 @@
     }
   }
 
-  // Evita “vh roto” en móvil (barras del navegador). Define CSS vars:
-  // --vh: 1% del alto visual actual
-  // --vw: 1% del ancho visual actual
   function applyViewportVars() {
     try {
       const vv = window.visualViewport;
       const h = (vv && Number.isFinite(vv.height)) ? vv.height : window.innerHeight;
       const w = (vv && Number.isFinite(vv.width)) ? vv.width : window.innerWidth;
 
-      // 1% units
       document.documentElement.style.setProperty("--vh", `${h * 0.01}px`);
       document.documentElement.style.setProperty("--vw", `${w * 0.01}px`);
 
-      // flags de device (útil para CSS: [data-mobile="1"] etc.)
       document.body?.dataset && (document.body.dataset.mobile = isMobileLike() ? "1" : "0");
       document.body?.dataset && (document.body.dataset.standalone = isStandalone() ? "1" : "0");
     } catch {}
@@ -178,7 +202,6 @@
     };
   }
 
-  // Suscripción cómoda a resize/orientation/visualViewport con throttle
   function onViewportChange(cb, { immediate = true } = {}) {
     const handler = rafThrottle(() => cb());
     const unsubs = [];
@@ -188,14 +211,14 @@
 
     if (window.visualViewport) {
       unsubs.push(on(window.visualViewport, "resize", handler, { passive: true }));
-      unsubs.push(on(window.visualViewport, "scroll", handler, { passive: true })); // iOS mueve barras
+      unsubs.push(on(window.visualViewport, "scroll", handler, { passive: true }));
     }
 
     if (immediate) handler();
     return () => unsubs.forEach((u) => { try { u(); } catch {} });
   }
 
-  // Lock scroll (útil si un overlay/panel tapa todo en móvil)
+  // ───────────────────────── Scroll lock ─────────────────────────
   let __scrollLockCount = 0;
   let __scrollY = 0;
 
@@ -224,8 +247,124 @@
     } catch {}
   }
 
+  // ───────────────────────── HUD helpers (v0.1.9) ─────────────────────────
+  function ensureHudNodes() {
+    // Si alguien usa un index viejo, intentamos montar los nodos en #levelProg.
+    const levelProg = $("levelProg");
+    if (!levelProg) return;
+
+    let hpHearts = $("hpHearts");
+    let hpText = $("hpText");
+    let buffBadges = $("buffBadges");
+
+    if (hpHearts && hpText && buffBadges) return;
+
+    // crea bloque compatible con styles.css v0.1.9
+    let extras = $("levelExtras");
+    if (!extras) {
+      extras = createEl("div", { id: "levelExtras", class: "levelExtras" });
+      // lo insertamos antes de la progBar si existe
+      const progBar = levelProg.querySelector?.(".progBar");
+      if (progBar && progBar.parentNode === levelProg) levelProg.insertBefore(extras, progBar);
+      else levelProg.appendChild(extras);
+    }
+
+    let hpWrap = $("hpWrap");
+    if (!hpWrap) {
+      hpWrap = createEl("div", { id: "hpWrap", class: "hpWrap", title: "Vida" });
+      extras.appendChild(hpWrap);
+    }
+
+    if (!hpHearts) {
+      hpHearts = createEl("div", { id: "hpHearts", class: "hearts", "aria-label": "Corazones" });
+      hpWrap.appendChild(hpHearts);
+    }
+    if (!hpText) {
+      hpText = createEl("div", { id: "hpText", class: "hpText tiny muted", text: "10/10" });
+      hpWrap.appendChild(hpText);
+    }
+
+    let buffsWrap = $("buffsWrap");
+    if (!buffsWrap) {
+      buffsWrap = createEl("div", { id: "buffsWrap", class: "buffsWrap", title: "Mejoras activas" });
+      extras.appendChild(buffsWrap);
+    }
+
+    if (!buffBadges) {
+      buffBadges = createEl("div", { id: "buffBadges", class: "buffBadges", "aria-label": "Badges de mejoras" });
+      buffsWrap.appendChild(buffBadges);
+    }
+  }
+
+  function setHP(current, max = 10) {
+    ensureHudNodes();
+    const hpHearts = $("hpHearts");
+    const hpText = $("hpText");
+    if (!hpHearts || !hpText) return;
+
+    const cur = clampInt(current, 0, 999);
+    const mx = clampInt(max, 1, 999);
+
+    // render corazones (visual = mx, típico 10)
+    clearEl(hpHearts);
+    for (let i = 0; i < mx; i++) {
+      const full = i < cur;
+      hpHearts.appendChild(
+        createEl("span", { class: `heart ${full ? "full" : "empty"}`, "aria-hidden": "true" }, [
+          createEl("span", { class: "ms", text: "favorite" })
+        ])
+      );
+    }
+    hpText.textContent = `${cur}/${mx}`;
+  }
+
+  // buffs: [{ key, icon, rarity, count, timeLeft, duration, showTime }]
+  function setBuffs(buffs) {
+    ensureHudNodes();
+    const wrap = $("buffBadges");
+    if (!wrap) return;
+
+    const arr = Array.isArray(buffs) ? buffs : [];
+    clearEl(wrap);
+
+    for (const b of arr) {
+      if (!b) continue;
+      const key = String(b.key || "");
+      if (!key) continue;
+
+      const rarity = String(b.rarity || "common").toLowerCase();
+      const icon = String(b.icon || "auto_awesome");
+      const count = clampInt(b.count ?? 1, 1, 999);
+
+      const duration = Number(b.duration);
+      const timeLeft = Number(b.timeLeft);
+      const hasTimer = Number.isFinite(duration) && duration > 0 && Number.isFinite(timeLeft) && timeLeft >= 0;
+
+      const pct = hasTimer ? clamp(timeLeft / duration, 0, 1) : 1;
+
+      const badge = createEl("div", {
+        class: "buffBadge",
+        title: String(b.title || b.name || key),
+        dataset: { key, rarity },
+      });
+
+      badge.style.setProperty("--pct", String(pct));
+
+      badge.appendChild(createEl("span", { class: "ms", text: icon, "aria-hidden": "true" }));
+
+      const countEl = createEl("span", { class: "buffCount", text: String(count) });
+      if (count <= 1) countEl.hidden = true;
+      badge.appendChild(countEl);
+
+      const timeEl = createEl("span", { class: "buffTime", text: hasTimer ? fmtSeconds(timeLeft) : "" });
+      if (!hasTimer) timeEl.hidden = true;
+      badge.appendChild(timeEl);
+
+      wrap.appendChild(badge);
+    }
+  }
+
   // ───────────────────────── Boot (viewport vars) ─────────────────────────
-  // Deja listo --vh/--vw y flags para CSS desde el arranque
   onViewportChange(() => applyViewportVars(), { immediate: true });
 
   // ───────────────────────── Export ─────────────────────────
@@ -234,6 +373,9 @@
 
     // Math
     clamp, clampInt, lerp, invLerp, randi, chance,
+
+    // Rarity/time
+    rarityMult, scaleByRarity, fmtSeconds, now,
 
     // JSON/Storage
     safeParse, safeStringify,
@@ -258,5 +400,12 @@
 
     // Scroll lock
     lockScroll, unlockScroll,
+
+    // HUD (v0.1.9)
+    hud: Object.freeze({
+      ensureHudNodes,
+      setHP,
+      setBuffs,
+    }),
   });
 })();

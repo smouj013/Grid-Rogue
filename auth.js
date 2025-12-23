@@ -1,22 +1,12 @@
-/* auth.js — Grid Rogue v0.1.8
-   ✅ Perfiles locales (robusto)
-   ✅ Migración:
-      - gridrunner_auth_v1  -> gridrogue_auth_v1 (sin perder datos)
-      - gridrunner_name_v1 + gridrunner_best_v1 (solo si NO hay perfiles)
-   ✅ Validación + saneado de estado (corrige ids/valores raros)
-   ✅ API estable (no rompe app.js): list/get/set/create/best + rename/delete/export/import/prefs
-   ✅ Prefs por perfil ampliadas (opcional): particles / reduceMotion / uiHue / mobileControls / mobileGridRows
-   ✅ Best-effort: si localStorage falla, NO explota
-   ✅ Compatible con utils.js (GRUtils o Utils) si existe (fallback interno si no)
+/* auth.js — Grid Rogue v0.1.9
+   (misma API, migración y robustez que v0.1.8)
 */
-
 (() => {
   "use strict";
 
-  const VERSION = "0.1.8";
+  const VERSION = "0.1.9";
 
   // ───────────────────────── Utils (best-effort) ─────────────────────────
-  // Preferimos GRUtils (nuevo), luego Utils (legacy), luego fallback interno.
   const U = window.GRUtils || window.Utils || null;
 
   const now = U?.now || (() => Date.now());
@@ -107,15 +97,6 @@
   }
 
   // ───────────────────────── Prefs (opcional por perfil) ─────────────────────────
-  // Compat: si prefs no existe, OK.
-  // v0.1.7:
-  // - particles (bool)
-  // - reduceMotion (bool)
-  // - uiHue (0..360)
-  //
-  // v0.1.8:
-  // - mobileControls: "auto" | "on" | "off"
-  // - mobileGridRows: 16..32 (por defecto lo decide app.js; aquí solo guardamos)
   function sanitizePrefs(prefs) {
     const o = safeObj(prefs);
     if (!o) return null;
@@ -211,15 +192,12 @@
   }
 
   function loadState() {
-    // 1) key nuevo
     const fresh = loadStateFromKey(AUTH_KEY);
     if (fresh) return { st: fresh, loadedFrom: AUTH_KEY };
 
-    // 2) key viejo
     const old = loadStateFromKey(AUTH_KEY_OLD);
     if (old) return { st: old, loadedFrom: AUTH_KEY_OLD };
 
-    // 3) vacío
     return { st: { v: 1, activeId: null, profiles: [] }, loadedFrom: null };
   }
 
@@ -229,23 +207,15 @@
     const json = safeStringify(st, "");
     if (!json) return false;
 
-    // ✅ Guardamos siempre en el nuevo
     const okNew = writeLS(AUTH_KEY, json);
-
-    // ✅ Compat: también en el viejo (best-effort)
-    writeLS(AUTH_KEY_OLD, json);
-
+    writeLS(AUTH_KEY_OLD, json); // compat best-effort
     return okNew;
   }
 
   function ensureMigration(st, loadedFrom) {
-    // Si venimos del key viejo, persistimos en el nuevo
     if (loadedFrom === AUTH_KEY_OLD) saveState(st);
-
-    // Si ya hay perfiles, ok
     if (st.profiles.length > 0) return st;
 
-    // Migración legacy (solo si NO hay perfiles)
     const legacyName = normalizeName(readLS(LEGACY_NAME_KEY) || "");
     const legacyBest = parseInt(readLS(LEGACY_BEST_KEY) || "0", 10) || 0;
 
@@ -470,7 +440,6 @@
     state.profiles = [];
     saveState(state);
 
-    // Limpieza keys (best-effort)
     removeLS(AUTH_KEY);
     removeLS(AUTH_KEY_OLD);
     return true;

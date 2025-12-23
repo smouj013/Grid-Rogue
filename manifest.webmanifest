@@ -2,7 +2,7 @@
   "name": "Grid Rogue",
   "short_name": "GridRogue",
   "id": "./",
-  "start_url": "./?v=0.1.8",
+  "start_url": "./?v=0.1.9",
   "scope": "./",
   "display": "standalone",
   "display_override": ["standalone", "fullscreen", "minimal-ui", "browser"],

@@ -1,10 +1,12 @@
-/* styles.css — Grid Rogue v0.1.8
-   ✅ Objetivo:
+/* styles.css — Grid Rogue v0.1.9
+   ✅ Objetivo v0.1.9:
+   - Vida por corazones (UI en HUD, 10 base)
+   - Buffs activos visibles como badges con stack (si >1) + soporte timer (p.ej Imán)
+   - Panel de Upgrades con look mejorado + scroll interno
    - Layout estable (Topbar + HUD fijo + canvas grande)
    - Overlays sólidos
    - Opciones con scroll interno (sin “scroll fantasma” en el juego)
-   - Upgrades 100% por CSS (rarities, cards, badges, confetti canvas)
-   - Dpad solo móvil (JS lo oculta/enseña) y colocado en bordes
+   - Dpad solo móvil y colocado en bordes
 */
 
 :root{
@@ -43,7 +45,8 @@
 
   --overlayBack: rgba(0,0,0,0.50);
 
-  --hudH: 122px;
+  /* HUD: un poco más alto para HP + buffs */
+  --hudH: 138px;
 
   --panelMaxW: 560px;
   --panelWideMaxW: 980px;
@@ -59,6 +62,10 @@
   --dpadBtn: 58px;
   --dpadGap: 10px;
   --dpadPad: 12px;
+
+  /* Vida */
+  --hpFull: rgba(255,80,110,0.92);
+  --hpEmpty: rgba(255,255,255,0.18);
 }
 
 *{ box-sizing:border-box; }
@@ -410,6 +417,168 @@ input[type="range"]{ accent-color: var(--accent); }
   padding-top: 8px;
   border-top: 1px solid rgba(255,255,255,0.08);
 }
+
+/* ─────────── HP + Buffs (nuevo) ─────────── */
+.statusBar{
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.hpWrap{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hpIcon{
+  font-size: 16px;
+  color: rgba(255,255,255,0.72);
+  filter: drop-shadow(0 10px 22px rgba(0,0,0,0.35));
+}
+
+.hpHearts{
+  display:flex;
+  align-items:center;
+  gap: 3px;
+  flex-wrap:wrap;
+  max-width: 280px;
+}
+
+.heart{
+  font-size: 15px;
+  line-height:1;
+  letter-spacing:0;
+  vertical-align:0;
+  transform: translateZ(0);
+  filter: drop-shadow(0 10px 16px rgba(0,0,0,0.28));
+  transition: transform .12s ease, opacity .12s ease, color .12s ease;
+  font-variation-settings:"FILL" 1, "wght" 700, "GRAD" 0, "opsz" 24;
+}
+.heart.full{ color: var(--hpFull); opacity: .95; }
+.heart.empty{
+  color: rgba(255,255,255,0.20);
+  opacity: .55;
+  font-variation-settings:"FILL" 0, "wght" 650, "GRAD" 0, "opsz" 24;
+}
+
+.hpText{
+  font-size: 12px;
+  color: rgba(255,255,255,0.72);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+}
+
+/* Animaciones opcionales (JS puede añadir clases) */
+.hpWrap.damage .heart.full{ animation: hpPulse .18s ease-out 1; }
+@keyframes hpPulse{
+  0%{ transform: scale(1); }
+  60%{ transform: scale(1.18); }
+  100%{ transform: scale(1); }
+}
+
+.buffBar{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap: 8px;
+  flex-wrap:wrap;
+  min-width: 0;
+}
+.buffBar:empty{ display:none; }
+
+/* Badge de buff (JS lo crea dentro de #buffBar)
+   Estructura recomendada:
+   <div class="buffBadge" data-id="magnet" data-rarity="rare">
+     <span class="ms">magnet</span>
+     <span class="stack" hidden>2</span>
+     <span class="timer"><span class="timerFill" style="width:65%"></span></span>
+   </div>
+*/
+.buffBadge{
+  pointer-events:none;
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width: 34px;
+  height: 34px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.16);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.32);
+  overflow:hidden;
+}
+.buffBadge .ms{
+  font-size: 20px;
+  color: rgba(255,255,255,0.92);
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,0.25));
+}
+
+.buffBadge::before{
+  content:"";
+  position:absolute;
+  inset:-1px;
+  pointer-events:none;
+  opacity:.55;
+  background:
+    radial-gradient(240px 120px at 20% 0%, rgba(255,255,255,0.06), transparent 60%),
+    radial-gradient(240px 120px at 90% 30%, rgba(255,255,255,0.05), transparent 60%);
+}
+
+.buffBadge .stack{
+  position:absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.92);
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.35);
+}
+.buffBadge .stack[hidden]{ display:none; }
+
+.buffBadge .timer{
+  position:absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  overflow:hidden;
+}
+.buffBadge .timer[hidden]{ display:none; }
+
+.buffBadge .timerFill{
+  display:block;
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  box-shadow: 0 10px 20px rgba(0,0,0,0.28);
+}
+
+/* Rareza (buff) */
+.buffBadge[data-rarity="common"]{ border-color: rgba(255,255,255,0.12); }
+.buffBadge[data-rarity="rare"]{ border-color: rgba(106,176,255,0.26); }
+.buffBadge[data-rarity="epic"]{ border-color: rgba(214,133,255,0.26); }
+.buffBadge[data-rarity="legendary"]{ border-color: rgba(255,211,90,0.26); }
+
 .levelRow{
   display:flex;
   align-items:center;
@@ -430,6 +599,7 @@ input[type="range"]{ accent-color: var(--accent); }
   overflow:hidden;
   text-overflow:ellipsis;
 }
+
 .progBar{
   height: 10px;
   border-radius: 999px;
@@ -467,19 +637,24 @@ input[type="range"]{ accent-color: var(--accent); }
 .toast.show{ transform: translateY(0); opacity:1; }
 
 @media (max-width:520px){
-  :root{ --hudH: 108px; }
+  :root{ --hudH: 126px; }
   .combo{ padding: 9px 10px; }
   .comboSeq .chip span:not(.ms){ display:none; }
   .comboHint{ display:none; }
+  .hpHearts{ gap: 2px; max-width: 200px; }
+  .heart{ font-size: 14px; }
+  .buffBadge{ width: 32px; height: 32px; border-radius: 13px; }
+  .buffBadge .ms{ font-size: 19px; }
 }
 @media (max-height:720px){
-  :root{ --hudH: 104px; }
+  :root{ --hudH: 118px; }
   .canvasWrap{ gap: 6px; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)) 6px; }
   .combo{ padding: 8px 10px; }
   .comboHint{ display:none; }
+  .statusBar{ margin-bottom: 6px; }
 }
 @media (max-height:600px){
-  :root{ --hudH: 84px; }
+  :root{ --hudH: 96px; }
   #levelProg{ display:none; }
   .toast{ top: 6px; right: 6px; padding: 8px 10px; font-size: 12px; }
 }
@@ -549,10 +724,7 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 .dpadBtn:active{ transform: translateY(1px) scale(0.98); }
 
-/* Colocación en bordes:
-   - Izquierda/Right: abajo-izquierda (horizontal)
-   - Up/Down: abajo-derecha (vertical)
-*/
+/* Colocación en bordes */
 #btnLeft, #btnRight, #btnUp, #btnDown{ position:absolute; }
 
 /* Safe area bottom */
@@ -811,15 +983,53 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 .sliderRow input[type="range"]{ flex: 1; }
 
-/* ───────────────── Upgrades ───────────────── */
+/* ───────────────── Upgrades (mejorado) ───────────────── */
+.upgradesPanel{
+  background:
+    radial-gradient(900px 420px at 12% 0%, rgba(105,168,255,0.10), transparent 60%),
+    radial-gradient(800px 420px at 92% 10%, rgba(255,211,90,0.08), transparent 62%),
+    var(--card);
+}
+
+.panelBody{
+  max-height: min(62vh, calc(100vh - 220px));
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 2px 2px 8px 2px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.10);
+}
+.panelBody::-webkit-scrollbar{ width: 10px; }
+.panelBody::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border-radius: 999px;
+  border: 2px solid rgba(0,0,0,0.20);
+}
+
 .upgradeChoices, #upgradeChoices{
   display:grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 10px;
+  padding: 10px;
   position:relative;
-  z-index:1; /* por detrás va el canvas confetti con zIndex=0 */
+  z-index:1;
 }
+
+.upgradeChoices::before, #upgradeChoices::before{
+  content:"";
+  position:absolute;
+  inset: 8px;
+  pointer-events:none;
+  opacity:.10;
+  border-radius: 14px;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 1px, transparent 2px, transparent 18px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 2px, transparent 18px);
+}
+
 @media (max-width: 760px){
   .upgradeChoices, #upgradeChoices{ grid-template-columns: 1fr; }
 }
@@ -858,6 +1068,21 @@ input[type="range"]{ accent-color: var(--accent); }
   box-shadow: 0 18px 38px rgba(0,0,0,0.40);
 }
 .upCard:active{ transform: translateY(0px) scale(0.995); }
+
+/* Si app.js añade icono: <div class="upIcon"><span class="ms">...</span></div> */
+.upIcon{
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin-bottom: 8px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 12px 22px rgba(0,0,0,0.30);
+}
+.upIcon .ms{ font-size: 22px; }
 
 .upTitle{
   font-weight: 1000;
@@ -937,6 +1162,12 @@ input[type="range"]{ accent-color: var(--accent); }
 .upCard[data-rarity="legendary"] .upRarityBadge{
   border-color: rgba(255,211,90,0.28);
   background: rgba(255,211,90,0.10);
+}
+
+/* acciones upgrades mejor colocadas */
+.upgradesActions{
+  justify-content:space-between;
+  margin-top: 12px;
 }
 
 /* ───────────────── GameOver ───────────────── */

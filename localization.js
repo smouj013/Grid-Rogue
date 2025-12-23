@@ -1,43 +1,53 @@
-/* localization.js — Grid Rogue v0.1.8
+/* localization.js — Grid Rogue v0.1.9
    I18N separado (window.I18n)
-   ✅ Añade: zh (简体), zh-Hant (繁體), ja, ko, ru, ar + extra (tr, pl, nl)
-   ✅ Normalización mejorada (zh-Hans/zh-Hant, regiones, _ vs -)
+   ✅ Normalización robusta (zh-hans/zh-hant, regiones, _ vs -)
    ✅ Soporte RTL (ar): ajusta document.documentElement.dir
+   ✅ Nuevas keys v0.1.9 (vida/corazones, badges de mejoras activas, duraciones, upgrade de vida)
 */
 (() => {
   "use strict";
 
+  const VERSION = "0.1.9";
+
+  // Idiomas RTL (por ahora solo árabe)
   const RTL_LANGS = new Set(["ar"]);
 
+  // Normaliza códigos de idioma para que casen con nuestras keys
+  // - "es-ES" => "es"
+  // - "pt-BR" => "pt"
+  // - "zh", "zh-CN", "zh-Hans" => "zh" (Simplificado)
+  // - "zh-TW", "zh-Hant", "zh-HK", "zh-MO" => "zh-hant" (Tradicional)
   const normalize = (raw) => {
     let s = String(raw || "").toLowerCase().trim();
     if (!s || s === "auto") return "auto";
 
-    // unify separators
     s = s.replace(/_/g, "-");
 
-    // Chinese variants
-    // - zh-hant / zh-tw / zh-hk / zh-mo => Traditional
-    // - default => Simplified
     if (s === "zh" || s.startsWith("zh-")) {
       const hasHant = s.includes("hant");
+      const hasHans = s.includes("hans");
       const isTW = s.includes("-tw");
       const isHK = s.includes("-hk");
       const isMO = s.includes("-mo");
+      const isCN = s.includes("-cn");
+      const isSG = s.includes("-sg");
+
       if (hasHant || isTW || isHK || isMO) return "zh-hant";
+      // hans / cn / sg / default => simplified
+      if (hasHans || isCN || isSG) return "zh";
       return "zh";
     }
 
     const base = s.split("-")[0];
 
-    // keep existing special-cases
+    // special-cases
     if (base === "pt") return "pt";
     if (base === "ca") return "ca";
 
-    // general
     return base;
   };
 
+  // Diccionarios
   const dict = {
     es: {
       langName: "Español",
@@ -106,6 +116,20 @@
       up_reroll_desc: "Ganas 1 reroll extra.",
       up_mult_name: "Mult +",
       up_mult_desc: "Sube multiplicador base (+0.10).",
+
+      // ── v0.1.9 (vida/corazones + badges + duraciones + nueva mejora) ──
+      hud_hp: "Vida",
+      toast_damage: "Daño",
+      toast_heal: "Vida +1",
+      toast_heart_full: "Vida al máximo",
+      tag_survival: "Supervivencia",
+      up_life_name: "Vida +",
+      up_life_desc: "Recupera 1 corazón (hasta el máximo).",
+      ui_active: "Activas",
+      ui_duration: "Duración",
+      ui_time_left: "Queda: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Activa",
     },
 
     en: {
@@ -175,6 +199,20 @@
       up_reroll_desc: "Gain 1 extra reroll.",
       up_mult_name: "Mult +",
       up_mult_desc: "Increase base multiplier (+0.10).",
+
+      // v0.1.9
+      hud_hp: "HP",
+      toast_damage: "Damage",
+      toast_heal: "HP +1",
+      toast_heart_full: "HP full",
+      tag_survival: "Survival",
+      up_life_name: "HP +",
+      up_life_desc: "Restore 1 heart (up to max).",
+      ui_active: "Active",
+      ui_duration: "Duration",
+      ui_time_left: "Left: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Active",
     },
 
     fr: {
@@ -244,6 +282,20 @@
       up_reroll_desc: "Gagne 1 relance.",
       up_mult_name: "Mult +",
       up_mult_desc: "Augmente le mult de base (+0,10).",
+
+      // v0.1.9
+      hud_hp: "Vie",
+      toast_damage: "Dégâts",
+      toast_heal: "Vie +1",
+      toast_heart_full: "Vie au max",
+      tag_survival: "Survie",
+      up_life_name: "Vie +",
+      up_life_desc: "Restaure 1 cœur (jusqu’au max).",
+      ui_active: "Actives",
+      ui_duration: "Durée",
+      ui_time_left: "Reste : {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Active",
     },
 
     de: {
@@ -313,6 +365,20 @@
       up_reroll_desc: "Erhalte 1 zusätzlichen Reroll.",
       up_mult_name: "Mult +",
       up_mult_desc: "Erhöht Basismultiplikator (+0,10).",
+
+      // v0.1.9
+      hud_hp: "Leben",
+      toast_damage: "Schaden",
+      toast_heal: "Leben +1",
+      toast_heart_full: "Leben voll",
+      tag_survival: "Überleben",
+      up_life_name: "Leben +",
+      up_life_desc: "Stellt 1 Herz wieder her (bis max).",
+      ui_active: "Aktiv",
+      ui_duration: "Dauer",
+      ui_time_left: "Übrig: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Aktiv",
     },
 
     it: {
@@ -382,6 +448,20 @@
       up_reroll_desc: "Ottieni 1 reroll extra.",
       up_mult_name: "Mult +",
       up_mult_desc: "Aumenta mult base (+0,10).",
+
+      // v0.1.9
+      hud_hp: "Vita",
+      toast_damage: "Danni",
+      toast_heal: "Vita +1",
+      toast_heart_full: "Vita al massimo",
+      tag_survival: "Sopravvivenza",
+      up_life_name: "Vita +",
+      up_life_desc: "Recupera 1 cuore (fino al massimo).",
+      ui_active: "Attive",
+      ui_duration: "Durata",
+      ui_time_left: "Resta: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Attiva",
     },
 
     pt: {
@@ -451,6 +531,20 @@
       up_reroll_desc: "Ganhas 1 reroll extra.",
       up_mult_name: "Mult +",
       up_mult_desc: "Aumenta mult base (+0,10).",
+
+      // v0.1.9
+      hud_hp: "Vida",
+      toast_damage: "Dano",
+      toast_heal: "Vida +1",
+      toast_heart_full: "Vida no máximo",
+      tag_survival: "Sobrevivência",
+      up_life_name: "Vida +",
+      up_life_desc: "Recupera 1 coração (até ao máximo).",
+      ui_active: "Ativas",
+      ui_duration: "Duração",
+      ui_time_left: "Falta: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Ativa",
     },
 
     ca: {
@@ -520,9 +614,21 @@
       up_reroll_desc: "Guanyes 1 reroll extra.",
       up_mult_name: "Mult +",
       up_mult_desc: "Puja mult base (+0,10).",
-    },
 
-    // ───────────────────────── NUEVOS ─────────────────────────
+      // v0.1.9
+      hud_hp: "Vida",
+      toast_damage: "Dany",
+      toast_heal: "Vida +1",
+      toast_heart_full: "Vida al màxim",
+      tag_survival: "Supervivència",
+      up_life_name: "Vida +",
+      up_life_desc: "Recupera 1 cor (fins al màxim).",
+      ui_active: "Actives",
+      ui_duration: "Durada",
+      ui_time_left: "Queda: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Activa",
+    },
 
     zh: {
       langName: "中文（简体）",
@@ -591,6 +697,20 @@
       up_reroll_desc: "获得 1 次额外重掷。",
       up_mult_name: "倍率 +",
       up_mult_desc: "提高基础倍率（+0.10）。",
+
+      // v0.1.9
+      hud_hp: "生命",
+      toast_damage: "受伤",
+      toast_heal: "生命 +1",
+      toast_heart_full: "生命已满",
+      tag_survival: "生存",
+      up_life_name: "生命 +",
+      up_life_desc: "恢复 1 点生命（不超过上限）。",
+      ui_active: "已激活",
+      ui_duration: "持续时间",
+      ui_time_left: "剩余：{0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "已激活",
     },
 
     "zh-hant": {
@@ -660,6 +780,20 @@
       up_reroll_desc: "獲得 1 次額外重擲。",
       up_mult_name: "倍率 +",
       up_mult_desc: "提高基礎倍率（+0.10）。",
+
+      // v0.1.9
+      hud_hp: "生命",
+      toast_damage: "受傷",
+      toast_heal: "生命 +1",
+      toast_heart_full: "生命已滿",
+      tag_survival: "生存",
+      up_life_name: "生命 +",
+      up_life_desc: "恢復 1 點生命（不超過上限）。",
+      ui_active: "已啟用",
+      ui_duration: "持續時間",
+      ui_time_left: "剩餘：{0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "已啟用",
     },
 
     ja: {
@@ -729,6 +863,20 @@
       up_reroll_desc: "リロールを1回追加。",
       up_mult_name: "倍率 +",
       up_mult_desc: "基礎倍率を上げる（+0.10）。",
+
+      // v0.1.9
+      hud_hp: "ライフ",
+      toast_damage: "ダメージ",
+      toast_heal: "ライフ +1",
+      toast_heart_full: "ライフ満タン",
+      tag_survival: "生存",
+      up_life_name: "ライフ +",
+      up_life_desc: "ライフを1回復（上限まで）。",
+      ui_active: "発動中",
+      ui_duration: "持続時間",
+      ui_time_left: "残り：{0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "発動中",
     },
 
     ko: {
@@ -798,6 +946,20 @@
       up_reroll_desc: "추가 리롤 1회.",
       up_mult_name: "배수 +",
       up_mult_desc: "기본 배수 증가(+0.10).",
+
+      // v0.1.9
+      hud_hp: "체력",
+      toast_damage: "피해",
+      toast_heal: "체력 +1",
+      toast_heart_full: "체력 최대",
+      tag_survival: "생존",
+      up_life_name: "체력 +",
+      up_life_desc: "체력 1 회복(최대치까지).",
+      ui_active: "활성",
+      ui_duration: "지속시간",
+      ui_time_left: "남은 시간: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "활성",
     },
 
     ru: {
@@ -867,6 +1029,20 @@
       up_reroll_desc: "Получаешь +1 реролл.",
       up_mult_name: "Множ. +",
       up_mult_desc: "Повышает базовый множитель (+0.10).",
+
+      // v0.1.9
+      hud_hp: "Жизни",
+      toast_damage: "Урон",
+      toast_heal: "Жизнь +1",
+      toast_heart_full: "Жизни максимум",
+      tag_survival: "Выживание",
+      up_life_name: "Жизнь +",
+      up_life_desc: "Восстанавливает 1 жизнь (до максимума).",
+      ui_active: "Активно",
+      ui_duration: "Длительность",
+      ui_time_left: "Осталось: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Активно",
     },
 
     ar: {
@@ -936,9 +1112,21 @@
       up_reroll_desc: "تحصل على إعادة رمي إضافية واحدة.",
       up_mult_name: "مضاعف +",
       up_mult_desc: "يزيد المضاعف الأساسي (+0.10).",
-    },
 
-    // ───────────────────────── EXTRA (“y demás”) ─────────────────────────
+      // v0.1.9
+      hud_hp: "القلوب",
+      toast_damage: "ضرر",
+      toast_heal: "قلب +1",
+      toast_heart_full: "القلوب ممتلئة",
+      tag_survival: "بقاء",
+      up_life_name: "قلب +",
+      up_life_desc: "استرجاع قلب واحد (حتى الحد الأقصى).",
+      ui_active: "مفعّل",
+      ui_duration: "المدة",
+      ui_time_left: "المتبقي: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "مفعّل",
+    },
 
     tr: {
       langName: "Türkçe",
@@ -1007,6 +1195,20 @@
       up_reroll_desc: "1 ekstra reroll kazan.",
       up_mult_name: "Çarpan +",
       up_mult_desc: "Temel çarpanı artırır (+0.10).",
+
+      // v0.1.9
+      hud_hp: "Can",
+      toast_damage: "Hasar",
+      toast_heal: "Can +1",
+      toast_heart_full: "Can dolu",
+      tag_survival: "Hayatta Kalma",
+      up_life_name: "Can +",
+      up_life_desc: "1 can yeniler (maksimuma kadar).",
+      ui_active: "Aktif",
+      ui_duration: "Süre",
+      ui_time_left: "Kalan: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Aktif",
     },
 
     pl: {
@@ -1076,6 +1278,20 @@
       up_reroll_desc: "Dodatkowy 1 reroll.",
       up_mult_name: "Mnoż. +",
       up_mult_desc: "Zwiększa bazowy mnożnik (+0.10).",
+
+      // v0.1.9
+      hud_hp: "Życie",
+      toast_damage: "Obrażenia",
+      toast_heal: "Życie +1",
+      toast_heart_full: "Życie pełne",
+      tag_survival: "Przetrwanie",
+      up_life_name: "Życie +",
+      up_life_desc: "Odnawia 1 życie (do maksimum).",
+      ui_active: "Aktywne",
+      ui_duration: "Czas trwania",
+      ui_time_left: "Pozostało: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Aktywne",
     },
 
     nl: {
@@ -1145,16 +1361,38 @@
       up_reroll_desc: "Krijg 1 extra reroll.",
       up_mult_name: "Mult +",
       up_mult_desc: "Verhoogt basismultiplier (+0.10).",
+
+      // v0.1.9
+      hud_hp: "Levens",
+      toast_damage: "Schade",
+      toast_heal: "Leven +1",
+      toast_heart_full: "Levens vol",
+      tag_survival: "Overleven",
+      up_life_name: "Leven +",
+      up_life_desc: "Herstelt 1 leven (tot max).",
+      ui_active: "Actief",
+      ui_duration: "Duur",
+      ui_time_left: "Resterend: {0}",
+      badge_stack_fmt: "x{0}",
+      badge_active: "Actief",
     },
   };
 
+  // Supported list
   const supported = ["auto", ...Object.keys(dict)];
   let current = "es";
 
   function detectBrowser() {
-    const nav = (navigator.languages && navigator.languages[0]) || navigator.language || "es";
-    const n = normalize(nav);
-    return dict[n] ? n : "en";
+    const langs = (navigator.languages && navigator.languages.length)
+      ? navigator.languages
+      : [navigator.language || "es"];
+
+    for (const raw of langs) {
+      const n = normalize(raw);
+      if (dict[n]) return n;
+    }
+    // fallback
+    return dict.en ? "en" : (dict.es ? "es" : Object.keys(dict)[0]);
   }
 
   function setDocLangAndDir(code) {
@@ -1165,8 +1403,11 @@
   function setLang(raw) {
     const n = normalize(raw);
     if (n === "auto") current = detectBrowser();
-    else current = dict[n] ? n : "en";
+    else current = dict[n] ? n : (dict.en ? "en" : "es");
     setDocLangAndDir(current);
+
+    // Opcional y seguro: refresca textos ya presentes
+    try { applyDataAttrs(document); } catch {}
   }
 
   function getLang() { return current; }
@@ -1199,9 +1440,15 @@
     ];
 
     const out = [];
+    const autoLabel =
+      (dict[current]?.lang_auto) ||
+      (dict.en?.lang_auto) ||
+      (dict.es?.lang_auto) ||
+      "Auto";
+
     for (const code of order) {
       if (!supported.includes(code)) continue;
-      if (code === "auto") out.push({ code, label: (dict[current]?.lang_auto || dict.en.lang_auto || "Auto") });
+      if (code === "auto") out.push({ code, label: autoLabel });
       else out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
     }
 
@@ -1227,6 +1474,20 @@
         const k = el.getAttribute("data-i18n-ph");
         if (k) el.placeholder = t(k);
       });
+
+      // Extras seguros (no rompen nada si no existen):
+      root.querySelectorAll?.("[data-i18n-aria]")?.forEach((el) => {
+        const k = el.getAttribute("data-i18n-aria");
+        if (k) el.setAttribute("aria-label", t(k));
+      });
+      root.querySelectorAll?.("[data-i18n-alt]")?.forEach((el) => {
+        const k = el.getAttribute("data-i18n-alt");
+        if (k) el.setAttribute("alt", t(k));
+      });
+      root.querySelectorAll?.("[data-i18n-value]")?.forEach((el) => {
+        const k = el.getAttribute("data-i18n-value");
+        if (k) el.value = t(k);
+      });
     } catch {}
   }
 
@@ -1234,6 +1495,7 @@
   setDocLangAndDir(current);
 
   window.I18n = Object.freeze({
+    version: VERSION,
     setLang,
     getLang,
     t,

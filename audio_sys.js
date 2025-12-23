@@ -1,24 +1,21 @@
-/* audio_sys.js — Grid Rogue v0.1.8
+/* audio_sys.js — Grid Rogue v0.1.9
    window.AudioSys
-   ✅ Si detecta un motor externo (tu audio.js) lo envuelve.
-   ✅ Si no, usa motor interno (HTMLAudio música + WebAudio SFX + fallback procedural).
+   ✅ Si detecta un motor externo lo envuelve.
+   ✅ Si no, usa motor interno (HTMLAudio música + WebAudio SFX + fallback procedural SFX)
    ✅ iOS/Android friendly:
-      - unlock() idempotente, resume AudioContext, prepara música en silencio
-      - startMusic() tolerante a autoplay restrictions
-   ✅ v0.1.8:
-      - Normaliza rutas con base robusta (soporta GH Pages/subcarpetas)
-      - Mejora de “cache hints” (no rompe SW, pero ayuda)
-      - getState() más completo
-      - sfx(): acepta alias comunes ("click","button","upgrade", etc.)
-      - duckMusic(): suavizado estable y sin acumulación de RAF
+      - unlock() idempotente, resume AudioContext, “prime” música
+   ✅ v0.1.9:
+      - Flag setAllowProceduralMusic(false): permite DESACTIVAR música procedural (fallback) sin romper compat
+      - Más alias SFX: hurt/heal/heart/magnet_on/magnet_off/upgrade_open/upgrade_pick/...
+      - Normalización de rutas robusta (GH Pages/subcarpetas)
 */
 
 (() => {
   "use strict";
 
-  const VERSION = "0.1.8";
+  const VERSION = "0.1.9";
 
-  // Si ya existe AudioSys (por tu audio.js), no lo tocamos.
+  // Si ya existe AudioSys (por motor externo), no lo tocamos.
   if (window.AudioSys && typeof window.AudioSys.sfx === "function") return;
 
   const U = window.GRUtils || window.Utils || {};
@@ -46,10 +43,10 @@
       window.AudioManager,
       window.GRAudio,
       window.AudioSystem,
-      window.Audio, // a veces audio.js exporta window.Audio
     ].filter(Boolean);
 
     for (const e of cands) {
+      if (!e || typeof e !== "object") continue;
       const hasSfx = typeof e.sfx === "function" || typeof e.playSfx === "function" || typeof e.play === "function";
       const hasMusic = typeof e.startMusic === "function" || typeof e.playMusic === "function" || typeof e.musicStart === "function";
       if (hasSfx || hasMusic) return e;
@@ -122,10 +119,12 @@
           if (typeof ext.setVolume === "function") return ext.setVolume(o);
         } catch {}
       },
+
+      // v0.1.9 (si el externo no lo soporta, no pasa nada)
+      setAllowProceduralMusic: (_v) => {},
+
       getState: () => {
-        try {
-          if (typeof ext.getState === "function") return ext.getState();
-        } catch {}
+        try { if (typeof ext.getState === "function") return ext.getState(); } catch {}
         return {};
       },
     };
@@ -139,9 +138,9 @@
     try { return !!(window.AudioContext || window.webkitAudioContext); } catch { return false; }
   })();
 
-  // Nota: el SW ya precachea más sonidos, aquí mantenemos los “mínimos” + alias en map.
   const FILES = {
     bgm:    "assets/audio/bgm_loop.mp3",
+    music:  "assets/audio/music_loop.mp3",
 
     coin:   "assets/audio/sfx_coin.wav",
     gem:    "assets/audio/sfx_gem.wav",
@@ -153,12 +152,10 @@
     reroll: "assets/audio/sfx_reroll.wav",
     ui:     "assets/audio/sfx_ui_click.wav",
 
-    // v0.1.8 (si existen en tu repo, genial; si no, fallback a ui)
     gameover: "assets/audio/sfx_gameover.wav",
     combo:    "assets/audio/sfx_combo.wav",
     block:    "assets/audio/sfx_block.wav",
     upgrade:  "assets/audio/sfx_upgrade.wav",
-    music:    "assets/audio/music_loop.mp3",
   };
 
   let ctx = null, master = null, sfxGain = null;
@@ -175,6 +172,9 @@
 
   const buffers = new Map();
   let proceduralNode = null;
+
+  // v0.1.9: permite desactivar música procedural como fallback
+  let allowProceduralMusic = true;
 
   function ensureCtx() {
     if (!supportsCtx) return null;
@@ -198,7 +198,6 @@
     if (musicEl) return musicEl;
     try {
       const el = new Audio();
-      // Preferimos music_loop si existe (más “musical”), si falla el play, cae a procedural.
       el.src = urlOf(FILES.music || FILES.bgm);
       el.loop = true;
       el.preload = "auto";
@@ -207,7 +206,7 @@
       try { el.setAttribute("playsinline", ""); } catch {}
       try { el.setAttribute("webkit-playsinline", ""); } catch {}
 
-      // Arranca silenciado (iOS): luego subimos volumen cuando esté permitido
+      // Arranca silenciado (iOS)
       el.muted = true;
       el.volume = 0;
 
@@ -268,7 +267,7 @@
       }
     }
 
-    // “Prime” música en silencio para iOS (best-effort)
+    // “Prime” música en silencio para iOS
     try {
       const el = ensureMusicEl();
       if (el) {
@@ -276,7 +275,6 @@
         el.volume = 0;
         const p = el.play();
         if (p && typeof p.then === "function") await p.catch(() => {});
-        // si logró empezar, paramos inmediatamente (evita consumir batería)
         try { el.pause(); } catch {}
         try { el.currentTime = 0; } catch {}
       }
@@ -313,16 +311,18 @@
 
       try {
         if (!el.paused) return;
-        // desmute antes del play (si el gesto ya ocurrió)
         el.muted = false;
         const p = el.play();
         if (p && typeof p.then === "function") await p;
         musicMode = "html";
         return;
       } catch {
-        // cae a procedural
+        // si falla, intentaremos procedural SOLO si está permitido
       }
     }
+
+    // v0.1.9: si procedural no permitido => silencio
+    if (!allowProceduralMusic) return;
 
     if (!supportsCtx) return;
     const c = ensureCtx();
@@ -410,6 +410,12 @@
     setMusicVolumeSmooth(effectiveMusicVolume(), 140);
   }
 
+  function setAllowProceduralMusic(v) {
+    allowProceduralMusic = (v !== false);
+    // si lo desactivan y estaba sonando procedural, lo cortamos
+    if (!allowProceduralMusic && musicMode === "procedural") stopProceduralMusic();
+  }
+
   async function loadBuffer(key, relPath) {
     if (!supportsCtx) return null;
     if (buffers.has(key)) return buffers.get(key);
@@ -490,17 +496,19 @@
     return true;
   }
 
-  // Aliases más permisivos (para app.js / UI)
+  // Aliases permisivos (app.js/UI/gameplay v0.1.9)
   function normalizeSfxName(name) {
     const n = String(name || "ui").trim().toLowerCase();
 
     const alias = {
+      // UI
       click: "ui",
       button: "ui",
       tap: "ui",
       ui_click: "ui",
       ui: "ui",
 
+      // base
       coin: "coin",
       gem: "gem",
       bonus: "bonus",
@@ -511,12 +519,30 @@
       pick: "pick",
       reroll: "reroll",
 
+      // extras ya existentes
       gameover: "gameover",
       over: "gameover",
       combo: "combo",
       block: "block",
-      shield: "bonus",   // si no hay sfx_shield, al menos suena “power”
       upgrade: "upgrade",
+      shield: "bonus",
+
+      // v0.1.9 — vidas/corazones + upgrades + imán
+      hurt: "trap",
+      damage: "trap",
+      hit: "trap",
+      heart: "bonus",
+      heal: "bonus",
+      life: "bonus",
+      revive: "bonus",
+
+      magnet: "pick",
+      magnet_on: "pick",
+      magnet_off: "ui",
+
+      upgrade_open: "ui",
+      upgrade_pick: "upgrade",
+      upgrades: "upgrade",
     };
 
     return alias[n] || n || "ui";
@@ -538,24 +564,25 @@
         if (k === "ko" || k === "trap" || k === "gameover") gain = 0.95;
         else if (k === "ui") gain = 0.55;
         else if (k === "upgrade" || k === "combo") gain = 0.80;
+        else if (k === "pick") gain = 0.72;
 
         return playBuffer(buf, { gain, rate, pan: (Math.random() * 2 - 1) * 0.15 });
       }
     }
 
-    // fallback procedural
-    if (k === "coin")   return beep({ f: 820, ms: 60, type: "square",  gain: 0.14, slideTo: 980 });
-    if (k === "gem")    return beep({ f: 620, ms: 85, type: "triangle",gain: 0.16, slideTo: 920 });
-    if (k === "bonus")  return beep({ f: 520, ms: 120,type: "sawtooth",gain: 0.12, slideTo: 1040 });
-    if (k === "trap")   return beep({ f: 220, ms: 140,type: "square",  gain: 0.16, slideTo: 110 });
-    if (k === "ko")     return beep({ f: 150, ms: 220,type: "sawtooth",gain: 0.18, slideTo: 60 });
-    if (k === "level")  return beep({ f: 440, ms: 140,type: "triangle",gain: 0.14, slideTo: 880 });
-    if (k === "pick")   return beep({ f: 520, ms: 80, type: "square",  gain: 0.12, slideTo: 700 });
-    if (k === "reroll") return beep({ f: 360, ms: 90, type: "triangle",gain: 0.12, slideTo: 520 });
-    if (k === "combo")  return beep({ f: 740, ms: 120,type: "triangle",gain: 0.12, slideTo: 980 });
-    if (k === "block")  return beep({ f: 260, ms: 90, type: "square",  gain: 0.12, slideTo: 220 });
-    if (k === "upgrade")return beep({ f: 480, ms: 140,type: "sawtooth",gain: 0.12, slideTo: 960 });
-    if (k === "gameover")return beep({ f: 190, ms: 260,type: "sawtooth",gain: 0.16, slideTo: 70 });
+    // fallback procedural (SFX) — música procedural puede estar desactivada, esto NO afecta a sfx()
+    if (k === "coin")   return beep({ f: 820, ms: 60,  type: "square",   gain: 0.14, slideTo: 980 });
+    if (k === "gem")    return beep({ f: 620, ms: 85,  type: "triangle", gain: 0.16, slideTo: 920 });
+    if (k === "bonus")  return beep({ f: 520, ms: 120, type: "sawtooth", gain: 0.12, slideTo: 1040 });
+    if (k === "trap")   return beep({ f: 220, ms: 140, type: "square",   gain: 0.16, slideTo: 110 });
+    if (k === "ko")     return beep({ f: 150, ms: 220, type: "sawtooth", gain: 0.18, slideTo: 60 });
+    if (k === "level")  return beep({ f: 440, ms: 140, type: "triangle", gain: 0.14, slideTo: 880 });
+    if (k === "pick")   return beep({ f: 520, ms: 80,  type: "square",   gain: 0.12, slideTo: 700 });
+    if (k === "reroll") return beep({ f: 360, ms: 90,  type: "triangle", gain: 0.12, slideTo: 520 });
+    if (k === "combo")  return beep({ f: 740, ms: 120, type: "triangle", gain: 0.12, slideTo: 980 });
+    if (k === "block")  return beep({ f: 260, ms: 90,  type: "square",   gain: 0.12, slideTo: 220 });
+    if (k === "upgrade")return beep({ f: 480, ms: 140, type: "sawtooth", gain: 0.12, slideTo: 960 });
+    if (k === "gameover")return beep({ f: 190, ms: 260,type: "sawtooth", gain: 0.16, slideTo: 70 });
 
     return beep({ f: 520, ms: 55, type: "square", gain: 0.09, slideTo: 610 });
   }
@@ -572,6 +599,7 @@
     setMusicOn,
     setSfxOn,
     setVolumes,
+    setAllowProceduralMusic,
     getState: () => ({
       VERSION,
       muted, musicOn, sfxOn,
@@ -582,6 +610,7 @@
       musicMode,
       hasMusicEl: !!musicEl,
       buffered: buffers.size,
+      allowProceduralMusic,
     }),
   });
 })();

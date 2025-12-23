@@ -1,4 +1,4 @@
-# Grid Rogue — Arcade Roguelite (v0.1.8)
+# Grid Rogue — Arcade Roguelite (v0.1.9)
 
 **Grid Rogue** es un **arcade roguelite en cuadrícula**: runs cortas, decisiones rápidas, **upgrades** al subir de nivel, **combos** por secuencias y un gameplay que se vuelve más “peligroso” cuanto mejor juegas.  
 Diseñado para sentirse **fluido, directo y adictivo**, con **feedback juicy** (SFX, animaciones, resaltados) y controles cómodos tanto en **móvil (portrait)** como en escritorio.
@@ -22,7 +22,7 @@ Cada partida es distinta: no “grindeas” menús, juegas, mejoras, repites… 
 
 ---
 
-## 🧠 Upgrades y rarezas (v0.1.7)
+## 🧠 Upgrades y rarezas
 
 Los upgrades están pensados como decisiones “de roguelite”:
 - **Común**: mejora estable, útil en cualquier run.
@@ -91,49 +91,44 @@ Incluye modo “Repair” si alguna vez una caché antigua se queda pegada tras 
 ## 🔖 Versión
 
 ```
-✅ Update v0.1.8 (nuevo)
+## ✅ Update v0.1.9 (nuevo)
 
-Mejoras de UI en “Mejoras / Upgrades”:
+### ❤️ Sistema de Vida (Corazones)
+- El jugador ahora tiene **vida**: empieza con **10 corazones**.
+- Cada vez que pisa/recibe el efecto de una **trampa (tile rojo)**, pierde **1 corazón**.
+- La vida se muestra **en la barra superior**, junto a la zona donde ves el nivel / progreso (HUD).
+- Feedback claro de daño/estado para que se note al instante cuando estás en peligro.
 
-Panel de upgrades más legible y compacto, con mejor jerarquía visual (título → rareza → nombre → descripción).
+### ➕ Nueva mejora: “Vida +”
+- Se añade una **nueva mejora** que permite **ganar corazones** (curación / vida extra).
+- Entra dentro del sistema de rarezas (cuanto más rara, mejor impacto).
 
-Tags (Defensa / QoL / Puntos / Movilidad / Combo) más claros y consistentes.
+### 🧲 Imán con duración (según rareza)
+- La mejora de **Imán** deja de ser permanente y pasa a ser **temporal**:
+  - **Común**: duración corta
+  - **Rara**: duración media
+  - **Épica**: duración alta
+  - **Legendaria**: duración máxima
+- Cuando el imán está activo, el jugador atrae premios cercanos durante ese tiempo.
 
-Mejor soporte para textos largos (wrap correcto + cortes elegantes).
+### 🏷️ Badges de mejoras activas en HUD
+- En la zona del HUD (junto al nivel), ahora aparecen **iconos/badges** de las **mejoras activas**.
+- Si tienes varias copias del mismo upgrade:
+  - Se muestra un **contador** encima del badge (ej. “2”, “3”…).
+  - Si solo hay 1, **no aparece número**.
+- Si la mejora es temporal (como Imán), el badge se mantiene visible mientras dure.
 
-Escudo con feedback visual (aura protectora):
+### 🧱 Panel de mejoras mejorado (más “pro”)
+- El panel de Upgrades se ve **más claro y más bonito**:
+  - Jerarquía visual más marcada (rareza → nombre → descripción).
+  - Mejor espaciado y lectura.
+  - Presentación más limpia al elegir.
+- En general, el panel “aparece” mejor y se percibe más premium.
 
-Si el jugador tiene Escudo activo, el tile del player muestra un aura/brillo sutil para que se entienda al instante que está protegido.
+### 🔊 Audio v0.1.9 (compat + nuevos SFX)
+- `audio.js` y `audio_sys.js` actualizados a **v0.1.9**.
+- Alias SFX extra listos para usarse desde el gameplay/UI:
+  - `hurt`, `heal`, `heart`, `magnet_on`, `magnet_off`, `upgrade_open`, `upgrade_pick`, etc.
+- Se refuerza el criterio de **no música procedural** (silencio si no se puede reproducir el loop).
 
-Al consumir el escudo, el aura desaparece con un feedback visual limpio.
-
-Mobile: zona de juego más grande y sin “scroll raro”:
-
-Ajustes de layout para que el juego se vea más grande en móvil y no “quede enano”.
-
-Correcciones para evitar scroll accidental y problemas con viewport-fit/safe-area.
-
-El canvas/grid se adapta mejor al alto real de pantalla.
-
-Mobile: grid más compacto (mejor proporción):
-
-En móvil el tablero pasa a un formato más “usable” (ej. de 8×24 → 8×16) para evitar que sea demasiado alto y se vea pequeño.
-
-En escritorio se mantiene el grid original (sin afectar la experiencia).
-
-Controles táctiles solo en móvil (y no tapan el juego):
-
-El D-Pad/controles aparecen solo en móviles.
-
-Flechas colocadas en los bordes (izquierda/derecha/arriba/abajo) para no cubrir el grid.
-
-Mejor respuesta táctil (hitbox más cómoda sin invadir el área de juego).
-
-Localización ampliada:
-
-Añadidos idiomas extra (incluyendo chino, japonés, coreano, ruso, árabe y más), manteniendo fallback seguro a en/es si falta alguna clave.
-
-Manifest / versión:
-
-start_url actualizado a ?v=0.1.8 y versionado alineado con el resto del proyecto para evitar cachés “mezcladas”.
 ```
