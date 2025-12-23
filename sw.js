@@ -5,37 +5,40 @@
    ✅ Update: SKIP_WAITING por mensaje + clients.claim + navigationPreload
    ✅ GH Pages/subcarpetas: usa registration.scope (claves absolutas)
    ✅ Audio/Sprites: best-effort (no rompe si falta)
-   ✅ Mejoras v0.1.7:
-      - CACHE_PREFIX renombrado a "gridrogue-" (evita mezclar con builds viejos)
-      - CORE_ASSETS actualizado (incluye audio.js si lo usas)
-      - Normalización más consistente de claves (sin search/hash)
+   ✅ v0.1.7:
+      - CACHE_PREFIX "gridrogue-" (evita mezclar con builds viejos)
+      - CORE_ASSETS actualizado (incluye utils.js / localization.js / audio_sys.js / audio.js)
+      - Normalización consistente (sin search/hash)
       - Limpieza agresiva de caches antiguos (gridrunner-* también)
+      - Soporte Range requests para audio desde cache (evita fallos en móviles)
 */
 
 const VERSION = "v0.1.7";
 
-// ✅ Nuevo prefix (separa caches del nombre antiguo)
 const CACHE_PREFIX = "gridrogue-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
 
-// ✅ Limpieza también de prefixes antiguos para evitar “mezclas” y bugs raros
 const OLD_PREFIXES = ["gridrunner-", "gridrogue-"];
 
 // GH Pages / subcarpetas: scope absoluto
 const SCOPE = self.registration.scope;
 const APP_SHELL = new URL("index.html", SCOPE).toString();
 
-// ⚠️ Nota: aquí listamos rutas “sin query” porque cacheamos por stripSearch.
-// Tu HTML referencia `?v=0.1.7`, pero nosotros normalizamos a la ruta limpia.
+// Core assets (sin query, porque stripSearch normaliza)
 const CORE_ASSETS = [
   // App shell
   APP_SHELL,
   new URL("styles.css", SCOPE).toString(),
-  new URL("app.js", SCOPE).toString(),
-  new URL("auth.js", SCOPE).toString(),
-  // Si existe en tu proyecto (según tu estructura sí): audio.js
+
+  // ✅ App dividido (3 scripts + app.js + auth.js)
+  new URL("utils.js", SCOPE).toString(),
+  new URL("localization.js", SCOPE).toString(),
+  new URL("audio_sys.js", SCOPE).toString(),
   new URL("audio.js", SCOPE).toString(),
+  new URL("auth.js", SCOPE).toString(),
+  new URL("app.js", SCOPE).toString(),
+
   new URL("manifest.webmanifest", SCOPE).toString(),
 
   // Icons
@@ -62,7 +65,6 @@ const CORE_ASSETS = [
   new URL("assets/audio/sfx_ui_click.wav", SCOPE).toString(),
   new URL("assets/audio/sfx_gameover.wav", SCOPE).toString(),
   new URL("assets/audio/sfx_combo.wav", SCOPE).toString(),
-  // (extras que están en tu repo; best-effort, no pasa nada si no)
   new URL("assets/audio/sfx_block.wav", SCOPE).toString(),
   new URL("assets/audio/sfx_upgrade.wav", SCOPE).toString(),
 
@@ -75,17 +77,16 @@ const CORE_ASSETS = [
 ];
 
 function stripSearch(inputUrl) {
-  const u = new URL(inputUrl);
+  const u = new URL(inputUrl, self.location.href);
   u.search = "";
   u.hash = "";
   return u.toString();
 }
 
-// Set de core normalizado (sin ?v=...)
 const CORE_SET = new Set(CORE_ASSETS.map(stripSearch));
 
 function isSameOrigin(reqUrl) {
-  return new URL(reqUrl).origin === self.location.origin;
+  return new URL(reqUrl, self.location.href).origin === self.location.origin;
 }
 
 function isHtmlNavigation(req) {
@@ -94,7 +95,7 @@ function isHtmlNavigation(req) {
 }
 
 function shouldIgnoreSearch(urlObj) {
-  const p = urlObj.pathname.toLowerCase();
+  const p = (urlObj.pathname || "").toLowerCase();
   return (
     p.endsWith(".js") || p.endsWith(".css") ||
     p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".jpeg") ||
@@ -103,6 +104,51 @@ function shouldIgnoreSearch(urlObj) {
     p.endsWith(".woff2") || p.endsWith(".woff") || p.endsWith(".ttf") || p.endsWith(".otf") ||
     p.endsWith(".mp3") || p.endsWith(".wav") || p.endsWith(".ogg")
   );
+}
+
+function isAudioPath(urlObj) {
+  const p = (urlObj.pathname || "").toLowerCase();
+  return p.endsWith(".mp3") || p.endsWith(".wav") || p.endsWith(".ogg");
+}
+
+function parseRange(rangeHeader, size) {
+  // "bytes=start-end"
+  const m = String(rangeHeader || "").match(/bytes=(\d*)-(\d*)/i);
+  if (!m) return null;
+
+  let start = m[1] ? parseInt(m[1], 10) : 0;
+  let end = m[2] ? parseInt(m[2], 10) : (size - 1);
+
+  if (!Number.isFinite(start)) start = 0;
+  if (!Number.isFinite(end)) end = size - 1;
+
+  if (start < 0) start = 0;
+  if (end >= size) end = size - 1;
+  if (end < start) return null;
+
+  return { start, end };
+}
+
+async function makeRangedResponse(fullResponse, rangeHeader) {
+  const buf = await fullResponse.arrayBuffer();
+  const size = buf.byteLength;
+  const r = parseRange(rangeHeader, size);
+  if (!r) return fullResponse; // fallback a respuesta completa
+
+  const { start, end } = r;
+  const sliced = buf.slice(start, end + 1);
+
+  const headers = new Headers(fullResponse.headers);
+  headers.set("Content-Range", `bytes ${start}-${end}/${size}`);
+  headers.set("Accept-Ranges", "bytes");
+  headers.set("Content-Length", String(sliced.byteLength));
+
+  // Asegura content-type si falta
+  if (!headers.get("Content-Type")) {
+    headers.set("Content-Type", "application/octet-stream");
+  }
+
+  return new Response(sliced, { status: 206, statusText: "Partial Content", headers });
 }
 
 async function precacheCore() {
@@ -115,7 +161,7 @@ async function precacheCore() {
   }
   await cache.put(stripSearch(APP_SHELL), shellRes);
 
-  // 2) resto best-effort (NO rompe install si falta algo)
+  // 2) resto best-effort
   await Promise.allSettled(
     CORE_ASSETS
       .filter((u) => stripSearch(u) !== stripSearch(APP_SHELL))
@@ -133,10 +179,8 @@ async function cleanupOldCaches() {
   const keys = await caches.keys();
   await Promise.all(
     keys.map((k) => {
-      // Borra cualquier cache de prefixes conocidos que NO sean los actuales
       const isKnownPrefix = OLD_PREFIXES.some((p) => k.startsWith(p));
       if (!isKnownPrefix) return null;
-
       if (k === CORE_CACHE || k === RUNTIME_CACHE) return null;
       return caches.delete(k);
     })
@@ -178,7 +222,7 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   if (!isSameOrigin(req.url)) return;
 
-  const url = new URL(req.url);
+  const url = new URL(req.url, self.location.href);
   const isNav = isHtmlNavigation(req);
 
   // Normaliza clave cuando hay cache-bust ?v=
@@ -187,6 +231,38 @@ self.addEventListener("fetch", (event) => {
   // ¿Es core asset? (comparando normalizado)
   const looksCore = CORE_SET.has(stripSearch(req.url));
 
+  // ───────────── Audio RANGE: sirve 206 desde cache cuando haga falta ─────────────
+  if (isAudioPath(url) && req.headers.has("range")) {
+    event.respondWith(
+      (async () => {
+        const key = stripSearch(req.url);
+
+        // intentamos core primero (audio suele estar precacheado)
+        const core = await caches.open(CORE_CACHE);
+        let cached = await core.match(key);
+
+        // si no está en core, probamos runtime
+        if (!cached) {
+          const runtime = await caches.open(RUNTIME_CACHE);
+          cached = await runtime.match(key);
+        }
+
+        if (cached) {
+          try {
+            return await makeRangedResponse(cached.clone(), req.headers.get("range"));
+          } catch (_) {
+            // si falla, devolvemos cached entero
+            return cached;
+          }
+        }
+
+        // Si no está cacheado, dejamos que la red gestione el Range (no cacheamos 206)
+        return fetch(req);
+      })()
+    );
+    return;
+  }
+
   // ───────────── Navegación: network-first + fallback shell ─────────────
   if (isNav) {
     event.respondWith(
@@ -194,14 +270,12 @@ self.addEventListener("fetch", (event) => {
         const core = await caches.open(CORE_CACHE);
 
         try {
-          // navigation preload (si está habilitado)
           const preload = await event.preloadResponse;
           if (preload && preload.ok) {
             core.put(stripSearch(APP_SHELL), preload.clone()).catch(() => {});
             return preload;
           }
 
-          // network-first
           const fresh = await fetch(req);
           if (fresh && fresh.ok) {
             core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
@@ -210,7 +284,6 @@ self.addEventListener("fetch", (event) => {
 
           throw new Error("Nav fetch not ok");
         } catch (_) {
-          // fallback al shell
           const cached = await core.match(stripSearch(APP_SHELL));
           return (
             cached ||
@@ -241,7 +314,6 @@ self.addEventListener("fetch", (event) => {
           })
           .catch(() => null);
 
-        // Devuelve cached rápido, pero refresca si puede
         return cached || (await refresh) || new Response("", { status: 504 });
       })()
     );

@@ -7,6 +7,9 @@
    - Confetti/partículas de fondo en el overlay de upgrades (solo CSS).
    - Menús y background con más “vida” (grain + glow sutil), sin tocar layout del gameplay.
    - ✅ PC: el “rail” (canvas) escala bien y ocupa mejor el espacio (sin quedarse “fino”).
+   - ✅ UX: en GameOver se fuerza un solo botón de “restart/retry”.
+   - ✅ Opciones: más padding interno (aire respecto al contenedor).
+   - ✅ Menú principal: look & feel más “main menu panel”.
 */
 
 :root{
@@ -76,6 +79,10 @@
   --canvasMaxW: 640px;    /* base */
   --canvasMaxW-md: 820px; /* desktop medio */
   --canvasMaxW-lg: 980px; /* desktop grande */
+
+  /* ✅ Rail “frame” padding */
+  --railPad: 8px;
+  --railPadDesktop: 12px;
 }
 
 *{ box-sizing:border-box; }
@@ -531,7 +538,6 @@ a{ color:inherit; }
   touch-action:none;
 }
 
-/* ✅ Rail wrapper: centra y “enmarca” el canvas mejor en PC */
 .gameArea::before{
   content:"";
   position:absolute;
@@ -543,7 +549,32 @@ a{ color:inherit; }
     radial-gradient(800px 500px at 50% 85%, rgba(73,167,255,0.05), transparent 66%);
 }
 
-/* ✅ CANVAS: ahora escala hacia arriba en PC (sin quedarse en 640px) */
+/* ✅ Rail wrapper (si existe en index.html) */
+.railFrame{
+  position:relative;
+  z-index:2;
+  width:100%;
+  height:100%;
+  max-height:100%;
+  display:grid;
+  place-items:center;
+
+  padding: var(--railPad);
+  border-radius: calc(var(--r) + 6px);
+
+  /* marco sutil, no roba protagonismo */
+  background:
+    radial-gradient(900px 520px at 50% 20%, rgba(255,255,255,0.03), transparent 62%),
+    linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10));
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.30);
+}
+
+@media (min-width: 900px){
+  .railFrame{ padding: var(--railPadDesktop); }
+}
+
+/* ✅ CANVAS: escala hacia arriba en PC (sin quedarse en 640px) */
 #gameCanvas{
   display:block;
 
@@ -554,7 +585,7 @@ a{ color:inherit; }
   /* Mantiene proporción del rail aunque el canvas interno sea 640x960 */
   aspect-ratio: 2 / 3;
 
-  /* Respeta alto disponible */
+  /* Respeta alto disponible del área de juego */
   max-height: 100%;
 
   border-radius: var(--r);
@@ -627,7 +658,6 @@ a{ color:inherit; }
   z-index: 140;
   inset: 0;
 
-  /* ✅ ahora los overlays pueden scrollear si algo se pasa de alto */
   overflow:auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -666,7 +696,6 @@ a{ color:inherit; }
   box-shadow: var(--shadow);
   padding:14px;
 
-  /* ✅ evita que se “coma” la ventana sin poder bajar */
   max-height: var(--panelMaxH);
   overflow:auto;
   -webkit-overflow-scrolling: touch;
@@ -812,6 +841,36 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.94);
 }
 
+/* ───────────────── Menú principal (Start) ───────────────── */
+#overlayStart{
+  background:
+    radial-gradient(1200px 700px at 50% 18%, rgba(80,120,255,0.10), transparent 60%),
+    radial-gradient(1000px 620px at 20% 85%, rgba(255,170,60,0.08), transparent 62%),
+    var(--overlayBack);
+}
+#overlayStart .panel{
+  background:
+    radial-gradient(520px 280px at 18% 0%, rgba(255,255,255,0.08), transparent 62%),
+    radial-gradient(560px 300px at 92% 22%, rgba(80,120,255,0.06), transparent 64%),
+    linear-gradient(180deg, rgba(18,18,26,0.96), rgba(18,18,26,0.88));
+  border-color: rgba(255,255,255,0.14);
+}
+#overlayStart .splashLogo{
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  box-shadow: 0 22px 52px rgba(0,0,0,0.52);
+}
+#overlayStart .splashLogo .ms{ font-size:24px; }
+#overlayStart .panelActions{
+  justify-content:stretch;
+}
+#overlayStart #btnStart{
+  width:100%;
+  font-weight: 950;
+  letter-spacing: .2px;
+}
+
 /* ───────────────── Upgrades (juicy + 3 centradas) ───────────────── */
 .upgradeChoices{
   display:grid;
@@ -819,15 +878,9 @@ a{ color:inherit; }
   gap:12px;
   align-items:stretch;
 }
-
-/* ✅ a partir de 640px: SIEMPRE 3 columnas (evita 2+1 feo) */
 @media (min-width:640px){
-  .upgradeChoices{
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  .upgradeChoices{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-
-/* si de verdad es demasiado estrecho (móviles pequeños), vuelve a 1 */
 @media (max-width:420px){
   .upgradeChoices{ grid-template-columns: 1fr; }
 }
@@ -844,8 +897,6 @@ a{ color:inherit; }
   position:relative;
   overflow:hidden;
 }
-
-/* brillo “shimmer” */
 .upCard::before{
   content:"";
   position:absolute;
@@ -860,7 +911,6 @@ a{ color:inherit; }
   opacity:.55;
   transform: translateX(30%) rotate(8deg);
 }
-
 .upCard:hover{
   border-color: rgba(255,255,255,0.22);
   background:
@@ -874,7 +924,6 @@ a{ color:inherit; }
   filter: brightness(1.02);
 }
 
-/* título + desc más “punchy” */
 .upTitle{
   font-weight:950;
   margin-bottom:6px;
@@ -893,7 +942,6 @@ a{ color:inherit; }
   flex-wrap:wrap;
 }
 
-/* badge base */
 .badge{
   font-size:12px;
   padding:4px 8px;
@@ -903,8 +951,7 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.84);
 }
 
-/* ─── Rarity hooks (funcionan si app.js pone clases o data-rarity) ─── */
-/* Common */
+/* ─── Rarity hooks ─── */
 .upCard[data-rarity="common"],
 .upCard.r-common,
 .badge[data-rarity="common"],
@@ -913,8 +960,6 @@ a{ color:inherit; }
   --rarBG: var(--rar-common-bg);
   --rarGlow: rgba(255,255,255,0.14);
 }
-
-/* Rare */
 .upCard[data-rarity="rare"],
 .upCard.r-rare,
 .badge[data-rarity="rare"],
@@ -923,8 +968,6 @@ a{ color:inherit; }
   --rarBG: var(--rar-rare-bg);
   --rarGlow: rgba(73,167,255,0.22);
 }
-
-/* Epic */
 .upCard[data-rarity="epic"],
 .upCard.r-epic,
 .badge[data-rarity="epic"],
@@ -933,8 +976,6 @@ a{ color:inherit; }
   --rarBG: var(--rar-epic-bg);
   --rarGlow: rgba(179,107,255,0.22);
 }
-
-/* Legendary */
 .upCard[data-rarity="legendary"],
 .upCard.r-legendary,
 .badge[data-rarity="legendary"],
@@ -944,7 +985,6 @@ a{ color:inherit; }
   --rarGlow: rgba(255,204,77,0.20);
 }
 
-/* aplica el color si existe --rarC (fallback: no rompe nada) */
 .upCard[data-rarity],
 .upCard[class*="r-"]{
   border-color: color-mix(in oklab, var(--rarC, rgba(255,255,255,0.22)) 35%, rgba(255,255,255,0.12));
@@ -978,8 +1018,6 @@ a{ color:inherit; }
 #overlayOptions{
   place-items:center;
 }
-
-/* panel de opciones como “layout” fijo con body scrolleable */
 #overlayOptions .panel{
   display:flex;
   flex-direction:column;
@@ -990,11 +1028,16 @@ a{ color:inherit; }
     linear-gradient(180deg, rgba(18,18,26,0.94), rgba(18,18,26,0.88));
 }
 
-/* el contenido scrollea */
+/* ✅ Más “aire” entre borde del contenedor y contenido */
 #overlayOptions .options{
   overflow:auto;
   -webkit-overflow-scrolling: touch;
-  padding-right: 2px;
+
+  /* clave del “padding entre elementos y el container” */
+  padding: 12px 10px 14px 10px;
+  padding-right: 8px;
+
+  overscroll-behavior: contain;
 }
 #overlayOptions .options::-webkit-scrollbar{ width: 10px; }
 #overlayOptions .options::-webkit-scrollbar-thumb{
@@ -1004,9 +1047,9 @@ a{ color:inherit; }
 }
 #overlayOptions .options::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,0.14); }
 
-/* spacing consistente en móviles */
 @media (max-height:640px){
   #overlayOptions .panel{ padding: 12px; }
+  #overlayOptions .options{ padding: 10px 8px 12px 8px; }
 }
 
 /* ───────────────── Confetti (Upgrades overlay) ───────────────── */
@@ -1019,8 +1062,6 @@ a{ color:inherit; }
     radial-gradient(900px 540px at 85% 70%, rgba(255,204,77,0.06), transparent 62%),
     var(--overlayBack);
 }
-
-/* confetti layer */
 #overlayUpgrades::before{
   content:"";
   position:absolute;
@@ -1028,7 +1069,6 @@ a{ color:inherit; }
   z-index:0;
   pointer-events:none;
   opacity:.45;
-
   background:
     radial-gradient(6px 6px at 10% 15%, rgba(255,204,77,0.85) 55%, transparent 60%),
     radial-gradient(5px 5px at 20% 35%, rgba(73,167,255,0.85) 55%, transparent 60%),
@@ -1040,11 +1080,9 @@ a{ color:inherit; }
     radial-gradient(5px 5px at 40% 78%, rgba(73,167,255,0.85) 55%, transparent 60%),
     radial-gradient(5px 5px at 62% 72%, rgba(179,107,255,0.85) 55%, transparent 60%),
     radial-gradient(6px 6px at 88% 78%, rgba(46,242,160,0.80) 55%, transparent 60%);
-
   filter: drop-shadow(0 16px 30px rgba(0,0,0,0.35));
   animation: confettiDrift 8.0s linear infinite;
 }
-
 #overlayUpgrades::after{
   content:"";
   position:absolute;
@@ -1058,7 +1096,6 @@ a{ color:inherit; }
     radial-gradient(900px 520px at 85% 85%, rgba(255,170,60,0.06), transparent 66%);
   animation: glowBreath 3.6s ease-in-out infinite;
 }
-
 @keyframes confettiDrift{
   0%{ transform: translate3d(0,0,0) rotate(0deg); }
   100%{ transform: translate3d(0,18%,0) rotate(18deg); }
@@ -1067,11 +1104,7 @@ a{ color:inherit; }
   0%,100%{ opacity:.22; }
   50%{ opacity:.34; }
 }
-
-/* asegura el panel por encima del confetti */
 #overlayUpgrades .panel{ position:relative; z-index:1; }
-
-/* Panel upgrades más “premium” */
 #overlayUpgrades .panel.wide{
   background:
     radial-gradient(620px 320px at 18% 0%, rgba(255,255,255,0.07), transparent 62%),
@@ -1082,6 +1115,7 @@ a{ color:inherit; }
 
 /* ───────────────── Options layout (resto) ───────────────── */
 .options{ display:flex; flex-direction:column; gap:10px; }
+
 .optGroupTitle{
   display:flex;
   align-items:center;
@@ -1099,7 +1133,7 @@ a{ color:inherit; }
   gap:12px;
   flex-wrap: wrap;
   align-content: center;
-  padding:10px 12px;
+  padding:12px 14px; /* un pelín más “premium” */
   border-radius:14px;
   background: rgba(0,0,0,0.22);
   border:1px solid rgba(255,255,255,0.10);
@@ -1182,6 +1216,11 @@ a{ color:inherit; }
   font-size: 16px;
   color: rgba(255,255,255,0.92);
   margin-top: 2px;
+}
+
+/* ✅ Un solo botón en GameOver (si por lo que sea app.js lo enseña) */
+#overlayGameOver #btnRestart{
+  display:none !important;
 }
 
 .errMsg{

@@ -13,6 +13,7 @@
 
   <title>Grid Rogue</title>
 
+  <!-- ✅ Version global -->
   <script>
     window.APP_VERSION = "0.1.7";
   </script>
@@ -21,6 +22,8 @@
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
+
+      // Compat interna: si ya lo usabas en app.js/sw
       window.__GRIDRUNNER_NOSW = qs.has("nosw");
 
       async function nukeSWAndCaches() {
@@ -137,8 +140,6 @@
         <button class="iconBtn small" id="btnOptions" type="button" title="Opciones">
           <span class="ms" aria-hidden="true">settings</span>
         </button>
-
-        <!-- btnRestart ya NO está en header; está en Pausa y GameOver -->
       </div>
     </header>
 
@@ -178,7 +179,16 @@
 
         <!-- Área de juego -->
         <div class="gameArea" id="gameArea">
-          <canvas id="gameCanvas" width="640" height="960" aria-label="Juego"></canvas>
+          <!-- ✅ Wrapper rail: ayuda a “rellenar” mejor en PC sin tocar app.js -->
+          <div class="railFrame" id="railFrame" aria-hidden="true">
+            <canvas id="gameCanvas"
+                    width="640"
+                    height="960"
+                    data-rail="1"
+                    data-basew="640"
+                    data-baseh="960"
+                    aria-label="Juego"></canvas>
+          </div>
 
           <!-- Dpad -->
           <div class="dpad" id="dpad" hidden>
@@ -239,32 +249,43 @@
         <!-- START -->
         <section class="overlay" id="overlayStart" hidden>
           <div class="panel">
-            <div class="panelHead">
+            <div class="splash" style="margin-bottom:12px;">
+              <div class="splashLogo" aria-hidden="true">
+                <span class="ms">grid_view</span>
+              </div>
+              <div class="splashText">
+                <div class="title">Grid Rogue</div>
+                <div class="sub">Arcade roguelite en cuadrícula • runs cortas • upgrades</div>
+              </div>
+            </div>
+
+            <div class="panelHead" style="margin-bottom:10px;">
               <div>
                 <div class="h2" id="startTitle">Nuevo run</div>
-                <div class="muted tiny" id="startSub">Perfiles • upgrades • combos</div>
+                <div class="muted tiny" id="startSub">Elige tu perfil y lánzate a por combos.</div>
               </div>
             </div>
 
             <div class="form">
               <label class="label" for="profileSelect">Perfil</label>
-              <div class="row">
+              <div class="row" style="gap:12px;">
                 <select id="profileSelect" class="select"></select>
                 <button class="btn" id="btnNewProfile" type="button">Nuevo</button>
               </div>
 
-              <div id="newProfileWrap" hidden>
+              <div id="newProfileWrap" hidden style="margin-top:2px;">
                 <label class="label" for="startName">Nombre</label>
                 <input id="startName" class="input" type="text" inputmode="text" maxlength="16" placeholder="Tu nombre (mín. 2)" />
-                <div class="tiny muted" id="profileHint">Tus datos se guardan en este dispositivo.</div>
+                <div class="tiny muted" id="profileHint" style="margin-top:6px;">Tus datos se guardan en este dispositivo.</div>
               </div>
 
-              <div class="row">
-                <button class="btn primary" id="btnStart" type="button">Empezar</button>
+              <div class="panelActions" style="justify-content:stretch; margin-top:14px;">
+                <button class="btn primary" id="btnStart" type="button" style="width:100%;">Empezar</button>
               </div>
 
-              <div class="tiny muted">
-                Controles: WASD / Flechas / Swipe (móvil).
+              <div class="tiny muted" style="margin-top:10px; line-height:1.35;">
+                Controles: WASD / Flechas / Swipe (móvil).<br />
+                Consejo: completa secuencias para subir el multiplicador.
               </div>
             </div>
           </div>
@@ -327,7 +348,7 @@
 
             <div class="panelActions">
               <button class="btn" id="btnBackToStart" type="button">Menú</button>
-              <button class="btn" id="btnRestart" type="button">Reiniciar</button>
+              <button class="btn" id="btnRestart" type="button" hidden>Reiniciar</button>
               <button class="btn primary" id="btnRetry" type="button">Reintentar</button>
             </div>
           </div>
@@ -343,9 +364,14 @@
               </button>
             </div>
 
-            <!-- ✅ v0.1.7: id optionsBody + fallback scroll inline (por si CSS falla) -->
             <div class="options" id="optionsBody"
-                 style="max-height:min(72vh, calc(100vh - 170px)); overflow:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding-right:2px;">
+                 style="
+                   max-height:min(72vh, calc(100vh - 170px));
+                   overflow:auto;
+                   -webkit-overflow-scrolling:touch;
+                   overscroll-behavior:contain;
+                   padding:10px 8px 12px 8px;
+                 ">
 
               <!-- AUDIO -->
               <div class="optGroupTitle">
@@ -358,7 +384,6 @@
                 <input id="optMusicOn" type="checkbox" />
               </label>
 
-              <!-- ✅ SFX ON (ya existía, ahora app.js lo usa de verdad) -->
               <label class="optRow">
                 <span>Efectos (SFX)</span>
                 <input id="optSfxOn" type="checkbox" />
@@ -387,7 +412,7 @@
               </div>
 
               <!-- GAME -->
-              <div class="optGroupTitle" style="margin-top:8px;">
+              <div class="optGroupTitle" style="margin-top:10px;">
                 <span class="ms" aria-hidden="true">tune</span>
                 <span>Juego</span>
               </div>
@@ -414,7 +439,7 @@
               </div>
 
               <!-- PWA -->
-              <div class="optGroupTitle" style="margin-top:8px;">
+              <div class="optGroupTitle" style="margin-top:10px;">
                 <span class="ms" aria-hidden="true">phone_iphone</span>
                 <span>PWA</span>
               </div>
@@ -455,7 +480,7 @@
     </main>
   </div>
 
-  <!-- ✅ Failsafe inline -->
+  <!-- ✅ Failsafe inline (NO depende de app.js) -->
   <script>
     (function(){
       const $ = (id)=>document.getElementById(id);
@@ -487,6 +512,7 @@
       });
 
       setTimeout(()=>{
+        // Compat interna: app.js marca esto cuando termina boot.
         if (!window.__GRIDRUNNER_BOOTED){
           showFailsafe();
           try{
@@ -498,7 +524,23 @@
     })();
   </script>
 
+  <!-- ORDEN DE CARGA (v0.1.7) -->
+  <!-- 1) utils: helpers globales -->
+  <script src="./utils.js?v=0.1.7" defer></script>
+
+  <!-- 2) localization: textos/idioma (si lo usas) -->
+  <script src="./localization.js?v=0.1.7" defer></script>
+
+  <!-- 3) auth: perfiles (puede usar Utils si existe) -->
   <script src="./auth.js?v=0.1.7" defer></script>
+
+  <!-- 4) audio core (AudioSys) -->
+  <script src="./audio_sys.js?v=0.1.7" defer></script>
+
+  <!-- 5) binds UI de audio -->
+  <script src="./audio.js?v=0.1.7" defer></script>
+
+  <!-- 6) app principal -->
   <script src="./app.js?v=0.1.7" defer></script>
 </body>
 </html>

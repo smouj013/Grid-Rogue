@@ -5,75 +5,105 @@
       - gridrunner_name_v1 + gridrunner_best_v1 (solo si NO hay perfiles)
    ✅ Validación + saneado de estado (corrige ids/valores raros)
    ✅ API estable (no rompe app.js): list/get/set/create/best + rename/delete/export/import/prefs
-   ✅ Prefs por perfil ampliadas (opcional): incluye flags pensados para v0.1.7 (particles / reduceMotion / uiHue)
+   ✅ Prefs por perfil ampliadas (opcional): particles / reduceMotion / uiHue
    ✅ Best-effort: si localStorage falla, NO explota
+   ✅ Compatible con utils.js (window.Utils) si existe (fallback interno si no)
 */
 
 (() => {
   "use strict";
 
+  // ───────────────────────── Utils (best-effort) ─────────────────────────
+  const U = window.Utils || null;
+
+  const now = U?.now || (() => Date.now());
+
+  const safeParse =
+    U?.safeParse ||
+    ((raw, fallback) => {
+      try { return JSON.parse(raw); } catch { return fallback; }
+    });
+
+  const safeString = (v) => (v == null ? "" : String(v));
+
+  const clamp =
+    U?.clamp ||
+    ((v, a, b) => {
+      v = Number(v);
+      if (!Number.isFinite(v)) v = a;
+      return Math.max(a, Math.min(b, v));
+    });
+
+  const clampInt =
+    U?.clampInt ||
+    ((v, a, b) => {
+      v = Number(v);
+      if (!Number.isFinite(v)) v = a;
+      v = v | 0;
+      return Math.max(a, Math.min(b, v));
+    });
+
+  const canLS =
+    U?.canLS ||
+    (() => {
+      try {
+        const k = "__ls_test__";
+        localStorage.setItem(k, "1");
+        localStorage.removeItem(k);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+  function readLS(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+  function writeLS(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
+  }
+  function removeLS(key) {
+    try { localStorage.removeItem(key); return true; } catch { return false; }
+  }
+
   // ───────────────────────── Keys ─────────────────────────
   // Nuevo namespace (Grid Rogue)
   const AUTH_KEY = "gridrogue_auth_v1";
 
-  // Compat: versiones antiguas (Grid Runner)
+  // Compat (Grid Runner)
   const AUTH_KEY_OLD = "gridrunner_auth_v1";
   const LEGACY_NAME_KEY = "gridrunner_name_v1";
   const LEGACY_BEST_KEY = "gridrunner_best_v1";
 
-  const now = () => Date.now();
-
+  // ───────────────────────── UID ─────────────────────────
   const hasCrypto = () => {
     try { return !!(globalThis.crypto && crypto.getRandomValues); } catch { return false; }
   };
 
   const uid = () => {
-    // Preferimos crypto para IDs más estables/únicos
     if (hasCrypto()) {
       const buf = new Uint32Array(4);
       crypto.getRandomValues(buf);
       return "p_" + Array.from(buf).map(n => n.toString(16).padStart(8, "0")).join("_");
     }
-    return (
-      "p_" +
-      Math.random().toString(16).slice(2) +
-      "_" +
-      Math.random().toString(16).slice(2)
-    );
+    return "p_" + Math.random().toString(16).slice(2) + "_" + Math.random().toString(16).slice(2);
   };
 
-  function safeParse(raw, fallback) {
-    try { return JSON.parse(raw); } catch { return fallback; }
+  // ───────────────────────── Helpers ─────────────────────────
+  function normalizeName(name) {
+    return safeString(name).trim().slice(0, 16);
   }
 
-  function safeString(v) { return (v == null) ? "" : String(v); }
-  function normalizeName(name) { return safeString(name).trim().slice(0, 16); }
-
-  function clamp(v, a, b) {
-    v = Number(v);
-    if (!Number.isFinite(v)) v = a;
-    return Math.max(a, Math.min(b, v));
+  function safeObj(v) {
+    return (v && typeof v === "object") ? v : null;
   }
-
-  function clampInt(v, a, b) {
-    v = Number(v);
-    if (!Number.isFinite(v)) v = a;
-    v = v | 0;
-    return Math.max(a, Math.min(b, v));
-  }
-
-  function readLS(key) { try { return localStorage.getItem(key); } catch { return null; } }
-  function writeLS(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } }
-  function removeLS(key) { try { localStorage.removeItem(key); return true; } catch { return false; } }
-
-  function safeObj(v) { return (v && typeof v === "object") ? v : null; }
 
   // ───────────────────────── Prefs (opcional por perfil) ─────────────────────────
-  // Mantiene compatibilidad: si prefs no existe, OK.
+  // Compat: si prefs no existe, OK.
   // v0.1.7 añade:
-  // - particles (bool)  -> para overlays “juicy” (confetti/partículas)
-  // - reduceMotion (bool) -> permite respetar preferencia manual además de prefers-reduced-motion
-  // - uiHue (0..360) -> permitir variar acento visual si lo implementas en app.js/styles
+  // - particles (bool)
+  // - reduceMotion (bool)
+  // - uiHue (0..360)
   function sanitizePrefs(prefs) {
     const o = safeObj(prefs);
     if (!o) return null;
@@ -86,14 +116,14 @@
     if ("showDpad" in o) out.showDpad = !!o.showDpad;
     if ("fx" in o) out.fx = clamp(o.fx, 0.4, 1.25);
 
-    // Audio (existente)
+    // Audio (usado por audio.js)
     if ("musicOn" in o) out.musicOn = !!o.musicOn;
     if ("sfxOn" in o) out.sfxOn = !!o.sfxOn;
     if ("musicVol" in o) out.musicVol = clamp(o.musicVol, 0, 1);
     if ("sfxVol" in o) out.sfxVol = clamp(o.sfxVol, 0, 1);
     if ("muteAll" in o) out.muteAll = !!o.muteAll;
 
-    // Idioma (existente)
+    // Idioma
     if ("lang" in o) {
       const s = safeString(o.lang).trim().toLowerCase();
       const code = s.includes("-") ? s.split("-")[0] : (s.includes("_") ? s.split("_")[0] : s);
@@ -108,7 +138,7 @@
     return Object.keys(out).length ? out : null;
   }
 
-  // ───────────────────────── State load/save ─────────────────────────
+  // ───────────────────────── State sanitize ─────────────────────────
   function sanitizeProfile(p) {
     if (!p || typeof p !== "object") return null;
 
@@ -125,10 +155,10 @@
   }
 
   function sanitizeState(st) {
-    const rawProfiles = Array.isArray(st.profiles) ? st.profiles : [];
+    const rawProfiles = Array.isArray(st?.profiles) ? st.profiles : [];
     const cleaned = [];
-
     const seen = new Set();
+
     for (const p of rawProfiles) {
       const sp = sanitizeProfile(p);
       if (!sp) continue;
@@ -141,12 +171,12 @@
 
     cleaned.sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
 
-    let activeId = (typeof st.activeId === "string" ? st.activeId : null);
+    let activeId = (typeof st?.activeId === "string" ? st.activeId : null);
     if (activeId && !cleaned.some(p => p.id === activeId)) {
       activeId = cleaned[0]?.id || null;
     }
 
-    return { v: st.v || 1, activeId, profiles: cleaned };
+    return { v: clampInt(st?.v ?? 1, 1, 99), activeId, profiles: cleaned };
   }
 
   function loadStateFromKey(key) {
@@ -156,19 +186,15 @@
     if (!st || typeof st !== "object") return null;
     if (!Array.isArray(st.profiles)) return null;
 
-    return sanitizeState({
-      v: clampInt(st.v ?? 1, 1, 99),
-      activeId: (typeof st.activeId === "string" ? st.activeId : null),
-      profiles: st.profiles,
-    });
+    return sanitizeState(st);
   }
 
   function loadState() {
-    // 1) intenta el key nuevo
+    // 1) key nuevo
     const fresh = loadStateFromKey(AUTH_KEY);
     if (fresh) return { st: fresh, loadedFrom: AUTH_KEY };
 
-    // 2) fallback: key antiguo (Grid Runner)
+    // 2) key viejo
     const old = loadStateFromKey(AUTH_KEY_OLD);
     if (old) return { st: old, loadedFrom: AUTH_KEY_OLD };
 
@@ -177,27 +203,27 @@
   }
 
   function saveState(st) {
+    if (!canLS()) return false;
+
     const json = JSON.stringify(st);
 
-    // ✅ Guardamos SIEMPRE en el nuevo key
+    // ✅ Guardamos siempre en el nuevo
     const okNew = writeLS(AUTH_KEY, json);
 
-    // ✅ Compat: también escribimos el key viejo (así si queda cacheado app.js viejo, no “pierde” perfiles)
-    // Puedes quitarlo en futuras versiones cuando estés 100% en Grid Rogue.
+    // ✅ Compat: también en el viejo
     writeLS(AUTH_KEY_OLD, json);
 
     return okNew;
   }
 
   function ensureMigration(st, loadedFrom) {
-    // Si venimos del key viejo, persistimos inmediatamente en el nuevo (ya lo hace saveState, pero lo dejamos explícito)
-    if (loadedFrom === AUTH_KEY_OLD) {
-      saveState(st);
-    }
+    // Si venimos del key viejo, persistimos en el nuevo
+    if (loadedFrom === AUTH_KEY_OLD) saveState(st);
 
+    // Si ya hay perfiles, ok
     if (st.profiles.length > 0) return st;
 
-    // Migración legacy (solo si NO hay perfiles):
+    // Migración legacy (solo si NO hay perfiles)
     const legacyName = normalizeName(readLS(LEGACY_NAME_KEY) || "");
     const legacyBest = parseInt(readLS(LEGACY_BEST_KEY) || "0", 10) || 0;
 
@@ -235,10 +261,11 @@
   function setActiveProfile(id) {
     const p = state.profiles.find(x => x.id === id);
     if (!p) return null;
+
     state.activeId = p.id;
     p.lastLoginAt = now();
     saveState(state);
-    return { ...p };
+    return { ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) };
   }
 
   function touchActiveLogin() {
@@ -274,18 +301,19 @@
     p.name = nm;
     p.lastLoginAt = now();
     saveState(state);
-    return { ...p };
+    return { ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) };
   }
 
   function deleteProfile(id) {
     const idx = state.profiles.findIndex(p => p.id === id);
     if (idx < 0) return false;
 
-    const wasActive = state.activeId === id;
+    const wasActive = (state.activeId === id);
     state.profiles.splice(idx, 1);
 
-    if (state.profiles.length === 0) state.activeId = null;
-    else if (wasActive) {
+    if (state.profiles.length === 0) {
+      state.activeId = null;
+    } else if (wasActive) {
       state.activeId = state.profiles
         .slice()
         .sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0))[0].id;
@@ -325,6 +353,7 @@
     if (!p) return false;
 
     const sp = sanitizePrefs(prefs);
+
     if (!sp) {
       if ("prefs" in p) delete p.prefs;
       p.lastLoginAt = now();
@@ -349,7 +378,11 @@
 
   // ───────────────────────── Export/Import ─────────────────────────
   function exportAuth() {
-    const snap = sanitizeState({ v: state.v || 1, activeId: state.activeId, profiles: state.profiles });
+    const snap = sanitizeState({
+      v: state.v || 1,
+      activeId: state.activeId,
+      profiles: state.profiles,
+    });
     return JSON.stringify(snap);
   }
 
@@ -357,20 +390,16 @@
     const incoming = safeParse(json, null);
     if (!incoming || typeof incoming !== "object") return { ok: false, reason: "JSON inválido" };
 
-    const inc = sanitizeState({
-      v: clampInt(incoming.v ?? 1, 1, 99),
-      activeId: (typeof incoming.activeId === "string" ? incoming.activeId : null),
-      profiles: Array.isArray(incoming.profiles) ? incoming.profiles : [],
-    });
-
+    const inc = sanitizeState(incoming);
     if (!inc.profiles.length) return { ok: false, reason: "No hay perfiles" };
 
     if (!merge) {
       state.v = inc.v;
       state.profiles = inc.profiles.slice();
-      state.activeId = inc.activeId && inc.profiles.some(p => p.id === inc.activeId)
-        ? inc.activeId
-        : inc.profiles[0].id;
+      state.activeId =
+        (inc.activeId && inc.profiles.some(p => p.id === inc.activeId))
+          ? inc.activeId
+          : inc.profiles[0].id;
 
       saveState(state);
       return { ok: true, mode: "replace", count: state.profiles.length };
@@ -406,7 +435,7 @@
     state.profiles = [];
     saveState(state);
 
-    // además intentamos limpiar keys antiguos por si acaso
+    // Limpieza keys (best-effort)
     removeLS(AUTH_KEY);
     removeLS(AUTH_KEY_OLD);
     return true;

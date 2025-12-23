@@ -90,8 +90,19 @@ Incluye modo “Repair” si alguna vez una caché antigua se queda pegada tras 
 
 ## 🔖 Versión
 
-**v0.1.7**
-- UI/UX: overlays mejor adaptados, paneles más legibles.
-- Upgrades: presentación por rareza + mejor layout 3 opciones centradas.
-- Mejoras coherentes: no aparecen upgrades inferiores si ya tienes superiores.
-- Estética: fondos y menús más vivos sin romper compatibilidad.
+## ✅ Update v0.1.7 (nuevo)
+
+- **Arquitectura modular (split de app):** el juego queda dividido en **app.js (core)** + **utils.js** + **localization.js** + **audio_sys.js** para tener código más limpio, mantenible y sin “mezclas” raras al actualizar.
+- **Inicialización más robusta:** orden de carga revisado para que **utils/localization/audio_sys** estén listos antes del core; arranque más estable sin depender de timing del DOM ni de que existan todos los elementos.
+- **Audio separado y sólido:**
+  - **audio_sys.js** centraliza el motor de audio (unlock por gesto, música/SFX, fallbacks).
+  - **audio.js** gestiona **UI + settings** (Music/SFX, volúmenes, Mute, Test) sin romper si falta DOM o si AudioSys aún no está listo.
+  - Settings compatibles con clave nueva **gridrogue_settings_v1** + legacy **gridrunner_settings_v1**.
+  - Si hay **perfil activo**, guarda/lee audio también en **prefs del perfil** (sin depender de Auth si no existe).
+- **Service Worker v0.1.7 mejorado:**
+  - Prefijo de caché **gridrogue-** (evita mezclar con builds viejos).
+  - Core con normalización de `?v=` (cache estable) + runtime **stale-while-revalidate**.
+  - Limpieza agresiva de caches antiguas (**gridrunner-** y previas).
+  - Navegación PWA/SPA: **network-first** con fallback seguro a `index.html`.
+- **Repair Mode + failsafes:** modo `?repair` / `?nosw` y botón de “Reparar PWA” para desregistrar SW y borrar caches si alguna actualización se queda pegada.
+- **Branding correcto:** todo el proyecto pasa a llamarse **Grid Rogue** (sin referencias a Grid Runner) manteniendo compatibilidad con datos antiguos cuando conviene.

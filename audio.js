@@ -1,8 +1,9 @@
-/* audio.js — Grid Rogue (PWA) v0.1.7
+/* audio.js — Grid Rogue v0.1.7
    ✅ Binds de opciones de audio (Music/SFX + volúmenes + Mute All + Test)
-   ✅ Compatible con app.js v0.1.5+ y AudioSys (si existe)
+   ✅ Compatible con app.js v0.1.7 y AudioSys (audio_sys.js)
    ✅ Compatible con auth.js (prefs por perfil) SIN romper si no existe Auth
-   ✅ No rompe si faltan elementos DOM o si AudioSys no está listo
+   ✅ Si existe utils.js (window.Utils), lo aprovecha, si no -> fallback interno
+   ✅ No rompe si faltan elementos DOM o si AudioSys aún no está listo
    ✅ No toca playbackRate; solo aplica settings y arranca con gesto
    ✅ v0.1.7:
       - Soporta clave nueva gridrogue_settings_v1 + legacy gridrunner_settings_v1
@@ -13,29 +14,41 @@
 (() => {
   "use strict";
 
-  // ───────────────────────── Utils ─────────────────────────
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const $ = (id) => document.getElementById(id);
+  // ───────────────────────── Utils (best-effort) ─────────────────────────
+  const U = window.Utils || null;
 
-  const safeNum = (x, fallback = 0) => {
-    const n = Number(x);
-    return Number.isFinite(n) ? n : fallback;
-  };
+  const clamp = U?.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
+  const $ = U?.$ || ((id) => document.getElementById(id));
 
-  const safeParse = (raw, fallback) => {
-    try { return JSON.parse(raw); } catch { return fallback; }
-  };
+  const safeNum =
+    U?.safeNum ||
+    ((x, fallback = 0) => {
+      const n = Number(x);
+      return Number.isFinite(n) ? n : fallback;
+    });
 
-  const canLS = () => {
-    try {
-      const k = "__ls_test__";
-      localStorage.setItem(k, "1");
-      localStorage.removeItem(k);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const safeParse =
+    U?.safeParse ||
+    ((raw, fallback) => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return fallback;
+      }
+    });
+
+  const canLS =
+    U?.canLS ||
+    (() => {
+      try {
+        const k = "__ls_test__";
+        localStorage.setItem(k, "1");
+        localStorage.removeItem(k);
+        return true;
+      } catch {
+        return false;
+      }
+    });
 
   function readLS(key) {
     try { return localStorage.getItem(key); } catch { return null; }
@@ -45,9 +58,8 @@
   }
 
   // ───────────────────────── Keys ─────────────────────────
-  // ✅ Nuevo en v0.1.7 (pero seguimos leyendo/escribiendo legacy para no romper app.js viejo)
-  const SETTINGS_KEY = "gridrogue_settings_v1";
-  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1";
+  const SETTINGS_KEY = "gridrogue_settings_v1";     // nuevo
+  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1"; // legacy (compat)
 
   // ───────────────────────── Defaults ─────────────────────────
   const defaultSettings = () => ({
@@ -74,10 +86,12 @@
   }
 
   function getAudioSys() {
+    // audio_sys.js debería exponer window.AudioSys
     return window.AudioSys || null;
   }
 
   function getAuth() {
+    // auth.js debería exponer window.Auth
     return window.Auth || null;
   }
 
@@ -98,7 +112,6 @@
       const prefs = Auth?.getPrefsForActive?.();
       if (!prefs || typeof prefs !== "object") return null;
 
-      // Si el perfil tiene audio guardado, lo usamos
       const hasAny =
         ("musicOn" in prefs) || ("sfxOn" in prefs) ||
         ("musicVol" in prefs) || ("sfxVol" in prefs) ||
@@ -149,20 +162,15 @@
     const sNew = rawNew ? safeParse(rawNew, null) : null;
     const sOld = rawOld ? safeParse(rawOld, null) : null;
 
-    // Preferimos la nueva, si no existe usamos legacy
     return sanitizeSettings(sNew || sOld || base);
   }
 
   let settings = (() => {
-    // 1) Perfil (si existe) manda
     const fromProfile = loadAudioFromProfilePrefs();
     if (fromProfile) return fromProfile;
-
-    // 2) Si no, storage global
     return loadFromLocalStorage();
   })();
 
-  // Pequeño throttle para no spamear escrituras
   let saveT = 0;
   function saveSettingsGlobal() {
     if (!canLS()) return;
@@ -170,17 +178,14 @@
     clearTimeout(saveT);
     saveT = setTimeout(() => {
       const payload = JSON.stringify(settings);
-      // ✅ escribimos en ambos para compat
       writeLS(SETTINGS_KEY, payload);
-      writeLS(LEGACY_SETTINGS_KEY, payload);
+      writeLS(LEGACY_SETTINGS_KEY, payload); // compat
     }, 60);
   }
 
   function saveSettingsEverywhere() {
-    // 1) global
     saveSettingsGlobal();
-    // 2) perfil (best-effort)
-    saveAudioToProfilePrefs(settings);
+    saveAudioToProfilePrefs(settings); // best-effort
   }
 
   // ───────────────────────── Apply ─────────────────────────
@@ -189,18 +194,15 @@
     if (!A) return;
 
     try {
-      // preferido
       if (typeof A.applySettings === "function") {
         A.applySettings(settings);
       } else {
-        // fallback
         A.setMute?.(!!settings.muteAll);
         A.setSfxOn?.(settings.sfxOn !== false);
         A.setMusicOn?.(!!settings.musicOn);
         A.setVolumes?.({ music: settings.musicVol, sfx: settings.sfxVol });
       }
 
-      // si mute => intenta cortar música
       if (settings.muteAll || !settings.musicOn || settings.musicVol <= 0.001) {
         A.stopMusic?.();
       }
@@ -222,19 +224,21 @@
     } catch {}
   }
 
-  // ✅ Auto-unlock en el primer gesto (sin depender de botones concretos)
-  // Esto reduce casos “no suena nada” en móviles.
+  // ✅ Auto-unlock en primer gesto (pero NO “consume” el gesto si AudioSys aún no existe)
   let didAutoUnlock = false;
   function bindGlobalUnlock() {
     const handler = async () => {
       if (didAutoUnlock) return;
+
+      const A = getAudioSys();
+      if (!A) return; // AudioSys aún no cargó -> esperamos a otro gesto
+
       didAutoUnlock = true;
 
       await unlockGesture();
       applyAudioSettingsNow();
       maybeStartMusic();
 
-      // quitamos listeners
       window.removeEventListener("pointerdown", handler, true);
       window.removeEventListener("keydown", handler, true);
       window.removeEventListener("touchstart", handler, true);
@@ -337,7 +341,6 @@
       saveSettingsEverywhere();
       applyAudioSettingsNow();
 
-      // En caso de mute, intentamos parar música explícitamente
       const A = getAudioSys();
       try { if (settings.muteAll) A?.stopMusic?.(); } catch {}
     });
@@ -346,7 +349,6 @@
     btnTestAudio?.addEventListener("click", async () => {
       await unlockGesture();
 
-      // Re-sync + aplica (por si algo cambió)
       syncUIFromSettings();
       applyAudioSettingsNow();
 
@@ -365,8 +367,8 @@
   }
 
   // ───────────────────────── Watcher de perfil (ligero) ─────────────────────────
-  // Si el jugador cambia el perfil en el menú, re-aplicamos audio/prefs.
   let lastProfileId = null;
+
   function startProfileWatcher() {
     lastProfileId = getProfileId();
 
@@ -375,21 +377,15 @@
       if (cur === lastProfileId) return;
       lastProfileId = cur;
 
-      // 1) si el nuevo perfil tiene prefs => úsalo
       const fromProfile = loadAudioFromProfilePrefs();
-      if (fromProfile) {
-        settings = fromProfile;
-      } else {
-        // 2) si no, carga global (pero no machaca si no hace falta)
-        settings = loadFromLocalStorage();
-      }
+      settings = fromProfile ? fromProfile : loadFromLocalStorage();
 
       syncUIFromSettings();
       applyAudioSettingsNow();
     }, 1500);
   }
 
-  // ───────────────────────── Public API (por si app.js quiere usarlo) ─────────────────────────
+  // ───────────────────────── Public API ─────────────────────────
   window.AudioUI = {
     getSettings: () => ({ ...settings }),
     setSettings: (partial) => {
@@ -412,7 +408,6 @@
 
   // ───────────────────────── Boot ─────────────────────────
   function boot() {
-    // Intenta leer prefs del perfil (por si Auth carga rápido)
     const fromProfile = loadAudioFromProfilePrefs();
     if (fromProfile) settings = fromProfile;
 

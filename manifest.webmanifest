@@ -8,7 +8,7 @@
   "display_override": ["standalone", "fullscreen", "minimal-ui", "browser"],
   "background_color": "#0b0b10",
   "theme_color": "#0b0b10",
-  "description": "Arcade grid roguelite con upgrades, combos y feedback juicy (SFX + música).",
+  "description": "Arcade grid roguelite con upgrades, combos.",
   "lang": "es-ES",
   "dir": "ltr",
   "orientation": "portrait",

@@ -1,61 +1,47 @@
-/* app.js — Grid Runner (PWA) v0.1.7 STABLE+FULLSCREEN + AUDIO + I18N
-   - v0.1.7:
-     ✅ Opciones: panel con scroll seguro (si no cabe, siempre podrás bajar/subir)
-     ✅ Estética: fondos/overlays más “juicy” (gradientes, bordes, glow) vía CSS inyectado (no rompe tu styles.css)
-     ✅ Upgrades: overlay mucho mejor centrado + layout consistente (no 2 arriba y 1 abajo)
-     ✅ Upgrades: rarezas (Común/Rara/Épica/Legendaria) con color + badge
-     ✅ Upgrades: confetti/partículas de fondo al aparecer el panel de mejoras
-     ✅ Upgrades: evita upgrades “inferiores” si ya tienes uno superior (ej: imanes)
-     ✅ Feedback en juego: brillo/juice extra en tiles según upgrades (valores/boost/mult)
-   - Música: HTMLAudio (nativo) + duck por volumen
-   - SFX: WebAudio buffers + fallback procedural
-   - Unlock móvil/iOS: audio se activa con el primer gesto
+/* app.js — Grid Rogue v0.1.7 STABLE+FULLSCREEN + AUDIO + I18N
+   Refactor v0.1.7: separa utils/i18n/audio en archivos externos sin romper.
 */
-
 (() => {
   "use strict";
 
   const APP_VERSION = String(window.APP_VERSION || "0.1.7");
   window.__GRIDRUNNER_BOOTED = false;
 
-  // ───────────────────────── Utils ─────────────────────────
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const clampInt = (v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : a);
-  const lerp = (a, b, t) => a + (b - a) * t;
-  const randi = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
-  const chance = (p) => Math.random() < p;
+  // ───────────────────────── Imports (globals) ─────────────────────────
+  const U = window.GRUtils || {};
+  const clamp = U.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
+  const clampInt = U.clampInt || ((v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : a));
+  const lerp = U.lerp || ((a, b, t) => a + (b - a) * t);
+  const randi = U.randi || ((a, b) => Math.floor(a + Math.random() * (b - a + 1)));
+  const chance = U.chance || ((p) => Math.random() < p);
+  const safeParse = U.safeParse || ((raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } });
+  const $ = U.$ || ((id) => document.getElementById(id));
 
-  const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
-  const $ = (id) => document.getElementById(id);
+  const overlayShow = U.overlayShow || ((el) => { if (!el) return; el.hidden = false; });
+  const overlayHide = U.overlayHide || ((el) => { if (!el) return; el.hidden = true; });
+  const overlayFadeOut = U.overlayFadeOut || ((el) => Promise.resolve(overlayHide(el)));
+  const setPill = U.setPill || ((el, v) => { if (el) el.textContent = String(v); });
+  const setState = U.setState || ((s) => { try { document.body.dataset.state = s; } catch {} });
 
-  function overlayShow(el) {
-    if (!el) return;
-    el.classList.remove("fadeOut");
-    el.classList.add("fadeIn");
-    el.hidden = false;
-  }
-  function overlayHide(el) {
-    if (!el) return;
-    el.hidden = true;
-    el.classList.remove("fadeIn", "fadeOut");
-  }
-  function overlayFadeOut(el, ms = 180) {
-    return new Promise((res) => {
-      if (!el || el.hidden) return res();
-      el.classList.remove("fadeIn");
-      el.classList.add("fadeOut");
-      setTimeout(() => { overlayHide(el); res(); }, ms);
-    });
-  }
+  const I18n = window.I18n || {
+    setLang() {}, getLang() { return "es"; },
+    t(k) { return k; },
+    languageOptions() { return []; },
+    applyDataAttrs() {},
+  };
 
-  function setPill(el, value) {
-    if (!el) return;
-    const pv = el.querySelector?.(".pv");
-    if (pv) pv.textContent = String(value);
-    else el.textContent = String(value);
-  }
-
-  function setState(s) { try { document.body.dataset.state = s; } catch {} }
+  const AudioSys = window.AudioSys || {
+    unlock: async () => true,
+    sfx: async () => false,
+    startMusic: async () => {},
+    stopMusic: () => {},
+    duckMusic: () => {},
+    setMute: () => {},
+    setMusicOn: () => {},
+    setSfxOn: () => {},
+    setVolumes: () => {},
+    getState: () => ({}),
+  };
 
   // ───────────────────────── Storage keys ─────────────────────────
   const BEST_KEY = "gridrunner_best_v1";
@@ -63,580 +49,16 @@
   const SETTINGS_KEY = "gridrunner_settings_v1";
   const RUNS_KEY = "gridrunner_runs_v1";
 
-  // ───────────────────────── I18N ─────────────────────────
-  const I18n = (() => {
-    const normalize = (raw) => {
-      const s = String(raw || "").toLowerCase().trim();
-      if (!s || s === "auto") return "auto";
-      const base = s.split("-")[0];
-      if (base === "pt") return "pt";
-      if (base === "ca") return "ca";
-      return base;
-    };
-
-    const dict = {
-      es: {
-        langName: "Español",
-        defaultPlayer: "Jugador",
-        app_ready: "Listo",
-        app_loading: "Iniciando…",
-        app_pwa: "PWA…",
-        audio_ok: "Audio OK",
-        update_apply_end: "Update listo: se aplicará al terminar.",
-        update_available: "Actualización disponible.",
-        update_apply_end_short: "Se aplicará al terminar.",
-        pill_update: "Actualizar",
-        toast_trap: "Trampa",
-        toast_combo_mult: "Combo: +MULT",
-        toast_upgrade: "Mejora: {0}",
-        toast_reroll: "Reroll",
-        toast_skip: "Saltar",
-        toast_shield_saved: "El escudo salvó un KO",
-        name_min: "Nombre mínimo 2 letras",
-        combo_hint: "Completa la secuencia para subir multiplicador.",
-        stats_reason: "Motivo",
-        stats_level: "Nivel",
-        stats_time: "Tiempo",
-        stats_streak: "Racha",
-        stats_mult: "Mult",
-        cell_coin: "Coin",
-        cell_gem: "Gem",
-        cell_bonus: "Bonus",
-        // UI
-        opt_language: "Idioma",
-        lang_auto: "Auto",
-        up_choose: "Elige una mejora",
-        up_level_title: "Nivel {0}",
-        rarity_common: "Común",
-        rarity_rare: "Rara",
-        rarity_epic: "Épica",
-        rarity_legendary: "Legendaria",
-        new_profile: "Crear nuevo…",
-        confirm_clear_local: "¿Borrar datos locales? (Perfiles, ajustes, runs)",
-        // Tags
-        tag_defense: "Defensa",
-        tag_qol: "QoL",
-        tag_points: "Puntos",
-        tag_mobility: "Movilidad",
-        tag_upgrades: "Upgrades",
-        tag_combo: "Combo",
-        // Upgrades
-        up_shield_name: "Escudo",
-        up_shield_desc: "Bloquea 1 KO (se consume).",
-        up_mag1_name: "Imán I",
-        up_mag1_desc: "Atrae premios cercanos (radio 1).",
-        up_mag2_name: "Imán II",
-        up_mag2_desc: "Imán mejorado (radio 2).",
-        up_mag3_name: "Imán III",
-        up_mag3_desc: "Radio 3 (máximo).",
-        up_boost_name: "Puntos +",
-        up_boost_desc: "Más puntos (+8%).",
-        up_trap_name: "Resistencia a trampas",
-        up_trap_desc: "Reduce penalización de trampas.",
-        up_zone_name: "Zona +",
-        up_zone_desc: "Zona de movimiento más alta (+1 fila).",
-        up_coin_name: "Coin +",
-        up_coin_desc: "Coin vale más (+2).",
-        up_gem_name: "Gem +",
-        up_gem_desc: "Gem vale más (+6).",
-        up_bonus_name: "Bonus +",
-        up_bonus_desc: "Bonus vale más (+10).",
-        up_reroll_name: "Reroll +",
-        up_reroll_desc: "Ganas 1 reroll extra.",
-        up_mult_name: "Mult +",
-        up_mult_desc: "Sube multiplicador base (+0.10).",
-      },
-      en: {
-        langName: "English",
-        defaultPlayer: "Player",
-        app_ready: "Ready",
-        app_loading: "Starting…",
-        app_pwa: "PWA…",
-        audio_ok: "Audio OK",
-        update_apply_end: "Update ready: it will apply after the run.",
-        update_available: "Update available.",
-        update_apply_end_short: "It will apply after the run.",
-        pill_update: "Update",
-        toast_trap: "Trap",
-        toast_combo_mult: "Combo: +MULT",
-        toast_upgrade: "Upgrade: {0}",
-        toast_reroll: "Reroll",
-        toast_skip: "Skip",
-        toast_shield_saved: "Shield saved you from a KO",
-        name_min: "Name must be at least 2 characters",
-        combo_hint: "Complete the sequence to increase multiplier.",
-        stats_reason: "Reason",
-        stats_level: "Level",
-        stats_time: "Time",
-        stats_streak: "Streak",
-        stats_mult: "Mult",
-        cell_coin: "Coin",
-        cell_gem: "Gem",
-        cell_bonus: "Bonus",
-        opt_language: "Language",
-        lang_auto: "Auto",
-        up_choose: "Choose an upgrade",
-        up_level_title: "Level {0}",
-        rarity_common: "Common",
-        rarity_rare: "Rare",
-        rarity_epic: "Epic",
-        rarity_legendary: "Legendary",
-        new_profile: "Create new…",
-        confirm_clear_local: "Clear local data? (Profiles, settings, runs)",
-        // Tags
-        tag_defense: "Defense",
-        tag_qol: "QoL",
-        tag_points: "Points",
-        tag_mobility: "Mobility",
-        tag_upgrades: "Upgrades",
-        tag_combo: "Combo",
-        // Upgrades
-        up_shield_name: "Shield",
-        up_shield_desc: "Blocks 1 KO (consumed).",
-        up_mag1_name: "Magnet I",
-        up_mag1_desc: "Pulls nearby rewards (radius 1).",
-        up_mag2_name: "Magnet II",
-        up_mag2_desc: "Improved magnet (radius 2).",
-        up_mag3_name: "Magnet III",
-        up_mag3_desc: "Radius 3 (max).",
-        up_boost_name: "Score +",
-        up_boost_desc: "More points (+8%).",
-        up_trap_name: "Trap resistance",
-        up_trap_desc: "Reduces trap penalty.",
-        up_zone_name: "Zone +",
-        up_zone_desc: "Taller movement zone (+1 row).",
-        up_coin_name: "Coin +",
-        up_coin_desc: "Coin worth more (+2).",
-        up_gem_name: "Gem +",
-        up_gem_desc: "Gem worth more (+6).",
-        up_bonus_name: "Bonus +",
-        up_bonus_desc: "Bonus worth more (+10).",
-        up_reroll_name: "Reroll +",
-        up_reroll_desc: "Gain 1 extra reroll.",
-        up_mult_name: "Mult +",
-        up_mult_desc: "Increase base multiplier (+0.10).",
-      },
-      fr: {
-        langName: "Français",
-        defaultPlayer: "Joueur",
-        app_ready: "Prêt",
-        app_loading: "Démarrage…",
-        app_pwa: "PWA…",
-        audio_ok: "Audio OK",
-        update_apply_end: "MAJ prête : elle s’appliquera après la partie.",
-        update_available: "Mise à jour disponible.",
-        update_apply_end_short: "Après la partie.",
-        pill_update: "Mettre à jour",
-        toast_trap: "Piège",
-        toast_combo_mult: "Combo : +MULT",
-        toast_upgrade: "Amélioration : {0}",
-        toast_reroll: "Relance",
-        toast_skip: "Passer",
-        toast_shield_saved: "Bouclier : KO évité",
-        name_min: "Nom : минимум 2 caractères",
-        combo_hint: "Complète la séquence pour augmenter le multiplicateur.",
-        stats_reason: "Raison",
-        stats_level: "Niveau",
-        stats_time: "Temps",
-        stats_streak: "Série",
-        stats_mult: "Mult",
-        cell_coin: "Pièce",
-        cell_gem: "Gemme",
-        cell_bonus: "Bonus",
-        opt_language: "Langue",
-        lang_auto: "Auto",
-        up_choose: "Choisis une amélioration",
-        up_level_title: "Niveau {0}",
-        rarity_common: "Commune",
-        rarity_rare: "Rare",
-        rarity_epic: "Épique",
-        rarity_legendary: "Légendaire",
-        new_profile: "Créer nouveau…",
-        confirm_clear_local: "Effacer les données locales ? (Profils, réglages, runs)",
-        tag_defense: "Défense",
-        tag_qol: "QoL",
-        tag_points: "Points",
-        tag_mobility: "Mobilité",
-        tag_upgrades: "Amélios",
-        tag_combo: "Combo",
-        up_shield_name: "Bouclier",
-        up_shield_desc: "Bloque 1 KO (consommé).",
-        up_mag1_name: "Aimant I",
-        up_mag1_desc: "Attire les récompenses (rayon 1).",
-        up_mag2_name: "Aimant II",
-        up_mag2_desc: "Aimant amélioré (rayon 2).",
-        up_mag3_name: "Aimant III",
-        up_mag3_desc: "Rayon 3 (max).",
-        up_boost_name: "Score +",
-        up_boost_desc: "Plus de points (+8%).",
-        up_trap_name: "Résistance pièges",
-        up_trap_desc: "Réduit la pénalité des pièges.",
-        up_zone_name: "Zone +",
-        up_zone_desc: "Zone de mouvement plus haute (+1 ligne).",
-        up_coin_name: "Pièce +",
-        up_coin_desc: "Pièce vaut plus (+2).",
-        up_gem_name: "Gemme +",
-        up_gem_desc: "Gemme vaut plus (+6).",
-        up_bonus_name: "Bonus +",
-        up_bonus_desc: "Bonus vaut plus (+10).",
-        up_reroll_name: "Relance +",
-        up_reroll_desc: "Gagne 1 relance.",
-        up_mult_name: "Mult +",
-        up_mult_desc: "Augmente le mult de base (+0,10).",
-      },
-      de: {
-        langName: "Deutsch",
-        defaultPlayer: "Spieler",
-        app_ready: "Bereit",
-        app_loading: "Startet…",
-        app_pwa: "PWA…",
-        audio_ok: "Audio OK",
-        update_apply_end: "Update bereit: wird nach dem Lauf angewendet.",
-        update_available: "Update verfügbar.",
-        update_apply_end_short: "Nach dem Lauf.",
-        pill_update: "Aktualisieren",
-        toast_trap: "Falle",
-        toast_combo_mult: "Combo: +MULT",
-        toast_upgrade: "Upgrade: {0}",
-        toast_reroll: "Neu würfeln",
-        toast_skip: "Überspringen",
-        toast_shield_saved: "Schild hat dich vor KO gerettet",
-        name_min: "Name: mindestens 2 Zeichen",
-        combo_hint: "Vervollständige die Sequenz für mehr Multiplikator.",
-        stats_reason: "Grund",
-        stats_level: "Level",
-        stats_time: "Zeit",
-        stats_streak: "Serie",
-        stats_mult: "Mult",
-        cell_coin: "Coin",
-        cell_gem: "Gem",
-        cell_bonus: "Bonus",
-        opt_language: "Sprache",
-        lang_auto: "Auto",
-        up_choose: "Wähle ein Upgrade",
-        up_level_title: "Level {0}",
-        rarity_common: "Gewöhnlich",
-        rarity_rare: "Selten",
-        rarity_epic: "Episch",
-        rarity_legendary: "Legendär",
-        new_profile: "Neu erstellen…",
-        confirm_clear_local: "Lokale Daten löschen? (Profile, Einstellungen, Runs)",
-        tag_defense: "Verteidigung",
-        tag_qol: "QoL",
-        tag_points: "Punkte",
-        tag_mobility: "Mobilität",
-        tag_upgrades: "Upgrades",
-        tag_combo: "Combo",
-        up_shield_name: "Schild",
-        up_shield_desc: "Blockt 1 KO (verbraucht).",
-        up_mag1_name: "Magnet I",
-        up_mag1_desc: "Zieht Belohnungen an (Radius 1).",
-        up_mag2_name: "Magnet II",
-        up_mag2_desc: "Besserer Magnet (Radius 2).",
-        up_mag3_name: "Magnet III",
-        up_mag3_desc: "Radius 3 (Max).",
-        up_boost_name: "Score +",
-        up_boost_desc: "Mehr Punkte (+8%).",
-        up_trap_name: "Fallenresistenz",
-        up_trap_desc: "Reduziert Fallenstrafe.",
-        up_zone_name: "Zone +",
-        up_zone_desc: "Höhere Bewegungszone (+1 Reihe).",
-        up_coin_name: "Coin +",
-        up_coin_desc: "Coin ist mehr wert (+2).",
-        up_gem_name: "Gem +",
-        up_gem_desc: "Gem ist mehr wert (+6).",
-        up_bonus_name: "Bonus +",
-        up_bonus_desc: "Bonus ist mehr wert (+10).",
-        up_reroll_name: "Reroll +",
-        up_reroll_desc: "Erhalte 1 zusätzlichen Reroll.",
-        up_mult_name: "Mult +",
-        up_mult_desc: "Erhöht Basismultiplikator (+0,10).",
-      },
-      it: {
-        langName: "Italiano",
-        defaultPlayer: "Giocatore",
-        app_ready: "Pronto",
-        app_loading: "Avvio…",
-        app_pwa: "PWA…",
-        audio_ok: "Audio OK",
-        update_apply_end: "Aggiornamento pronto: si applicherà dopo la run.",
-        update_available: "Aggiornamento disponibile.",
-        update_apply_end_short: "Dopo la run.",
-        pill_update: "Aggiorna",
-        toast_trap: "Trappola",
-        toast_combo_mult: "Combo: +MULT",
-        toast_upgrade: "Miglioria: {0}",
-        toast_reroll: "Reroll",
-        toast_skip: "Salta",
-        toast_shield_saved: "Scudo: KO evitato",
-        name_min: "Nome: minimo 2 caratteri",
-        combo_hint: "Completa la sequenza per aumentare il moltiplicatore.",
-        stats_reason: "Motivo",
-        stats_level: "Livello",
-        stats_time: "Tempo",
-        stats_streak: "Serie",
-        stats_mult: "Mult",
-        cell_coin: "Coin",
-        cell_gem: "Gem",
-        cell_bonus: "Bonus",
-        opt_language: "Lingua",
-        lang_auto: "Auto",
-        up_choose: "Scegli un upgrade",
-        up_level_title: "Livello {0}",
-        rarity_common: "Comune",
-        rarity_rare: "Raro",
-        rarity_epic: "Epico",
-        rarity_legendary: "Leggendario",
-        new_profile: "Crea nuovo…",
-        confirm_clear_local: "Cancellare i dati locali? (Profili, impostazioni, runs)",
-        tag_defense: "Difesa",
-        tag_qol: "QoL",
-        tag_points: "Punti",
-        tag_mobility: "Mobilità",
-        tag_upgrades: "Upgrade",
-        tag_combo: "Combo",
-        up_shield_name: "Scudo",
-        up_shield_desc: "Blocca 1 KO (consumato).",
-        up_mag1_name: "Magnete I",
-        up_mag1_desc: "Attira ricompense (raggio 1).",
-        up_mag2_name: "Magnete II",
-        up_mag2_desc: "Magnete migliorato (raggio 2).",
-        up_mag3_name: "Magnete III",
-        up_mag3_desc: "Raggio 3 (max).",
-        up_boost_name: "Punti +",
-        up_boost_desc: "Più punti (+8%).",
-        up_trap_name: "Resistenza trappole",
-        up_trap_desc: "Riduce la penalità delle trappole.",
-        up_zone_name: "Zona +",
-        up_zone_desc: "Zona movimento più alta (+1 riga).",
-        up_coin_name: "Coin +",
-        up_coin_desc: "Coin vale di più (+2).",
-        up_gem_name: "Gem +",
-        up_gem_desc: "Gem vale di più (+6).",
-        up_bonus_name: "Bonus +",
-        up_bonus_desc: "Bonus vale di più (+10).",
-        up_reroll_name: "Reroll +",
-        up_reroll_desc: "Ottieni 1 reroll extra.",
-        up_mult_name: "Mult +",
-        up_mult_desc: "Aumenta mult base (+0,10).",
-      },
-      pt: {
-        langName: "Português",
-        defaultPlayer: "Jogador",
-        app_ready: "Pronto",
-        app_loading: "A iniciar…",
-        app_pwa: "PWA…",
-        audio_ok: "Áudio OK",
-        update_apply_end: "Update pronto: aplica-se no fim da run.",
-        update_available: "Atualização disponível.",
-        update_apply_end_short: "No fim da run.",
-        pill_update: "Atualizar",
-        toast_trap: "Armadilha",
-        toast_combo_mult: "Combo: +MULT",
-        toast_upgrade: "Upgrade: {0}",
-        toast_reroll: "Reroll",
-        toast_skip: "Saltar",
-        toast_shield_saved: "Escudo salvou-te de um KO",
-        name_min: "Nome: mínimo 2 caracteres",
-        combo_hint: "Completa a sequência para aumentar o multiplicador.",
-        stats_reason: "Motivo",
-        stats_level: "Nível",
-        stats_time: "Tempo",
-        stats_streak: "Sequência",
-        stats_mult: "Mult",
-        cell_coin: "Coin",
-        cell_gem: "Gem",
-        cell_bonus: "Bónus",
-        opt_language: "Idioma",
-        lang_auto: "Auto",
-        up_choose: "Escolhe um upgrade",
-        up_level_title: "Nível {0}",
-        rarity_common: "Comum",
-        rarity_rare: "Raro",
-        rarity_epic: "Épico",
-        rarity_legendary: "Lendário",
-        new_profile: "Criar novo…",
-        confirm_clear_local: "Apagar dados locais? (Perfis, definições, runs)",
-        tag_defense: "Defesa",
-        tag_qol: "QoL",
-        tag_points: "Pontos",
-        tag_mobility: "Mobilidade",
-        tag_upgrades: "Upgrades",
-        tag_combo: "Combo",
-        up_shield_name: "Escudo",
-        up_shield_desc: "Bloqueia 1 KO (consome).",
-        up_mag1_name: "Íman I",
-        up_mag1_desc: "Atrai prémios (raio 1).",
-        up_mag2_name: "Íman II",
-        up_mag2_desc: "Íman melhorado (raio 2).",
-        up_mag3_name: "Íman III",
-        up_mag3_desc: "Raio 3 (máx).",
-        up_boost_name: "Pontos +",
-        up_boost_desc: "Mais pontos (+8%).",
-        up_trap_name: "Resistência a armadilhas",
-        up_trap_desc: "Reduz penalização das armadilhas.",
-        up_zone_name: "Zona +",
-        up_zone_desc: "Zona de movimento maior (+1 linha).",
-        up_coin_name: "Coin +",
-        up_coin_desc: "Coin vale mais (+2).",
-        up_gem_name: "Gem +",
-        up_gem_desc: "Gem vale mais (+6).",
-        up_bonus_name: "Bónus +",
-        up_bonus_desc: "Bónus vale mais (+10).",
-        up_reroll_name: "Reroll +",
-        up_reroll_desc: "Ganhas 1 reroll extra.",
-        up_mult_name: "Mult +",
-        up_mult_desc: "Aumenta mult base (+0,10).",
-      },
-      ca: {
-        langName: "Català",
-        defaultPlayer: "Jugador",
-        app_ready: "A punt",
-        app_loading: "Iniciant…",
-        app_pwa: "PWA…",
-        audio_ok: "Àudio OK",
-        update_apply_end: "Actualització llesta: s’aplicarà en acabar la run.",
-        update_available: "Actualització disponible.",
-        update_apply_end_short: "En acabar la run.",
-        pill_update: "Actualitza",
-        toast_trap: "Trampa",
-        toast_combo_mult: "Combo: +MULT",
-        toast_upgrade: "Millora: {0}",
-        toast_reroll: "Reroll",
-        toast_skip: "Saltar",
-        toast_shield_saved: "L’escut t’ha salvat d’un KO",
-        name_min: "Nom: mínim 2 lletres",
-        combo_hint: "Completa la seqüència per pujar multiplicador.",
-        stats_reason: "Motiu",
-        stats_level: "Nivell",
-        stats_time: "Temps",
-        stats_streak: "Ratxa",
-        stats_mult: "Mult",
-        cell_coin: "Coin",
-        cell_gem: "Gem",
-        cell_bonus: "Bonus",
-        opt_language: "Idioma",
-        lang_auto: "Auto",
-        up_choose: "Tria una millora",
-        up_level_title: "Nivell {0}",
-        rarity_common: "Comuna",
-        rarity_rare: "Rara",
-        rarity_epic: "Èpica",
-        rarity_legendary: "Legendària",
-        new_profile: "Crear nou…",
-        confirm_clear_local: "Esborrar dades locals? (Perfils, opcions, runs)",
-        tag_defense: "Defensa",
-        tag_qol: "QoL",
-        tag_points: "Punts",
-        tag_mobility: "Mobilitat",
-        tag_upgrades: "Upgrades",
-        tag_combo: "Combo",
-        up_shield_name: "Escut",
-        up_shield_desc: "Bloqueja 1 KO (es consumeix).",
-        up_mag1_name: "Imant I",
-        up_mag1_desc: "Atrau premis (radi 1).",
-        up_mag2_name: "Imant II",
-        up_mag2_desc: "Imant millorat (radi 2).",
-        up_mag3_name: "Imant III",
-        up_mag3_desc: "Radi 3 (màxim).",
-        up_boost_name: "Punts +",
-        up_boost_desc: "Més punts (+8%).",
-        up_trap_name: "Resistència trampes",
-        up_trap_desc: "Redueix penalització de trampes.",
-        up_zone_name: "Zona +",
-        up_zone_desc: "Zona de moviment més alta (+1 fila).",
-        up_coin_name: "Coin +",
-        up_coin_desc: "Coin val més (+2).",
-        up_gem_name: "Gem +",
-        up_gem_desc: "Gem val més (+6).",
-        up_bonus_name: "Bonus +",
-        up_bonus_desc: "Bonus val més (+10).",
-        up_reroll_name: "Reroll +",
-        up_reroll_desc: "Guanyes 1 reroll extra.",
-        up_mult_name: "Mult +",
-        up_mult_desc: "Puja mult base (+0,10).",
-      },
-    };
-
-    const supported = ["auto", ...Object.keys(dict)];
-    let current = "es";
-
-    function detectBrowser() {
-      const nav = (navigator.languages && navigator.languages[0]) || navigator.language || "es";
-      const n = normalize(nav);
-      return dict[n] ? n : "en";
-    }
-
-    function setLang(raw) {
-      const n = normalize(raw);
-      if (n === "auto") current = detectBrowser();
-      else current = dict[n] ? n : "en";
-      try { document.documentElement.lang = current; } catch {}
-    }
-
-    function getLang() { return current; }
-
-    function fmt(str, args) {
-      return String(str).replace(/\{(\d+)\}/g, (_, i) => (args && args[+i] != null) ? String(args[+i]) : "");
-    }
-
-    function t(key, ...args) {
-      const base = dict[current] || dict.en || dict.es;
-      const es = dict.es || {};
-      const val = (base && base[key] != null) ? base[key] : (es[key] != null ? es[key] : key);
-      return args.length ? fmt(val, args) : String(val);
-    }
-
-    function languageOptions() {
-      const order = ["auto", "es", "en", "fr", "de", "it", "pt", "ca"];
-      const out = [];
-      for (const code of order) {
-        if (!supported.includes(code)) continue;
-        if (code === "auto") out.push({ code, label: (dict[current]?.lang_auto || dict.es.lang_auto || "Auto") });
-        else out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
-      }
-      for (const code of supported) {
-        if (order.includes(code)) continue;
-        if (code === "auto") continue;
-        out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
-      }
-      return out;
-    }
-
-    function applyDataAttrs(root = document) {
-      try {
-        root.querySelectorAll?.("[data-i18n]")?.forEach((el) => {
-          const k = el.getAttribute("data-i18n");
-          if (k) el.textContent = t(k);
-        });
-        root.querySelectorAll?.("[data-i18n-title]")?.forEach((el) => {
-          const k = el.getAttribute("data-i18n-title");
-          if (k) el.title = t(k);
-        });
-        root.querySelectorAll?.("[data-i18n-ph]")?.forEach((el) => {
-          const k = el.getAttribute("data-i18n-ph");
-          if (k) el.placeholder = t(k);
-        });
-      } catch {}
-    }
-
-    return { setLang, getLang, t, languageOptions, applyDataAttrs };
-  })();
-
   // ───────────────────────── Settings ─────────────────────────
   const defaultSettings = () => ({
     useSprites: false,
     vibration: true,
     showDpad: true,
     fx: 1.0,
-
-    // AUDIO
     musicOn: true,
     musicVol: 0.60,
     sfxVol: 0.90,
     muteAll: false,
-
-    // I18N
     lang: "auto",
   });
 
@@ -649,12 +71,10 @@
       ...base,
       ...s,
       fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
-
       musicOn: (s.musicOn ?? base.musicOn) !== false,
       musicVol: clamp(Number(s.musicVol ?? base.musicVol) || base.musicVol, 0, 1),
       sfxVol: clamp(Number(s.sfxVol ?? base.sfxVol) || base.sfxVol, 0, 1),
       muteAll: !!(s.muteAll ?? base.muteAll),
-
       lang: (typeof s.lang === "string" ? s.lang : base.lang),
     };
   })();
@@ -676,20 +96,15 @@
       const st = document.createElement("style");
       st.id = "grPatch017";
       st.textContent = `
-        /* v0.1.7 UI polish + scroll safety */
         #stage{
           background:
             radial-gradient(1200px 800px at 30% 10%, rgba(106,176,255,.10), rgba(0,0,0,0) 60%),
             radial-gradient(900px 700px at 70% 90%, rgba(255,211,90,.08), rgba(0,0,0,0) 55%),
             linear-gradient(180deg, #050512, #030309);
         }
-
-        /* Overlays: safe padding + smoother panel */
         [id^="overlay"]{
           padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
         }
-
-        /* Opciones: si el contenido no cabe => scroll siempre disponible */
         #overlayOptions{ overflow: auto !important; -webkit-overflow-scrolling: touch; }
         #overlayOptions .panel,
         #overlayOptions .card,
@@ -704,8 +119,6 @@
           backdrop-filter: blur(10px);
           box-shadow: 0 12px 40px rgba(0,0,0,.35);
         }
-
-        /* Upgrades: layout consistente (evita 2+1 feo) */
         #upgradeChoices{
           display: grid !important;
           grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -719,8 +132,6 @@
         @media (max-width: 680px){
           #upgradeChoices{ grid-template-columns: 1fr !important; max-width: 520px; }
         }
-
-        /* Up card look */
         .upCard{
           position: relative;
           border-radius: 14px;
@@ -739,7 +150,6 @@
           border-color: rgba(255,255,255,.18);
         }
         .upCard:active{ transform: translateY(0); }
-
         .upCard .upTitle{
           font-weight: 900;
           letter-spacing: .2px;
@@ -749,14 +159,12 @@
         .upCard[data-rarity="rare"] .upTitle{ color: rgba(106,176,255,.96); }
         .upCard[data-rarity="epic"] .upTitle{ color: rgba(214,133,255,.96); }
         .upCard[data-rarity="legendary"] .upTitle{ color: rgba(255,211,90,.98); }
-
         .upCard[data-rarity="rare"]{ border-color: rgba(106,176,255,.22); }
         .upCard[data-rarity="epic"]{ border-color: rgba(214,133,255,.22); }
         .upCard[data-rarity="legendary"]{
           border-color: rgba(255,211,90,.26);
           box-shadow: 0 14px 40px rgba(255,211,90,.08), 0 12px 30px rgba(0,0,0,.40);
         }
-
         .upRarityBadge{
           display: inline-flex;
           align-items: center;
@@ -772,8 +180,6 @@
         .upCard[data-rarity="rare"] .upRarityBadge{ color: rgba(106,176,255,.95); border-color: rgba(106,176,255,.24); }
         .upCard[data-rarity="epic"] .upRarityBadge{ color: rgba(214,133,255,.95); border-color: rgba(214,133,255,.24); }
         .upCard[data-rarity="legendary"] .upRarityBadge{ color: rgba(255,211,90,.98); border-color: rgba(255,211,90,.28); }
-
-        /* Upgrade overlay polish */
         #overlayUpgrades{
           background:
             radial-gradient(1100px 800px at 50% 20%, rgba(106,176,255,.10), rgba(0,0,0,0) 62%),
@@ -787,8 +193,6 @@
           background: rgba(10,10,18,.88);
           box-shadow: 0 16px 46px rgba(0,0,0,.45);
         }
-
-        /* Toast a bit juicier */
         #toast.show{
           box-shadow: 0 12px 30px rgba(0,0,0,.35);
           border: 1px solid rgba(255,255,255,.14);
@@ -797,431 +201,6 @@
       document.head.appendChild(st);
     } catch {}
   }
-
-  // ───────────────────────── Audio (robusto) ─────────────────────────
-  const AudioSys = (() => {
-    const supportsCtx = (() => {
-      try { return !!(window.AudioContext || window.webkitAudioContext); } catch { return false; }
-    })();
-
-    const FILES = {
-      bgm:   "assets/audio/bgm_loop.mp3",
-      coin:  "assets/audio/sfx_coin.wav",
-      gem:   "assets/audio/sfx_gem.wav",
-      bonus: "assets/audio/sfx_bonus.wav",
-      trap:  "assets/audio/sfx_trap.wav",
-      ko:    "assets/audio/sfx_ko.wav",
-      level: "assets/audio/sfx_levelup.wav",
-      pick:  "assets/audio/sfx_pick.wav",
-      reroll:"assets/audio/sfx_reroll.wav",
-      ui:    "assets/audio/sfx_ui_click.wav",
-    };
-
-    let ctx = null;
-    let master = null;
-    let sfxGain = null;
-
-    let musicEl = null;
-    let musicMode = "none";
-    let duckFactor = 1.0;
-    let volAnimRaf = 0;
-
-    let unlocked = false;
-    let muted = false;
-    let musicOn = true;
-    let sfxOn = true;
-
-    let musicVol = 0.60;
-    let sfxVol = 0.90;
-
-    const buffers = new Map();
-    let proceduralNode = null;
-
-    const urlOf = (rel) => new URL(rel, location.href).toString();
-
-    function ensureCtx() {
-      if (!supportsCtx) return null;
-      if (ctx) return ctx;
-
-      const AC = window.AudioContext || window.webkitAudioContext;
-      ctx = new AC({ latencyHint: "interactive" });
-
-      master = ctx.createGain();
-      sfxGain = ctx.createGain();
-
-      master.gain.value = muted ? 0 : 1;
-      sfxGain.gain.value = sfxOn ? sfxVol : 0;
-
-      sfxGain.connect(master);
-      master.connect(ctx.destination);
-
-      return ctx;
-    }
-
-    function ensureMusicEl() {
-      if (musicEl) return musicEl;
-
-      try {
-        const el = new Audio();
-        el.src = urlOf(FILES.bgm);
-        el.loop = true;
-        el.preload = "auto";
-        el.autoplay = false;
-
-        el.playsInline = true;
-        try { el.setAttribute("playsinline", ""); } catch {}
-        try { el.setAttribute("webkit-playsinline", ""); } catch {}
-
-        try { el.defaultPlaybackRate = 1; } catch {}
-        try { el.playbackRate = 1; } catch {}
-        try { el.preservesPitch = true; } catch {}
-        try { el.mozPreservesPitch = true; } catch {}
-        try { el.webkitPreservesPitch = true; } catch {}
-
-        el.muted = true;
-        el.volume = 0;
-
-        musicEl = el;
-        musicMode = "html";
-        return musicEl;
-      } catch {
-        musicEl = null;
-        return null;
-      }
-    }
-
-    function effectiveMusicVolume() {
-      if (muted || !musicOn) return 0;
-      return clamp(musicVol * duckFactor, 0, 1);
-    }
-
-    function setMusicVolumeImmediate(v) {
-      const el = ensureMusicEl();
-      if (!el) return;
-      const vv = clamp(v, 0, 1);
-      try {
-        el.muted = vv <= 0.0001;
-        el.volume = vv;
-      } catch {}
-    }
-
-    function setMusicVolumeSmooth(target, ms = 140) {
-      const el = ensureMusicEl();
-      if (!el) return;
-
-      if (volAnimRaf) cancelAnimationFrame(volAnimRaf);
-      const t0 = performance.now();
-      let from = 0;
-
-      try { from = Number.isFinite(el.volume) ? el.volume : 0; } catch { from = 0; }
-      const to = clamp(target, 0, 1);
-
-      const step = () => {
-        const t = performance.now();
-        const k = clamp((t - t0) / Math.max(1, ms), 0, 1);
-        const e = 1 - Math.pow(1 - k, 2);
-        const v = from + (to - from) * e;
-        setMusicVolumeImmediate(v);
-        if (k < 1) volAnimRaf = requestAnimationFrame(step);
-        else volAnimRaf = 0;
-      };
-
-      volAnimRaf = requestAnimationFrame(step);
-    }
-
-    async function unlock() {
-      unlocked = true;
-
-      if (supportsCtx) {
-        const c = ensureCtx();
-        if (c) {
-          try { if (c.state !== "running") await c.resume(); } catch {}
-        }
-      }
-      return true;
-    }
-
-    function setMute(v) {
-      muted = !!v;
-
-      if (master) master.gain.value = muted ? 0 : 1;
-
-      if (muted) {
-        stopMusic();
-      } else {
-        const vv = effectiveMusicVolume();
-        setMusicVolumeImmediate(vv);
-      }
-    }
-
-    function setMusicOn(v) {
-      musicOn = !!v;
-      if (!musicOn) stopMusic();
-      else startMusic();
-    }
-
-    function setSfxOn(v) {
-      sfxOn = !!v;
-      if (sfxGain) sfxGain.gain.value = sfxOn ? sfxVol : 0;
-    }
-
-    function setVolumes({ music, sfx }) {
-      if (Number.isFinite(music)) musicVol = clamp(music, 0, 1);
-      if (Number.isFinite(sfx)) sfxVol = clamp(sfx, 0, 1);
-
-      if (sfxGain) sfxGain.gain.value = sfxOn ? sfxVol : 0;
-
-      const vv = effectiveMusicVolume();
-      setMusicVolumeImmediate(vv);
-    }
-
-    function duckMusic(on) {
-      const targetDuck = on ? 0.35 : 1.0;
-      duckFactor = targetDuck;
-      const vv = effectiveMusicVolume();
-      setMusicVolumeSmooth(vv, 140);
-    }
-
-    async function loadBuffer(key, relPath) {
-      if (!supportsCtx) return null;
-      if (buffers.has(key)) return buffers.get(key);
-
-      const c = ensureCtx();
-      if (!c) return null;
-
-      try {
-        const res = await fetch(urlOf(relPath), { cache: "force-cache" });
-        if (!res || !res.ok) throw new Error("fetch audio fail");
-        const arr = await res.arrayBuffer();
-        const buf = await c.decodeAudioData(arr.slice(0));
-        buffers.set(key, buf);
-        return buf;
-      } catch {
-        buffers.set(key, null);
-        return null;
-      }
-    }
-
-    function playBuffer(buf, { gain = 1, rate = 1, pan = 0 } = {}) {
-      if (!buf) return false;
-      const c = ensureCtx();
-      if (!c || !unlocked) return false;
-      if (!sfxOn || muted) return false;
-
-      try {
-        const src = c.createBufferSource();
-        src.buffer = buf;
-        src.playbackRate.value = clamp(rate, 0.5, 2.0);
-
-        const g = c.createGain();
-        g.gain.value = clamp(gain, 0, 2.0);
-
-        let node = src;
-        if (c.createStereoPanner) {
-          const p = c.createStereoPanner();
-          p.pan.value = clamp(pan, -1, 1);
-          node.connect(p);
-          node = p;
-        }
-        node.connect(g);
-        g.connect(sfxGain);
-
-        src.start();
-        src.onended = () => { try { src.disconnect(); g.disconnect(); } catch {} };
-        return true;
-      } catch {
-        return false;
-      }
-    }
-
-    function beep({ f = 440, ms = 90, type = "square", gain = 0.18, slideTo = null } = {}) {
-      const c = ensureCtx();
-      if (!c || !unlocked) return false;
-      if (!sfxOn || muted) return false;
-
-      const t0 = c.currentTime;
-      const t1 = t0 + clamp(ms, 20, 600) / 1000;
-
-      const o = c.createOscillator();
-      const g = c.createGain();
-
-      o.type = type;
-      o.frequency.setValueAtTime(f, t0);
-      if (slideTo != null) o.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t1);
-
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), t0 + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, t1);
-
-      o.connect(g);
-      g.connect(sfxGain);
-      o.start(t0);
-      o.stop(t1);
-
-      o.onended = () => { try { o.disconnect(); g.disconnect(); } catch {} };
-      return true;
-    }
-
-    async function sfx(name) {
-      await unlock();
-
-      if (!supportsCtx) return false;
-
-      const map = {
-        coin: "coin",
-        gem: "gem",
-        bonus: "bonus",
-        trap: "trap",
-        ko: "ko",
-        level: "level",
-        pick: "pick",
-        reroll: "reroll",
-        ui: "ui",
-      };
-
-      const k = map[name] || "ui";
-      const file = FILES[k];
-      if (file) {
-        const buf = await loadBuffer(k, file);
-        if (buf) {
-          const rate = 0.94 + Math.random() * 0.12;
-          const gain = (k === "ko" || k === "trap") ? 0.95 : 0.70;
-          return playBuffer(buf, { gain, rate, pan: (Math.random() * 2 - 1) * 0.15 });
-        }
-      }
-
-      if (k === "coin")  return beep({ f: 820, ms: 60, type: "square", gain: 0.14, slideTo: 980 });
-      if (k === "gem")   return beep({ f: 620, ms: 85, type: "triangle", gain: 0.16, slideTo: 920 });
-      if (k === "bonus") return beep({ f: 520, ms: 120, type: "sawtooth", gain: 0.12, slideTo: 1040 });
-      if (k === "trap")  return beep({ f: 220, ms: 140, type: "square", gain: 0.16, slideTo: 110 });
-      if (k === "ko")    return beep({ f: 150, ms: 220, type: "sawtooth", gain: 0.18, slideTo: 60 });
-      if (k === "level") return beep({ f: 440, ms: 140, type: "triangle", gain: 0.14, slideTo: 880 });
-      if (k === "pick")  return beep({ f: 520, ms: 80, type: "square", gain: 0.12, slideTo: 700 });
-      if (k === "reroll")return beep({ f: 360, ms: 90, type: "triangle", gain: 0.12, slideTo: 520 });
-      return beep({ f: 520, ms: 55, type: "square", gain: 0.09, slideTo: 610 });
-    }
-
-    function stopProceduralMusic() {
-      if (!proceduralNode) return;
-      try { proceduralNode.stop?.(); } catch {}
-      try { proceduralNode.disconnect?.(); } catch {}
-      proceduralNode = null;
-      if (musicMode === "procedural") musicMode = "none";
-    }
-
-    function stopMusic() {
-      if (musicEl) {
-        try {
-          musicEl.pause();
-          musicEl.currentTime = 0;
-        } catch {}
-        try {
-          musicEl.defaultPlaybackRate = 1;
-          musicEl.playbackRate = 1;
-        } catch {}
-      }
-      stopProceduralMusic();
-    }
-
-    async function startMusic() {
-      if (!musicOn || muted) return;
-
-      await unlock();
-
-      const el = ensureMusicEl();
-      if (el) {
-        try {
-          el.defaultPlaybackRate = 1;
-          el.playbackRate = 1;
-        } catch {}
-        const vv = effectiveMusicVolume();
-        setMusicVolumeImmediate(vv);
-        if (vv <= 0.0001) return;
-
-        try {
-          if (!el.paused) return;
-          const p = el.play();
-          if (p && typeof p.then === "function") await p;
-          musicMode = "html";
-          return;
-        } catch {
-          // cae a procedural
-        }
-      }
-
-      if (!supportsCtx || !ctx) return;
-      if (proceduralNode) return;
-
-      try {
-        const o1 = ctx.createOscillator();
-        const o2 = ctx.createOscillator();
-        const g = ctx.createGain();
-
-        o1.type = "sine";
-        o2.type = "triangle";
-        o1.frequency.value = 110;
-        o2.frequency.value = 220;
-
-        const lfo = ctx.createOscillator();
-        const lfoG = ctx.createGain();
-        lfo.type = "sine";
-        lfo.frequency.value = 0.15;
-        lfoG.gain.value = 12;
-
-        lfo.connect(lfoG);
-        lfoG.connect(o2.frequency);
-
-        g.gain.value = 0.10;
-
-        o1.connect(g);
-        o2.connect(g);
-        g.connect(master);
-
-        o1.start();
-        o2.start();
-        lfo.start();
-
-        const notes = [110, 123.47, 130.81, 146.83, 164.81, 146.83, 130.81, 123.47];
-        let idx = 0;
-
-        const step = () => {
-          if (!ctx || !proceduralNode || !musicOn || muted) return;
-          const f = notes[idx++ % notes.length];
-          const t = ctx.currentTime;
-          o1.frequency.setTargetAtTime(f, t, 0.12);
-          o2.frequency.setTargetAtTime(f * 2, t, 0.12);
-          setTimeout(step, 680);
-        };
-
-        proceduralNode = {
-          stop() {
-            try { o1.stop(); o2.stop(); lfo.stop(); } catch {}
-            try { o1.disconnect(); o2.disconnect(); lfo.disconnect(); lfoG.disconnect(); g.disconnect(); } catch {}
-          },
-          disconnect() {},
-        };
-
-        musicMode = "procedural";
-        step();
-      } catch {
-        // nada
-      }
-    }
-
-    return {
-      supports: true,
-      unlock,
-      sfx,
-      startMusic,
-      stopMusic,
-      duckMusic,
-      setMute,
-      setMusicOn,
-      setSfxOn,
-      setVolumes,
-      getState: () => ({ muted, musicOn, sfxOn, musicVol, sfxVol, unlocked, musicMode }),
-    };
-  })();
 
   function applyAudioSettingsNow() {
     try {
@@ -1255,7 +234,6 @@
 
   // ───────────────────────── Sprites optional ─────────────────────────
   const sprites = { ready: false, map: new Map() };
-
   function spriteUrl(name) { return new URL(`./assets/sprites/${name}`, location.href).toString(); }
   function loadImage(url) {
     return new Promise((res, rej) => {
@@ -1266,7 +244,6 @@
       img.src = url;
     });
   }
-
   async function preloadSpritesWithTimeout(timeoutMs = 900) {
     const keys = [
       ["coin", "tile_coin.svg"],
@@ -1274,7 +251,7 @@
       ["bonus", "tile_bonus.svg"],
       ["trap", "tile_trap.svg"],
       ["block", "tile_block.svg"],
-      ["player", "tile_player.svg"],
+      ["player", "tile_player.svg"], // si no existe, fallback a cuadrado (no rompe)
     ];
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
     try {
@@ -1282,9 +259,7 @@
         try {
           const img = await loadImage(spriteUrl(file));
           sprites.map.set(k, img);
-        } catch {
-          // no rompe el resto
-        }
+        } catch {}
       });
       await Promise.race([Promise.all(tasks), timeout]);
       sprites.ready = sprites.map.size > 0;
@@ -1298,9 +273,7 @@
   const ROWS = 24;
   const CANVAS_AR = COLS / ROWS;
 
-  const CellType = Object.freeze({
-    Empty: 0, Coin: 1, Gem: 2, Bonus: 3, Trap: 4, Block: 5,
-  });
+  const CellType = Object.freeze({ Empty: 0, Coin: 1, Gem: 2, Bonus: 3, Trap: 4, Block: 5 });
 
   const CELL_COLORS = {
     [CellType.Empty]: "rgba(0,0,0,0)",
@@ -1432,7 +405,7 @@
 
   let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal, btnRepairPWA;
 
-  // NEW AUDIO opts
+  // AUDIO opts
   let optMusicOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
 
   // I18N opts
@@ -1458,7 +431,6 @@
       if (!overlayError) alert(msg);
     } catch {}
   }
-
   window.addEventListener("error", (e) => showFatal(e?.error || new Error(e?.message || "Error")));
   window.addEventListener("unhandledrejection", (e) => showFatal(e?.reason || new Error("Promise rejection")));
 
@@ -1513,7 +485,6 @@
     if (optLang) return;
 
     if (!overlayOptions) return;
-
     try {
       const host =
         overlayOptions.querySelector?.("#optionsBody") ||
@@ -1522,7 +493,6 @@
         overlayOptions;
 
       if (!host) return;
-
       if (overlayOptions.querySelector?.("#optLang")) { optLang = $("optLang"); return; }
 
       const row = document.createElement("div");
@@ -1585,7 +555,6 @@
     if (dpad) dpad.hidden = !(isCoarse && settings.showDpad);
 
     I18n.applyDataAttrs(document);
-
     applyAudioSettingsNow();
     resize();
   }
@@ -1751,7 +720,6 @@
 
   function spawnEatFX(t, x, y) {
     const col = CELL_COLORS[t] || "rgba(255,255,255,0.85)";
-    // v0.1.7: más “juice” según upgrades
     const boostJuice = clamp(1 + scoreBoost * 0.85, 1, 1.85);
     const multJuice = clamp(1 + (mult - 1) * 0.20, 1, 1.65);
     const intensity = boostJuice * multJuice;
@@ -1951,11 +919,10 @@
     renderComboUI();
   }
 
-  // ───────────────────────── Upgrades (v0.1.7: rarezas + jerarquías) ─────────────────────────
+  // ───────────────────────── Upgrades ─────────────────────────
   const Upgrades = [
     { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 6, rarity: "common", weight: 10, apply() { shields++; } },
 
-    // Magnet chain (no ofrecer inferiores si ya tienes superior)
     { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, rarity: "rare", weight: 7, apply() { magnet = Math.max(magnet, 1); } },
     { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, rarity: "epic", weight: 4, apply() { magnet = 2; } },
     { id: "mag3", nameKey: "up_mag3_name", descKey: "up_mag3_desc", tagKey: "tag_qol", max: 1, rarity: "legendary", weight: 2, apply() { magnet = 3; } },
@@ -1976,14 +943,10 @@
   const pickedCount = new Map();
 
   function isUpgradeAllowed(u) {
-    // max picks
     if ((pickedCount.get(u.id) || 0) >= (u.max ?? 999)) return false;
-
-    // v0.1.7: no ofrecer inferiores de una cadena si ya tienes superior
     if (u.id === "mag1") return magnet < 1;
     if (u.id === "mag2") return magnet < 2;
     if (u.id === "mag3") return magnet < 3;
-
     return true;
   }
 
@@ -2022,7 +985,7 @@
     AudioSys.duckMusic(paused || inLevelUp || gameOver);
   }
 
-  // ───────────────────────── Upgrade Confetti FX (v0.1.7) ─────────────────────────
+  // ───────────────────────── Upgrade Confetti FX ─────────────────────────
   let upFxCanvas = null, upFxCtx = null;
   const upConfetti = [];
   let upFxW = 0, upFxH = 0;
@@ -2040,7 +1003,7 @@
       c.style.width = "100%";
       c.style.height = "100%";
       c.style.pointerEvents = "none";
-      c.style.zIndex = "0"; // detrás del panel (si tu panel tiene z mayor)
+      c.style.zIndex = "0";
       overlayUpgrades.style.position = overlayUpgrades.style.position || "relative";
       overlayUpgrades.appendChild(c);
 
@@ -2107,10 +1070,7 @@
 
   function tickUpgradeFx(dtMs) {
     if (!upFxCtx || !overlayUpgrades || overlayUpgrades.hidden) {
-      // si no está visible, limpiamos suave
-      if (upFxCtx && upFxCanvas) {
-        try { upFxCtx.clearRect(0, 0, upFxW, upFxH); } catch {}
-      }
+      if (upFxCtx && upFxCanvas) { try { upFxCtx.clearRect(0, 0, upFxW, upFxH); } catch {} }
       upConfetti.length = 0;
       return;
     }
@@ -2126,12 +1086,10 @@
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.rot += p.vr * dt;
-      // wrap x
       if (p.x < -40) p.x = upFxW + 40;
       if (p.x > upFxW + 40) p.x = -40;
     }
 
-    // draw
     upFxCtx.clearRect(0, 0, upFxW, upFxH);
     upFxCtx.save();
     upFxCtx.globalCompositeOperation = "lighter";
@@ -2178,9 +1136,7 @@
     overlayShow(overlayUpgrades);
     updatePillsNow();
 
-    // v0.1.7: confetti
     confettiBurst(1.0 + Math.min(0.8, level * 0.03));
-
     AudioSys.sfx("level");
   }
 
@@ -2220,7 +1176,6 @@
         markPick(u);
         u.apply();
 
-        // v0.1.7: feedback extra según rareza
         const burst = (rarity === "legendary") ? 1.9 : (rarity === "epic") ? 1.4 : (rarity === "rare") ? 1.15 : 1.0;
         confettiBurst(burst);
 
@@ -2354,9 +1309,7 @@
     ctx.restore();
   }
 
-  // v0.1.7: tile glows según upgrades de valor
   function drawTileGlow(x, y, t, usedAlpha) {
-    // solo si no es usado
     const a = (1 - usedAlpha);
     if (a <= 0.01) return;
 
@@ -2400,7 +1353,6 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
 
-    // v0.1.7: stars background
     if (bgStars.length) {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
@@ -2457,7 +1409,6 @@
 
         const pad = Math.max(2, Math.floor(cellPx * 0.08));
 
-        // v0.1.7: glow por upgrades de valor
         if (!used && (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus)) {
           drawTileGlow(x, y, t, 0);
         }
@@ -2470,7 +1421,6 @@
           ctx.globalAlpha = 1;
         }
 
-        // v0.1.7: trap resist feedback (outline suave)
         if (!used && t === CellType.Trap && trapResist > 0) {
           ctx.save();
           ctx.globalAlpha = clamp(0.10 + trapResist * 0.06, 0.10, 0.32);
@@ -2510,7 +1460,6 @@
 
     drawMagnetZone(cx, cy);
 
-    // v0.1.7: aura suave por mult alto
     if (mult > 1.2) {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
@@ -2559,7 +1508,7 @@
     ctx.restore();
   }
 
-  // ───────────────────────── Resize (fit AR) ─────────────────────────
+  // ───────────────────────── Resize ─────────────────────────
   function resize() {
     if (!gameArea || !canvas || !ctx) return;
 
@@ -2591,12 +1540,8 @@
     offX = Math.floor((cssCanvasW - gridW) / 2);
     offY = Math.floor((cssCanvasH - gridH) / 2);
 
-    // v0.1.7: stars
     initBgStars();
-
-    // v0.1.7: upgrade fx canvas resize
     resizeUpgradeFxCanvas();
-
     draw(16);
   }
 
@@ -2691,7 +1636,6 @@
   function showOptions() {
     overlayShow(overlayOptions);
     pauseForOverlay(true);
-    // v0.1.7: garantiza scroll usable
     try {
       requestAnimationFrame(() => {
         const body =
@@ -2853,7 +1797,6 @@
     pillAccMs += dtMs;
     if (pillAccMs >= 100) { pillAccMs = 0; updatePillsNow(); }
 
-    // v0.1.7: bg stars + upgrade confetti
     tickBgStars(dtMs);
     tickUpgradeFx(dtMs);
   }
@@ -3202,10 +2145,7 @@
       cacheDOM();
       window.__GRIDRUNNER_BOOTED = true;
 
-      // v0.1.7: UI patch styles
       injectPatchStyles017();
-
-      // v0.1.7: confetti canvas init
       ensureUpgradeFxCanvas();
 
       setPill(pillVersion, `v${APP_VERSION}`);
@@ -3346,9 +2286,7 @@
       });
 
       pillPlayer?.addEventListener("click", () => resetRun(true));
-      pillPlayer?.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") resetRun(true);
-      });
+      pillPlayer?.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") resetRun(true); });
 
       if (loadingSub) loadingSub.textContent = I18n.t("app_pwa");
       setupPWA();
@@ -3385,5 +2323,4 @@
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
   else boot();
-
 })();
