@@ -88,13 +88,6 @@ Incluye modo “Repair” si alguna vez una caché antigua se queda pegada tras 
 
 ---
 
-## 📜 Licencia
-
-Proyecto personal / prototipo.  
-Si lo publicas, añade aquí una licencia (MIT, Apache-2.0, GPL, etc.).
-
----
-
 ## 🔖 Versión
 
 **v0.1.7**
