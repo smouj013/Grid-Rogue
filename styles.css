@@ -1,4 +1,13 @@
-/* styles.css — Grid Rogue v0.1.6 */
+/* styles.css — Grid Rogue v0.1.7
+   ✅ Mejoras v0.1.7 (CSS):
+   - Overlays con scroll cuando el contenido excede la ventana (especialmente Opciones).
+   - Panel de Opciones: max-height + contenido interno scrolleable + scrollbar visible.
+   - Panel de Upgrades: 3 opciones centradas (evita 2 arriba / 1 abajo), más “juicy”.
+   - Rarity styling (common/rare/epic/legendary) por clases o data-atributos (sin romper app.js).
+   - Confetti/partículas de fondo en el overlay de upgrades (solo CSS).
+   - Menús y background con más “vida” (grain + glow sutil), sin tocar layout del gameplay.
+*/
+
 :root{
   --hue: 220;
 
@@ -45,6 +54,22 @@
 
   /* HUD height fija */
   --hudH: 122px;
+
+  /* Rarity (visual only) */
+  --rar-common: rgba(235,245,255,0.92);
+  --rar-rare:   #49a7ff;
+  --rar-epic:   #b36bff;
+  --rar-legend: #ffcc4d;
+
+  --rar-common-bg: rgba(255,255,255,0.06);
+  --rar-rare-bg:   rgba(73,167,255,0.10);
+  --rar-epic-bg:   rgba(179,107,255,0.10);
+  --rar-legend-bg: rgba(255,204,77,0.10);
+
+  /* Overlay/panel sizing */
+  --overlayPadTop: calc(var(--pad) + env(safe-area-inset-top));
+  --overlayPadBot: calc(var(--pad) + env(safe-area-inset-bottom));
+  --panelMaxH: calc(100svh - var(--overlayPadTop) - var(--overlayPadBot) - 12px);
 }
 
 *{ box-sizing:border-box; }
@@ -67,6 +92,32 @@ body{
   touch-action:manipulation;
   -webkit-tap-highlight-color:transparent;
   user-select:none;
+}
+
+/* Grain/noise sutil (no interfiere con clicks) */
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  opacity:.12;
+  mix-blend-mode: overlay;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.02) 0px,
+      rgba(255,255,255,0.02) 1px,
+      rgba(0,0,0,0.00) 2px,
+      rgba(0,0,0,0.00) 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.015) 0px,
+      rgba(255,255,255,0.015) 1px,
+      rgba(0,0,0,0.00) 2px,
+      rgba(0,0,0,0.00) 5px
+    );
+  transform: translateZ(0);
 }
 
 button, input, select{
@@ -97,6 +148,7 @@ a{ color:inherit; }
   display:flex;
   flex-direction:column;
 }
+
 /* ───────────────── Topbar (más pro/menos intrusivo) ───────────────── */
 .topbar{
   position:relative;
@@ -159,19 +211,20 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.88);
   font-size:12.5px;
   white-space:nowrap;
-  transition:border-color .15s ease, transform .12s ease, background .15s ease;
+  transition:border-color .15s ease, transform .12s ease, background .15s ease, box-shadow .15s ease;
 }
 .pill .pv{ display:inline-flex; align-items:center; }
 .pill.subtle{ background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.74); }
 .pillBtn{ cursor:pointer; }
-.pillBtn:hover{ border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.07); }
+.pillBtn:hover{
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.22);
+}
 .pillBtn:active{ transform: translateY(1px); }
 
 /* versión compacta */
-.pill.mini{
-  padding:6px 9px;
-  font-size:12px;
-}
+.pill.mini{ padding:6px 9px; font-size:12px; }
 .pill.mini .ms{ font-size:16px; }
 
 .actions{
@@ -194,11 +247,15 @@ a{ color:inherit; }
   color:var(--text);
   cursor:pointer;
   box-shadow: var(--shadow2);
-  transition: transform .12s ease, border-color .15s ease, background .15s ease;
+  transition: transform .12s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
 }
-.iconBtn:hover{ border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.07); }
+.iconBtn:hover{
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.28);
+}
 .iconBtn:active{ transform: translateY(1px); }
-.iconBtn:disabled{ opacity:.55; cursor:default; transform:none; }
+.iconBtn:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
 .iconBtn.small{ height:36px; width:38px; padding:0; border-radius:11px; }
 
 :focus-visible{
@@ -220,8 +277,6 @@ a{ color:inherit; }
   #pillBest{ display:none; }
 }
 
-
-
 /* responsive: evita aplastamiento en móvil estrecho (topbar a 2 filas + scroll suave) */
 @media (max-width:560px){
   .topbar{
@@ -241,10 +296,10 @@ a{ color:inherit; }
   .miniStats::-webkit-scrollbar{ display:none; }
 }
 @media (max-width:380px){
-  /* deja el pill de jugador en modo icono para ahorrar ancho */
   #pillPlayer .pv{ display:none; }
   .pill.mini{ padding:6px 8px; }
 }
+
 /* ───────────────── Stage ───────────────── */
 .stage{
   position:relative;
@@ -294,9 +349,22 @@ a{ color:inherit; }
   border:1px solid rgba(255,255,255,0.10);
   backdrop-filter: blur(12px);
   box-shadow: 0 12px 26px rgba(0,0,0,0.30);
+  position:relative;
+  overflow:hidden;
+}
+.combo::after{
+  content:"";
+  position:absolute;
+  inset:-1px;
+  pointer-events:none;
+  opacity:.55;
+  background:
+    radial-gradient(420px 220px at 20% 0%, rgba(255,255,255,0.06), transparent 60%),
+    radial-gradient(380px 220px at 85% 30%, rgba(255,255,255,0.05), transparent 60%);
 }
 
 .comboTop{
+  position:relative;
   display:flex;
   align-items:center;
   justify-content: space-between;
@@ -416,8 +484,6 @@ a{ color:inherit; }
   .comboHint{ display:none; }
 }
 
-
-
 /* pantallas bajas (landscape / móviles pequeños): prioriza el gameplay */
 @media (max-height:720px){
   :root{ --hudH: 104px; }
@@ -443,6 +509,7 @@ a{ color:inherit; }
     font-size: 12px;
   }
 }
+
 /* ───────────────── GameArea ───────────────── */
 .gameArea{
   position:relative;
@@ -496,9 +563,13 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.94);
   box-shadow: var(--shadow2);
   cursor:pointer;
-  transition: transform .12s ease, background .15s ease, border-color .15s ease;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.dpadBtn:hover{ border-color: rgba(255,255,255,0.20); background: rgba(0,0,0,0.50); }
+.dpadBtn:hover{
+  border-color: rgba(255,255,255,0.20);
+  background: rgba(0,0,0,0.50);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.34);
+}
 .dpadBtn:active{ transform: translateY(1px) scale(0.99); }
 
 /* ───────────────── Overlays ───────────────── */
@@ -506,9 +577,15 @@ a{ color:inherit; }
   position:fixed;
   z-index: 140;
   inset: 0;
+
+  /* ✅ ahora los overlays pueden scrollear si algo se pasa de alto */
+  overflow:auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+
   padding: var(--pad);
-  padding-top: calc(var(--pad) + env(safe-area-inset-top));
-  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+  padding-top: var(--overlayPadTop);
+  padding-bottom: var(--overlayPadBot);
   display:grid;
   place-items:center;
   pointer-events:auto;
@@ -517,6 +594,15 @@ a{ color:inherit; }
   backdrop-filter: blur(10px);
 }
 .overlay[hidden]{ display:none !important; }
+
+/* Scrollbar “visible” pero discreto */
+.overlay::-webkit-scrollbar{ width: 10px; }
+.overlay::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border: 2px solid rgba(0,0,0,0.25);
+  border-radius: 999px;
+}
+.overlay::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,0.14); }
 
 .overlay.fadeIn{ animation: overlayIn .18s ease-out both; }
 .overlay.fadeOut{ animation: overlayOut .18s ease-in both; }
@@ -531,10 +617,23 @@ a{ color:inherit; }
   box-shadow: var(--shadow);
   padding:14px;
 
+  /* ✅ importante: evita que se “coma” la ventana sin poder bajar */
+  max-height: var(--panelMaxH);
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+
   transform: translateY(6px) scale(0.985);
   opacity:0.98;
   animation: popIn .14s ease-out both;
 }
+.panel::-webkit-scrollbar{ width: 10px; }
+.panel::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border: 2px solid rgba(0,0,0,0.25);
+  border-radius: 999px;
+}
+.panel::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,0.14); }
+
 .panel.wide{ width: min(860px, calc(100% - 12px)); }
 
 @keyframes popIn{
@@ -644,11 +743,15 @@ a{ color:inherit; }
   background: rgba(255,255,255,0.06);
   color: rgba(255,255,255,0.92);
   cursor:pointer;
-  transition: transform .12s ease, border-color .15s ease, background .15s ease;
+  transition: transform .12s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
 }
-.btn:hover{ border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.07); }
+.btn:hover{
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.22);
+}
 .btn:active{ transform: translateY(1px); }
-.btn:disabled{ opacity:.6; cursor:default; transform:none; }
+.btn:disabled{ opacity:.6; cursor:default; transform:none; box-shadow:none; }
 
 .btn.primary{
   background: linear-gradient(135deg, rgba(80,120,255,0.36), rgba(255,170,60,0.26));
@@ -660,46 +763,277 @@ a{ color:inherit; }
   color: rgba(255,255,255,0.94);
 }
 
+/* ───────────────── Upgrades (juicy + 3 centradas) ───────────────── */
 .upgradeChoices{
   display:grid;
-  grid-template-columns:1fr;
-  gap:10px;
+  grid-template-columns: 1fr;
+  gap:12px;
+  align-items:stretch;
 }
-@media (min-width:720px){
-  .upgradeChoices{ grid-template-columns:1fr 1fr; }
+
+/* ✅ a partir de 640px: SIEMPRE 3 columnas (evita 2+1 feo) */
+@media (min-width:640px){
+  .upgradeChoices{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* si de verdad es demasiado estrecho (móviles pequeños), vuelve a 1 */
+@media (max-width:420px){
+  .upgradeChoices{ grid-template-columns: 1fr; }
 }
 
 .upCard{
-  border-radius:14px;
+  border-radius:16px;
   border:1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.26);
+  background:
+    radial-gradient(240px 140px at 25% 0%, rgba(255,255,255,0.06), transparent 62%),
+    linear-gradient(180deg, rgba(0,0,0,0.30), rgba(0,0,0,0.24));
   padding:12px;
   cursor:pointer;
-  transition: transform .12s ease, border-color .15s ease, background .15s ease;
+  transition: transform .14s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease, filter .15s ease;
+  position:relative;
+  overflow:hidden;
 }
+
+/* brillo “shimmer” */
+.upCard::before{
+  content:"";
+  position:absolute;
+  inset:-40%;
+  background: linear-gradient(120deg, transparent 35%, rgba(255,255,255,0.16) 50%, transparent 65%);
+  transform: translateX(-30%) rotate(8deg);
+  opacity:0;
+  transition: opacity .18s ease, transform .45s ease;
+  pointer-events:none;
+}
+.upCard:hover::before{
+  opacity:.55;
+  transform: translateX(30%) rotate(8deg);
+}
+
 .upCard:hover{
-  border-color: rgba(255,255,255,0.20);
-  background: rgba(0,0,0,0.30);
-  transform: translateY(-1px);
+  border-color: rgba(255,255,255,0.22);
+  background:
+    radial-gradient(240px 140px at 25% 0%, rgba(255,255,255,0.07), transparent 62%),
+    linear-gradient(180deg, rgba(0,0,0,0.34), rgba(0,0,0,0.26));
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.38);
 }
-.upCard:active{ transform: translateY(0px); }
-.upTitle{ font-weight:900; margin-bottom:4px; }
-.upDesc{ color: rgba(255,255,255,0.74); font-size:13px; line-height:1.35; }
+.upCard:active{
+  transform: translateY(0px) scale(0.995);
+  filter: brightness(1.02);
+}
+
+/* título + desc más “punchy” */
+.upTitle{
+  font-weight:950;
+  margin-bottom:6px;
+  letter-spacing:.2px;
+}
+.upDesc{
+  color: rgba(255,255,255,0.76);
+  font-size:13px;
+  line-height:1.35;
+}
+
 .upMeta{
-  margin-top:8px;
+  margin-top:10px;
   display:flex;
   gap:8px;
   flex-wrap:wrap;
 }
+
+/* badge base */
 .badge{
   font-size:12px;
   padding:4px 8px;
   border-radius:999px;
   background: rgba(255,255,255,0.06);
   border:1px solid rgba(255,255,255,0.10);
-  color: rgba(255,255,255,0.82);
+  color: rgba(255,255,255,0.84);
 }
 
+/* ─── Rarity hooks (funcionan si app.js pone clases o data-rarity) ─── */
+/* Common */
+.upCard[data-rarity="common"],
+.upCard.r-common,
+.badge[data-rarity="common"],
+.badge.r-common{
+  --rarC: var(--rar-common);
+  --rarBG: var(--rar-common-bg);
+  --rarGlow: rgba(255,255,255,0.14);
+}
+
+/* Rare */
+.upCard[data-rarity="rare"],
+.upCard.r-rare,
+.badge[data-rarity="rare"],
+.badge.r-rare{
+  --rarC: var(--rar-rare);
+  --rarBG: var(--rar-rare-bg);
+  --rarGlow: rgba(73,167,255,0.22);
+}
+
+/* Epic */
+.upCard[data-rarity="epic"],
+.upCard.r-epic,
+.badge[data-rarity="epic"],
+.badge.r-epic{
+  --rarC: var(--rar-epic);
+  --rarBG: var(--rar-epic-bg);
+  --rarGlow: rgba(179,107,255,0.22);
+}
+
+/* Legendary */
+.upCard[data-rarity="legendary"],
+.upCard.r-legendary,
+.badge[data-rarity="legendary"],
+.badge.r-legendary{
+  --rarC: var(--rar-legend);
+  --rarBG: var(--rar-legend-bg);
+  --rarGlow: rgba(255,204,77,0.20);
+}
+
+/* aplica el color si existe --rarC (fallback: no rompe nada) */
+.upCard[data-rarity],
+.upCard[class*="r-"]{
+  border-color: color-mix(in oklab, var(--rarC, rgba(255,255,255,0.22)) 35%, rgba(255,255,255,0.12));
+  box-shadow: 0 14px 32px rgba(0,0,0,0.34);
+}
+.upCard[data-rarity] .upTitle,
+.upCard[class*="r-"] .upTitle{
+  color: color-mix(in oklab, var(--rarC, rgba(255,255,255,0.92)) 92%, rgba(255,255,255,0.92));
+  text-shadow: 0 10px 26px rgba(0,0,0,0.35);
+}
+.upCard[data-rarity]::after,
+.upCard[class*="r-"]::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(260px 160px at 20% 0%, color-mix(in oklab, var(--rarGlow, rgba(255,255,255,0.10)) 75%, transparent), transparent 60%),
+    radial-gradient(300px 200px at 90% 20%, color-mix(in oklab, var(--rarGlow, rgba(255,255,255,0.08)) 55%, transparent), transparent 62%);
+  opacity:.95;
+}
+
+.badge[data-rarity],
+.badge[class*="r-"]{
+  background: var(--rarBG, rgba(255,255,255,0.06));
+  border-color: color-mix(in oklab, var(--rarC, rgba(255,255,255,0.18)) 35%, rgba(255,255,255,0.10));
+  color: color-mix(in oklab, var(--rarC, rgba(255,255,255,0.86)) 80%, rgba(255,255,255,0.86));
+}
+
+/* ───────────────── Options panel (scroll garantizado) ───────────────── */
+#overlayOptions{
+  /* el overlay general ya puede scrollear, pero aquí preferimos scroll dentro del panel */
+  place-items:center;
+}
+
+/* panel de opciones como “layout” fijo con body scrolleable */
+#overlayOptions .panel{
+  display:flex;
+  flex-direction:column;
+  overflow:hidden; /* el scroll va en .options */
+  max-height: var(--panelMaxH);
+  background:
+    radial-gradient(520px 280px at 20% 0%, rgba(255,255,255,0.06), transparent 60%),
+    linear-gradient(180deg, rgba(18,18,26,0.94), rgba(18,18,26,0.88));
+}
+
+/* el contenido scrollea */
+#overlayOptions .options{
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
+}
+#overlayOptions .options::-webkit-scrollbar{ width: 10px; }
+#overlayOptions .options::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border: 2px solid rgba(0,0,0,0.25);
+  border-radius: 999px;
+}
+#overlayOptions .options::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,0.14); }
+
+/* spacing consistente en móviles */
+@media (max-height:640px){
+  #overlayOptions .panel{ padding: 12px; }
+}
+
+/* ───────────────── Confetti (Upgrades overlay) ───────────────── */
+#overlayUpgrades{
+  /* para que las pseudo-capas queden detrás del panel */
+  isolation:isolate;
+  overflow:hidden; /* confetti no genera scroll */
+  background:
+    radial-gradient(1000px 620px at 50% 20%, rgba(255,255,255,0.06), transparent 62%),
+    radial-gradient(900px 540px at 20% 80%, rgba(73,167,255,0.08), transparent 65%),
+    radial-gradient(900px 540px at 85% 70%, rgba(255,204,77,0.06), transparent 62%),
+    var(--overlayBack);
+}
+
+/* confetti layer */
+#overlayUpgrades::before{
+  content:"";
+  position:absolute;
+  inset:-20%;
+  z-index:0;
+  pointer-events:none;
+  opacity:.45;
+
+  background:
+    radial-gradient(6px 6px at 10% 15%, rgba(255,204,77,0.85) 55%, transparent 60%),
+    radial-gradient(5px 5px at 20% 35%, rgba(73,167,255,0.85) 55%, transparent 60%),
+    radial-gradient(5px 5px at 35% 20%, rgba(179,107,255,0.85) 55%, transparent 60%),
+    radial-gradient(6px 6px at 60% 30%, rgba(46,242,160,0.80) 55%, transparent 60%),
+    radial-gradient(5px 5px at 75% 18%, rgba(255,107,61,0.82) 55%, transparent 60%),
+    radial-gradient(5px 5px at 82% 42%, rgba(255,255,255,0.72) 55%, transparent 60%),
+    radial-gradient(6px 6px at 15% 70%, rgba(255,170,60,0.85) 55%, transparent 60%),
+    radial-gradient(5px 5px at 40% 78%, rgba(73,167,255,0.85) 55%, transparent 60%),
+    radial-gradient(5px 5px at 62% 72%, rgba(179,107,255,0.85) 55%, transparent 60%),
+    radial-gradient(6px 6px at 88% 78%, rgba(46,242,160,0.80) 55%, transparent 60%);
+
+  filter: drop-shadow(0 16px 30px rgba(0,0,0,0.35));
+  animation: confettiDrift 8.0s linear infinite;
+}
+
+#overlayUpgrades::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+  opacity:.28;
+  background:
+    radial-gradient(900px 520px at 50% 0%, rgba(255,255,255,0.08), transparent 64%),
+    radial-gradient(900px 520px at 20% 90%, rgba(120,255,180,0.06), transparent 66%),
+    radial-gradient(900px 520px at 85% 85%, rgba(255,170,60,0.06), transparent 66%);
+  animation: glowBreath 3.6s ease-in-out infinite;
+}
+
+@keyframes confettiDrift{
+  0%{ transform: translate3d(0,0,0) rotate(0deg); }
+  100%{ transform: translate3d(0,18%,0) rotate(18deg); }
+}
+@keyframes glowBreath{
+  0%,100%{ opacity:.22; }
+  50%{ opacity:.34; }
+}
+
+/* asegura el panel por encima del confetti */
+#overlayUpgrades .panel{ position:relative; z-index:1; }
+
+/* Panel upgrades más “premium” */
+#overlayUpgrades .panel.wide{
+  background:
+    radial-gradient(620px 320px at 18% 0%, rgba(255,255,255,0.07), transparent 62%),
+    radial-gradient(520px 260px at 90% 20%, rgba(255,204,77,0.06), transparent 62%),
+    linear-gradient(180deg, rgba(18,18,26,0.96), rgba(18,18,26,0.90));
+  border-color: rgba(255,255,255,0.14);
+}
+
+/* ───────────────── Options layout (resto) ───────────────── */
 .options{ display:flex; flex-direction:column; gap:10px; }
 .optGroupTitle{
   display:flex;
@@ -707,9 +1041,10 @@ a{ color:inherit; }
   gap:8px;
   padding: 6px 2px 2px;
   color: rgba(255,255,255,0.82);
-  font-weight: 900;
+  font-weight: 950;
   letter-spacing: .2px;
 }
+
 .optRow{
   display:flex;
   align-items:center;
@@ -721,8 +1056,9 @@ a{ color:inherit; }
   border-radius:14px;
   background: rgba(0,0,0,0.22);
   border:1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.12);
 }
-/* sliders: grid para que no se pisen en pantallas pequeñas */
+
 .optRow.sliderRow{
   display:grid;
   grid-template-columns: minmax(90px, 140px) 1fr auto;
@@ -750,6 +1086,7 @@ a{ color:inherit; }
   background: rgba(255,59,89,0.07);
 }
 
+/* ───────────────── GameOver / Stats / Error ───────────────── */
 .stats{
   display:flex;
   flex-direction:column;
@@ -810,6 +1147,8 @@ a{ color:inherit; }
   white-space: pre-wrap;
 }
 
+/* ───────────────── Reduced motion ───────────────── */
 @media (prefers-reduced-motion: reduce){
   *{ transition:none !important; animation:none !important; }
+  #overlayUpgrades::before, #overlayUpgrades::after{ animation:none !important; }
 }

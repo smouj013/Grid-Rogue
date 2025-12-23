@@ -1,26 +1,46 @@
-/* auth.js — Grid Runner (PWA) v0.1.6
+/* auth.js — Grid Rogue v0.1.7
    ✅ Perfiles locales (robusto)
-   ✅ Migración desde gridrunner_name_v1 + gridrunner_best_v1 (solo si NO hay perfiles)
+   ✅ Migración:
+      - gridrunner_auth_v1  -> gridrogue_auth_v1 (sin perder datos)
+      - gridrunner_name_v1 + gridrunner_best_v1 (solo si NO hay perfiles)
    ✅ Validación + saneado de estado (corrige ids/valores raros)
-   ✅ API ampliada: rename / delete / export / import / touchLogin
-   ✅ Prefs opcional por perfil (incluye audio + idioma)
-   ✅ Nunca rompe si localStorage falla (best-effort)
+   ✅ API estable (no rompe app.js): list/get/set/create/best + rename/delete/export/import/prefs
+   ✅ Prefs por perfil ampliadas (opcional): incluye flags pensados para v0.1.7 (particles / reduceMotion / uiHue)
+   ✅ Best-effort: si localStorage falla, NO explota
 */
 
 (() => {
   "use strict";
 
-  const AUTH_KEY = "gridrunner_auth_v1";
+  // ───────────────────────── Keys ─────────────────────────
+  // Nuevo namespace (Grid Rogue)
+  const AUTH_KEY = "gridrogue_auth_v1";
+
+  // Compat: versiones antiguas (Grid Runner)
+  const AUTH_KEY_OLD = "gridrunner_auth_v1";
   const LEGACY_NAME_KEY = "gridrunner_name_v1";
   const LEGACY_BEST_KEY = "gridrunner_best_v1";
 
   const now = () => Date.now();
 
-  const uid = () =>
-    "p_" +
-    Math.random().toString(16).slice(2) +
-    "_" +
-    Math.random().toString(16).slice(2);
+  const hasCrypto = () => {
+    try { return !!(globalThis.crypto && crypto.getRandomValues); } catch { return false; }
+  };
+
+  const uid = () => {
+    // Preferimos crypto para IDs más estables/únicos
+    if (hasCrypto()) {
+      const buf = new Uint32Array(4);
+      crypto.getRandomValues(buf);
+      return "p_" + Array.from(buf).map(n => n.toString(16).padStart(8, "0")).join("_");
+    }
+    return (
+      "p_" +
+      Math.random().toString(16).slice(2) +
+      "_" +
+      Math.random().toString(16).slice(2)
+    );
+  };
 
   function safeParse(raw, fallback) {
     try { return JSON.parse(raw); } catch { return fallback; }
@@ -49,53 +69,46 @@
   function safeObj(v) { return (v && typeof v === "object") ? v : null; }
 
   // ───────────────────────── Prefs (opcional por perfil) ─────────────────────────
-  // No rompe compatibilidad: si prefs no existe, no pasa nada.
-  // v0.1.6: añade `lang` + `muteAll` manteniendo lo anterior.
+  // Mantiene compatibilidad: si prefs no existe, OK.
+  // v0.1.7 añade:
+  // - particles (bool)  -> para overlays “juicy” (confetti/partículas)
+  // - reduceMotion (bool) -> permite respetar preferencia manual además de prefers-reduced-motion
+  // - uiHue (0..360) -> permitir variar acento visual si lo implementas en app.js/styles
   function sanitizePrefs(prefs) {
     const o = safeObj(prefs);
     if (!o) return null;
 
     const out = {};
 
+    // Gameplay/UI (existente)
     if ("useSprites" in o) out.useSprites = !!o.useSprites;
     if ("vibration" in o) out.vibration = !!o.vibration;
     if ("showDpad" in o) out.showDpad = !!o.showDpad;
     if ("fx" in o) out.fx = clamp(o.fx, 0.4, 1.25);
 
-    // Audio
+    // Audio (existente)
     if ("musicOn" in o) out.musicOn = !!o.musicOn;
     if ("sfxOn" in o) out.sfxOn = !!o.sfxOn;
     if ("musicVol" in o) out.musicVol = clamp(o.musicVol, 0, 1);
     if ("sfxVol" in o) out.sfxVol = clamp(o.sfxVol, 0, 1);
     if ("muteAll" in o) out.muteAll = !!o.muteAll;
 
-    // Idioma (código corto, ej: es/en/fr/it/pt/de)
+    // Idioma (existente)
     if ("lang" in o) {
       const s = safeString(o.lang).trim().toLowerCase();
       const code = s.includes("-") ? s.split("-")[0] : (s.includes("_") ? s.split("_")[0] : s);
       if (code) out.lang = code.slice(0, 8);
     }
 
+    // v0.1.7 (opcional)
+    if ("particles" in o) out.particles = !!o.particles;
+    if ("reduceMotion" in o) out.reduceMotion = !!o.reduceMotion;
+    if ("uiHue" in o) out.uiHue = clampInt(o.uiHue, 0, 360);
+
     return Object.keys(out).length ? out : null;
   }
 
   // ───────────────────────── State load/save ─────────────────────────
-  function loadState() {
-    const raw = readLS(AUTH_KEY);
-    const st = raw ? safeParse(raw, null) : null;
-
-    if (!st || typeof st !== "object") return { v: 1, activeId: null, profiles: [] };
-    if (!Array.isArray(st.profiles)) return { v: 1, activeId: null, profiles: [] };
-
-    return sanitizeState({
-      v: clampInt(st.v ?? 1, 1, 99),
-      activeId: (typeof st.activeId === "string" ? st.activeId : null),
-      profiles: st.profiles,
-    });
-  }
-
-  function saveState(st) { return writeLS(AUTH_KEY, JSON.stringify(st)); }
-
   function sanitizeProfile(p) {
     if (!p || typeof p !== "object") return null;
 
@@ -106,7 +119,6 @@
     const lastLoginAt = Number.isFinite(+p.lastLoginAt) ? +p.lastLoginAt : createdAt;
 
     const best = Math.max(0, (p.best | 0));
-
     const prefs = sanitizePrefs(p.prefs);
 
     return { id, name, createdAt, lastLoginAt, best, ...(prefs ? { prefs } : {}) };
@@ -137,9 +149,55 @@
     return { v: st.v || 1, activeId, profiles: cleaned };
   }
 
-  function ensureMigration(st) {
+  function loadStateFromKey(key) {
+    const raw = readLS(key);
+    const st = raw ? safeParse(raw, null) : null;
+
+    if (!st || typeof st !== "object") return null;
+    if (!Array.isArray(st.profiles)) return null;
+
+    return sanitizeState({
+      v: clampInt(st.v ?? 1, 1, 99),
+      activeId: (typeof st.activeId === "string" ? st.activeId : null),
+      profiles: st.profiles,
+    });
+  }
+
+  function loadState() {
+    // 1) intenta el key nuevo
+    const fresh = loadStateFromKey(AUTH_KEY);
+    if (fresh) return { st: fresh, loadedFrom: AUTH_KEY };
+
+    // 2) fallback: key antiguo (Grid Runner)
+    const old = loadStateFromKey(AUTH_KEY_OLD);
+    if (old) return { st: old, loadedFrom: AUTH_KEY_OLD };
+
+    // 3) vacío
+    return { st: { v: 1, activeId: null, profiles: [] }, loadedFrom: null };
+  }
+
+  function saveState(st) {
+    const json = JSON.stringify(st);
+
+    // ✅ Guardamos SIEMPRE en el nuevo key
+    const okNew = writeLS(AUTH_KEY, json);
+
+    // ✅ Compat: también escribimos el key viejo (así si queda cacheado app.js viejo, no “pierde” perfiles)
+    // Puedes quitarlo en futuras versiones cuando estés 100% en Grid Rogue.
+    writeLS(AUTH_KEY_OLD, json);
+
+    return okNew;
+  }
+
+  function ensureMigration(st, loadedFrom) {
+    // Si venimos del key viejo, persistimos inmediatamente en el nuevo (ya lo hace saveState, pero lo dejamos explícito)
+    if (loadedFrom === AUTH_KEY_OLD) {
+      saveState(st);
+    }
+
     if (st.profiles.length > 0) return st;
 
+    // Migración legacy (solo si NO hay perfiles):
     const legacyName = normalizeName(readLS(LEGACY_NAME_KEY) || "");
     const legacyBest = parseInt(readLS(LEGACY_BEST_KEY) || "0", 10) || 0;
 
@@ -159,7 +217,9 @@
     return st;
   }
 
-  const state = ensureMigration(loadState());
+  // ───────────────────────── Boot ─────────────────────────
+  const loaded = loadState();
+  const state = ensureMigration(loaded.st, loaded.loadedFrom);
 
   // ───────────────────────── Core API ─────────────────────────
   function listProfiles() {
@@ -311,6 +371,7 @@
       state.activeId = inc.activeId && inc.profiles.some(p => p.id === inc.activeId)
         ? inc.activeId
         : inc.profiles[0].id;
+
       saveState(state);
       return { ok: true, mode: "replace", count: state.profiles.length };
     }
@@ -331,6 +392,7 @@
 
     state.v = merged.v;
     state.profiles = merged.profiles;
+
     if (!state.activeId || !state.profiles.some(p => p.id === state.activeId)) {
       state.activeId = merged.activeId || state.profiles[0]?.id || null;
     }
@@ -343,6 +405,10 @@
     state.activeId = null;
     state.profiles = [];
     saveState(state);
+
+    // además intentamos limpiar keys antiguos por si acaso
+    removeLS(AUTH_KEY);
+    removeLS(AUTH_KEY_OLD);
     return true;
   }
 
@@ -354,22 +420,26 @@
 
   // ───────────────────────── Public API ─────────────────────────
   window.Auth = {
+    // perfiles
     listProfiles,
     getActiveProfile,
     setActiveProfile,
     createProfile,
-    getBestForActive,
-    setBestForActive,
-
     renameProfile,
     deleteProfile,
     touchActiveLogin,
+
+    // best
+    getBestForActive,
+    setBestForActive,
+
+    // export/import
     exportAuth,
     importAuth,
     clearAuth,
     clearLegacyKeys,
 
-    // Prefs (opcional)
+    // prefs (opcional)
     getPrefsForActive,
     setPrefsForActive,
     clearPrefsForActive,

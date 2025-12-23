@@ -1,202 +1,104 @@
-# Grid Rogue — PWA Arcade Roguelite (v0.1.6)
+# Grid Rogue — Arcade Roguelite (v0.1.7)
 
-**Grid Rogue** es un arcade rápido estilo **roguelite en cuadrícula**: runs cortas, **upgrades**, **combos** y progresión por partida, con **audio** (SFX + música).  
-Optimizado para **móvil (portrait)** y fluido también en escritorio.
-
-> ⚠️ Importante: si **NO** existe `assets/audio/` o faltan audios, **no pasa nada** → el juego usa **fallback** y sigue funcionando.
+**Grid Rogue** es un **arcade roguelite en cuadrícula**: runs cortas, decisiones rápidas, **upgrades** al subir de nivel, **combos** por secuencias y un gameplay que se vuelve más “peligroso” cuanto mejor juegas.  
+Diseñado para sentirse **fluido, directo y adictivo**, con **feedback juicy** (SFX, animaciones, resaltados) y controles cómodos tanto en **móvil (portrait)** como en escritorio.
 
 ---
 
-## ✅ Qué incluye
+## ⚡ De qué va (en 20 segundos)
 
-- **Runs**: score, nivel, multiplicador y combos.
-- **Upgrades** al subir de nivel (elige mejoras).
-- **Combos** por secuencias con temporizador.
-- **Audio completo**: música + efectos con toggles y volúmenes.
-- **Perfiles locales** (localStorage): mejor score por perfil.
-- **PWA instalable** + **offline** tras la primera carga.
-- **Updates seguros**: aparece el pill **Actualizar** cuando hay nueva versión.
-- **Repair Mode**: limpia Service Worker y cachés cuando algo se queda “pegado”.
+Te mueves por una cuadrícula y tomas decisiones en milisegundos: **arriesgas para puntuar más**, encadenas **combos** con temporizador y eliges **mejoras** que cambian el estilo de tu run.  
+Cada partida es distinta: no “grindeas” menús, juegas, mejoras, repites… y en cada run aprendes algo nuevo.
 
 ---
 
-## 📦 Estructura del proyecto (raíz del repo)
+## 🎮 Loop de juego
 
-Sube todo en la **raíz** del repositorio (sin carpetas extra tipo `/dist`):
-
-```
-/
-.nojekyll
-index.html
-styles.css
-app.js
-auth.js
-audio.js
-sw.js
-manifest.webmanifest
-README.md
-assets/
-icons/
-favicon-32.png
-apple-touch-icon-180.png
-icon-192.png
-icon-192-maskable.png
-icon-512.png
-icon-512-maskable.png
-audio/
-bgm_loop.mp3
-music_loop.mp3
-sfx_ui_click.wav
-sfx_coin.wav
-sfx_gem.wav
-sfx_bonus.wav
-sfx_trap.wav
-sfx_ko.wav
-sfx_levelup.wav
-sfx_pick.wav
-sfx_reroll.wav
-sfx_combo.wav
-sfx_gameover.wav
-sfx_block.wav
-sfx_upgrade.wav
-sprites/
-tile_block.svg
-tile_bonus.svg
-tile_coin.svg
-tile_gem.svg
-tile_trap.svg
-```
----
-
-## 🚀 Deploy en GitHub Pages (paso a paso)
-
-1. Crea un repo en GitHub (ej. `grid-rogue`).
-2. Sube **todos los archivos** en la **raíz** del repo.
-3. En GitHub:
-   - **Settings → Pages**
-   - **Build and deployment**
-   - **Source:** `Deploy from a branch`
-   - **Branch:** `main` / **(root)**
-4. Abre la URL que te da GitHub Pages.
-
-> ℹ️ En PWA es normal que el navegador tarde unos segundos en detectar que es instalable.
+- **Moverte** y sobrevivir en la cuadrícula.
+- **Puntuar** recogiendo y encadenando acciones con ritmo.
+- Mantener un **multiplicador** alto completando **secuencias de combo** antes de que expire el temporizador.
+- **Subir de nivel** y elegir **1 de 3 upgrades** (con rarezas: común/rara/épica/legendaria).
+- Combinar mejoras para crear builds: más riesgo, más recompensa.
 
 ---
 
-## 📲 Instalación (PWA)
+## 🧠 Upgrades y rarezas (v0.1.7)
 
-### Android (Chrome/Edge)
-- Abre la web → aparecerá botón **Instalar**  
-  o menú ⋮ → **“Instalar app”**.
+Los upgrades están pensados como decisiones “de roguelite”:
+- **Común**: mejora estable, útil en cualquier run.
+- **Rara**: cambia tu forma de jugar o potencia combos.
+- **Épica**: un salto notable de poder o de ritmo.
+- **Legendaria**: define el build (alto impacto).
 
-### iOS (Safari)
-- Abre la web en Safari → botón compartir → **“Añadir a pantalla de inicio”**.
-
-> Nota iOS: el audio (música/SFX) se activa tras pulsar **Empezar** o hacer el primer gesto, por políticas de autoplay.
-
----
-
-## 🧰 Repair Mode (cuando “se queda raro”)
-
-### Desde el juego
-- **Opciones → Reparar PWA**  
-  (desinstala el Service Worker, borra caches y recarga).
-
-### Por URL (manual)
-- `?repair=1` → limpia SW/caches y recarga (modo “nuke”)
-- `?nosw=1` → arranca sin Service Worker (útil para debug)
+> En v0.1.7 el sistema evita ofrecer upgrades “inferiores” si ya tienes una mejora superior equivalente (para que las elecciones tengan sentido).
 
 ---
 
-## 🎵 Audio (archivos y recomendaciones)
+## ✨ Feedback “juicy” (lo que se siente)
 
-### Archivos esperados (según el proyecto actual)
-
-**Música**
-- `assets/audio/bgm_loop.mp3` → música principal en loop
-- `assets/audio/music_loop.mp3` → alternativa / respaldo
-
-**Efectos (SFX)**
-- `assets/audio/sfx_ui_click.wav` → UI / botones
-- `assets/audio/sfx_coin.wav` → coin
-- `assets/audio/sfx_gem.wav` → gem
-- `assets/audio/sfx_bonus.wav` → bonus
-- `assets/audio/sfx_trap.wav` → trap
-- `assets/audio/sfx_ko.wav` → KO / hit fuerte
-- `assets/audio/sfx_levelup.wav` → subir de nivel
-- `assets/audio/sfx_upgrade.wav` → elegir upgrade
-- `assets/audio/sfx_pick.wav` → pick/collect genérico
-- `assets/audio/sfx_reroll.wav` → reroll
-- `assets/audio/sfx_combo.wav` → combo
-- `assets/audio/sfx_block.wav` → block
-- `assets/audio/sfx_gameover.wav` → game over
-
-> Si quieres usar otros nombres, ajusta el loader dentro de `audio.js`.
-
-### Recomendaciones para que suene bien
-- Música: MP3 **128–192 kbps**, loop limpio (sin “click” al repetir).
-- SFX: clips cortos (**50–300ms**), sin saturación (evita clipping).
-- Exporta WAV a 44.1kHz o 48kHz (lo importante es que no recorte).
+Grid Rogue busca que cada acción tenga respuesta:
+- **Combos** con temporizador claro y sensación de “urgencia”.
+- **Upgrades** con presentación más vistosa: color por rareza, mejor centrado y “momento” de elección.
+- **Efectos visuales** que acompañan: resaltados, micro-animaciones y celebraciones (confeti/partículas) en el panel de upgrades.
+- Un estilo **oscuro + neón** con interfaz limpia, sin tapar el juego.
 
 ---
 
-## ♻️ Offline / Updates (Service Worker)
+## 🔊 Audio (SFX + música)
 
-- La app funciona **offline** después del primer load.
-- Cuando publiques una versión nueva:
-  - aparece el pill **Actualizar**
-  - puedes aplicarlo en el momento (mejor si NO estás en mitad de un run)
+El audio es parte del ritmo:
+- **Música en loop** para mantener flow.
+- **SFX** para cada evento importante (UI, picks, combo, level up, game over…).
+- Controles desde Opciones: **Music/SFX**, volúmenes y **Mute**.
 
-Si notas “caché vieja” o comportamiento raro:
-- usa **Reparar PWA** o entra con `?repair=1`.
-
----
-
-## 👤 Perfiles (auth.js)
-
-- Perfiles guardados en el dispositivo (localStorage).
-- Migración automática desde claves antiguas si procede.
-- API en `window.Auth`:
-  - `createProfile(name)`
-  - `listProfiles()`
-  - `setActiveProfile(id)`
-  - `renameProfile(id, newName)`
-  - `deleteProfile(id)`
-  - `getBestForActive()`
-  - `setBestForActive(score)`
-  - `exportAuth()` / `importAuth(json)`
-  - prefs opcionales por perfil (si el juego las usa)
+> Importante: si faltan archivos de audio, el juego no se rompe; usa fallback y sigue funcionando.
 
 ---
 
-## 🧪 Desarrollo local
+## 👤 Perfiles y récords
 
-Puedes abrir `index.html` directamente, pero para evitar problemas de rutas/caché es mejor un server local:
-
-- VS Code → extensión **Live Server**
-- o cualquier servidor estático simple
+- **Perfiles locales** (en el dispositivo) con mejor score por perfil.
+- Perfecto para compartir móvil/PC con amigos y comparar runs.
 
 ---
 
-## ✅ Checklist de release (v0.1.6)
+## 📲 PWA instalable (móvil y escritorio)
 
-Asegúrate de que todo está alineado a **0.1.6**:
+Grid Rogue se puede jugar desde el navegador o instalar como app:
+- **Móvil (portrait)**: pensado para pantalla completa.
+- **Escritorio**: misma sensación, controles directos.
 
-- [ ] `window.APP_VERSION = "0.1.6"` en `index.html`
-- [ ] `manifest.webmanifest` actualizado (ej. `start_url: "./?v=0.1.6"`)
-- [ ] `sw.js` versionado a `v0.1.6`
-- [ ] Imports con `?v=0.1.6` (`styles.css`, `app.js`, `auth.js`, etc.)
-- [ ] Probado:
-  - [ ] Primer load
-  - [ ] Offline tras recargar
-  - [ ] Instalación PWA (Android/iOS)
-  - [ ] Audio tras pulsar “Empezar”
-  - [ ] Repair Mode (`?repair=1`)
-  - [ ] Update pill aparece tras deploy nuevo
+Incluye modo “Repair” si alguna vez una caché antigua se queda pegada tras actualizar.
+
+---
+
+## 🧪 Controles
+
+- **Teclado**: WASD / Flechas.
+- **Móvil**: Swipe (y cruceta opcional si la activas en Opciones).
+
+---
+
+## 🗺️ Roadmap corto (ideas)
+
+- Más variedad de upgrades y sinergias.
+- Eventos raros de run (modificadores temporales).
+- Más “juice” en combos (streaks, flashes, mini-victorias).
+- Ajustes de dificultad por niveles para runs más tensas.
 
 ---
 
 ## 📜 Licencia
 
 Proyecto personal / prototipo.  
-Define aquí tu licencia si lo vas a publicar (MIT, Apache-2.0, GPL, etc.).
+Si lo publicas, añade aquí una licencia (MIT, Apache-2.0, GPL, etc.).
+
+---
+
+## 🔖 Versión
+
+**v0.1.7**
+- UI/UX: overlays mejor adaptados, paneles más legibles.
+- Upgrades: presentación por rareza + mejor layout 3 opciones centradas.
+- Mejoras coherentes: no aparecen upgrades inferiores si ya tienes superiores.
+- Estética: fondos y menús más vivos sin romper compatibilidad.

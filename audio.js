@@ -1,8 +1,13 @@
-/* audio.js — Grid Runner (PWA) v0.1.6
-   - Binds de opciones de audio (Music/SFX + volúmenes + Mute All + Test)
-   - 100% compatible con app.js v0.1.5+ y AudioSys (si existe)
-   - No rompe si faltan elementos DOM o si AudioSys no está aún listo
-   - Evita “música rara”: no toca playbackRate; solo aplica settings y arranca con gesto
+/* audio.js — Grid Rogue (PWA) v0.1.7
+   ✅ Binds de opciones de audio (Music/SFX + volúmenes + Mute All + Test)
+   ✅ Compatible con app.js v0.1.5+ y AudioSys (si existe)
+   ✅ Compatible con auth.js (prefs por perfil) SIN romper si no existe Auth
+   ✅ No rompe si faltan elementos DOM o si AudioSys no está listo
+   ✅ No toca playbackRate; solo aplica settings y arranca con gesto
+   ✅ v0.1.7:
+      - Soporta clave nueva gridrogue_settings_v1 + legacy gridrunner_settings_v1
+      - Guarda audio también en prefs del perfil activo (si Auth está disponible)
+      - Watcher ligero: si cambias de perfil, re-sincroniza audio/UI automáticamente
 */
 
 (() => {
@@ -17,13 +22,35 @@
     return Number.isFinite(n) ? n : fallback;
   };
 
-  // ───────────────────────── Keys (mismos que app.js) ─────────────────────────
-  const SETTINGS_KEY = "gridrunner_settings_v1";
+  const safeParse = (raw, fallback) => {
+    try { return JSON.parse(raw); } catch { return fallback; }
+  };
 
-  const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
+  const canLS = () => {
+    try {
+      const k = "__ls_test__";
+      localStorage.setItem(k, "1");
+      localStorage.removeItem(k);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
+  function readLS(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+  function writeLS(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
+  }
+
+  // ───────────────────────── Keys ─────────────────────────
+  // ✅ Nuevo en v0.1.7 (pero seguimos leyendo/escribiendo legacy para no romper app.js viejo)
+  const SETTINGS_KEY = "gridrogue_settings_v1";
+  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1";
+
+  // ───────────────────────── Defaults ─────────────────────────
   const defaultSettings = () => ({
-    // audio v0.1.6
     musicOn: true,
     sfxOn: true,
     musicVol: 0.60,
@@ -31,9 +58,7 @@
     muteAll: false,
   });
 
-  let settings = (() => {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    const s = raw ? safeParse(raw, null) : null;
+  function sanitizeSettings(s) {
     const base = defaultSettings();
     if (!s || typeof s !== "object") return base;
 
@@ -46,32 +71,139 @@
       sfxVol: clamp(safeNum(s.sfxVol, base.sfxVol), 0, 1),
       muteAll: !!(s.muteAll ?? base.muteAll),
     };
-  })();
-
-  function saveSettings() {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
   }
 
   function getAudioSys() {
     return window.AudioSys || null;
   }
 
+  function getAuth() {
+    return window.Auth || null;
+  }
+
+  // ───────────────────────── Perfil (prefs) ─────────────────────────
+  function getProfileId() {
+    const Auth = getAuth();
+    try {
+      const p = Auth?.getActiveProfile?.();
+      return p?.id || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function loadAudioFromProfilePrefs() {
+    const Auth = getAuth();
+    try {
+      const prefs = Auth?.getPrefsForActive?.();
+      if (!prefs || typeof prefs !== "object") return null;
+
+      // Si el perfil tiene audio guardado, lo usamos
+      const hasAny =
+        ("musicOn" in prefs) || ("sfxOn" in prefs) ||
+        ("musicVol" in prefs) || ("sfxVol" in prefs) ||
+        ("muteAll" in prefs);
+
+      if (!hasAny) return null;
+
+      return sanitizeSettings({
+        musicOn: prefs.musicOn,
+        sfxOn: prefs.sfxOn,
+        musicVol: prefs.musicVol,
+        sfxVol: prefs.sfxVol,
+        muteAll: prefs.muteAll,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  function saveAudioToProfilePrefs(nextSettings) {
+    const Auth = getAuth();
+    if (!Auth?.setPrefsForActive) return false;
+
+    try {
+      const prev = Auth.getPrefsForActive?.() || {};
+      const merged = {
+        ...prev,
+        musicOn: !!nextSettings.musicOn,
+        sfxOn: nextSettings.sfxOn !== false,
+        musicVol: clamp(safeNum(nextSettings.musicVol, 0.6), 0, 1),
+        sfxVol: clamp(safeNum(nextSettings.sfxVol, 0.9), 0, 1),
+        muteAll: !!nextSettings.muteAll,
+      };
+      return !!Auth.setPrefsForActive(merged);
+    } catch {
+      return false;
+    }
+  }
+
+  // ───────────────────────── Load/Save ─────────────────────────
+  function loadFromLocalStorage() {
+    const base = defaultSettings();
+    if (!canLS()) return base;
+
+    const rawNew = readLS(SETTINGS_KEY);
+    const rawOld = readLS(LEGACY_SETTINGS_KEY);
+
+    const sNew = rawNew ? safeParse(rawNew, null) : null;
+    const sOld = rawOld ? safeParse(rawOld, null) : null;
+
+    // Preferimos la nueva, si no existe usamos legacy
+    return sanitizeSettings(sNew || sOld || base);
+  }
+
+  let settings = (() => {
+    // 1) Perfil (si existe) manda
+    const fromProfile = loadAudioFromProfilePrefs();
+    if (fromProfile) return fromProfile;
+
+    // 2) Si no, storage global
+    return loadFromLocalStorage();
+  })();
+
+  // Pequeño throttle para no spamear escrituras
+  let saveT = 0;
+  function saveSettingsGlobal() {
+    if (!canLS()) return;
+
+    clearTimeout(saveT);
+    saveT = setTimeout(() => {
+      const payload = JSON.stringify(settings);
+      // ✅ escribimos en ambos para compat
+      writeLS(SETTINGS_KEY, payload);
+      writeLS(LEGACY_SETTINGS_KEY, payload);
+    }, 60);
+  }
+
+  function saveSettingsEverywhere() {
+    // 1) global
+    saveSettingsGlobal();
+    // 2) perfil (best-effort)
+    saveAudioToProfilePrefs(settings);
+  }
+
+  // ───────────────────────── Apply ─────────────────────────
   function applyAudioSettingsNow() {
     const A = getAudioSys();
     if (!A) return;
 
     try {
-      // v0.1.6 preferido
+      // preferido
       if (typeof A.applySettings === "function") {
         A.applySettings(settings);
-        return;
+      } else {
+        // fallback
+        A.setMute?.(!!settings.muteAll);
+        A.setSfxOn?.(settings.sfxOn !== false);
+        A.setMusicOn?.(!!settings.musicOn);
+        A.setVolumes?.({ music: settings.musicVol, sfx: settings.sfxVol });
       }
 
-      // fallback compatible con v0.1.5
-      A.setMute?.(!!settings.muteAll);
-      A.setSfxOn?.(settings.sfxOn !== false);
-      A.setMusicOn?.(!!settings.musicOn);
-      A.setVolumes?.({ music: settings.musicVol, sfx: settings.sfxVol });
+      // si mute => intenta cortar música
+      if (settings.muteAll || !settings.musicOn || settings.musicVol <= 0.001) {
+        A.stopMusic?.();
+      }
     } catch {}
   }
 
@@ -80,23 +212,53 @@
     try { await A?.unlock?.(); } catch {}
   }
 
-  // ───────────────────────── DOM refs ─────────────────────────
-  // IDs esperados (si alguno no existe, no pasa nada)
-  const optMusicOn = $("optMusicOn");           // checkbox
-  const optSfxOn = $("optSfxOn");               // checkbox (nuevo)
-  const optMusicVol = $("optMusicVol");         // range
-  const optMusicVolValue = $("optMusicVolValue"); // span
-  const optSfxVol = $("optSfxVol");             // range
-  const optSfxVolValue = $("optSfxVolValue");   // span
-  const optMuteAll = $("optMuteAll");           // checkbox
-  const btnTestAudio = $("btnTestAudio");       // button
+  function maybeStartMusic() {
+    const A = getAudioSys();
+    if (!A) return;
+    try {
+      if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) {
+        A.startMusic?.();
+      }
+    } catch {}
+  }
 
-  // Compat: si tu HTML viejo usa ids diferentes (v0.1.5)
-  // optMusic / optSfx como alias
+  // ✅ Auto-unlock en el primer gesto (sin depender de botones concretos)
+  // Esto reduce casos “no suena nada” en móviles.
+  let didAutoUnlock = false;
+  function bindGlobalUnlock() {
+    const handler = async () => {
+      if (didAutoUnlock) return;
+      didAutoUnlock = true;
+
+      await unlockGesture();
+      applyAudioSettingsNow();
+      maybeStartMusic();
+
+      // quitamos listeners
+      window.removeEventListener("pointerdown", handler, true);
+      window.removeEventListener("keydown", handler, true);
+      window.removeEventListener("touchstart", handler, true);
+    };
+
+    window.addEventListener("pointerdown", handler, true);
+    window.addEventListener("keydown", handler, true);
+    window.addEventListener("touchstart", handler, true);
+  }
+
+  // ───────────────────────── DOM refs ─────────────────────────
+  const optMusicOn = $("optMusicOn");
+  const optSfxOn = $("optSfxOn");
+  const optMusicVol = $("optMusicVol");
+  const optMusicVolValue = $("optMusicVolValue");
+  const optSfxVol = $("optSfxVol");
+  const optSfxVolValue = $("optSfxVolValue");
+  const optMuteAll = $("optMuteAll");
+  const btnTestAudio = $("btnTestAudio");
+
+  // Compat ids viejos
   const optMusic = optMusicOn || $("optMusic");
   const optSfx = optSfxOn || $("optSfx");
 
-  // ───────────────────────── UI sync ─────────────────────────
   function syncUIFromSettings() {
     if (optMusic) optMusic.checked = !!settings.musicOn;
     if (optSfx) optSfx.checked = (settings.sfxOn !== false);
@@ -110,63 +272,57 @@
     if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
   }
 
-  // ───────────────────────── Binds v0.1.6 ─────────────────────────
+  // ───────────────────────── Binds ─────────────────────────
   function bind() {
     // Music ON/OFF
     optMusic?.addEventListener("change", async () => {
       await unlockGesture();
-      settings.musicOn = !!optMusic.checked;
-      saveSettings();
 
+      settings.musicOn = !!optMusic.checked;
+      saveSettingsEverywhere();
       applyAudioSettingsNow();
 
-      // Solo arranca/para si existe AudioSys
       const A = getAudioSys();
       try {
         if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) A?.startMusic?.();
         else A?.stopMusic?.();
       } catch {}
 
-      // UI click (si SFX ON)
       try { if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui", { cooldownMs: 60 }); } catch {}
     });
 
     // SFX ON/OFF
     optSfx?.addEventListener("change", async () => {
       await unlockGesture();
-      settings.sfxOn = !!optSfx.checked;
-      saveSettings();
 
+      settings.sfxOn = !!optSfx.checked;
+      saveSettingsEverywhere();
       applyAudioSettingsNow();
 
       const A = getAudioSys();
-      // Si acabas de activar SFX, prueba un click
       try { if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui", { cooldownMs: 60 }); } catch {}
     });
 
     // Music volume
     optMusicVol?.addEventListener("input", async () => {
       await unlockGesture();
+
       settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.60"), 0, 1);
       if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
-      saveSettings();
 
+      saveSettingsEverywhere();
       applyAudioSettingsNow();
-
-      // si música ON, asegura play (con gesto ya hecho)
-      const A = getAudioSys();
-      try {
-        if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) A?.startMusic?.();
-      } catch {}
+      maybeStartMusic();
     });
 
     // SFX volume
     optSfxVol?.addEventListener("input", async () => {
       await unlockGesture();
+
       settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.90"), 0, 1);
       if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
-      saveSettings();
 
+      saveSettingsEverywhere();
       applyAudioSettingsNow();
 
       const A = getAudioSys();
@@ -176,19 +332,21 @@
     // Mute All
     optMuteAll?.addEventListener("change", async () => {
       await unlockGesture();
-      settings.muteAll = !!optMuteAll.checked;
-      saveSettings();
 
+      settings.muteAll = !!optMuteAll.checked;
+      saveSettingsEverywhere();
       applyAudioSettingsNow();
 
-      // Si muteAll => música parada por AudioSys (según tu implementación)
+      // En caso de mute, intentamos parar música explícitamente
+      const A = getAudioSys();
+      try { if (settings.muteAll) A?.stopMusic?.(); } catch {}
     });
 
     // Test Audio
     btnTestAudio?.addEventListener("click", async () => {
       await unlockGesture();
 
-      // refresca desde settings actuales por si el usuario tocó cosas sin listener
+      // Re-sync + aplica (por si algo cambió)
       syncUIFromSettings();
       applyAudioSettingsNow();
 
@@ -206,11 +364,64 @@
     });
   }
 
-  // ───────────────────────── Boot local ─────────────────────────
+  // ───────────────────────── Watcher de perfil (ligero) ─────────────────────────
+  // Si el jugador cambia el perfil en el menú, re-aplicamos audio/prefs.
+  let lastProfileId = null;
+  function startProfileWatcher() {
+    lastProfileId = getProfileId();
+
+    setInterval(() => {
+      const cur = getProfileId();
+      if (cur === lastProfileId) return;
+      lastProfileId = cur;
+
+      // 1) si el nuevo perfil tiene prefs => úsalo
+      const fromProfile = loadAudioFromProfilePrefs();
+      if (fromProfile) {
+        settings = fromProfile;
+      } else {
+        // 2) si no, carga global (pero no machaca si no hace falta)
+        settings = loadFromLocalStorage();
+      }
+
+      syncUIFromSettings();
+      applyAudioSettingsNow();
+    }, 1500);
+  }
+
+  // ───────────────────────── Public API (por si app.js quiere usarlo) ─────────────────────────
+  window.AudioUI = {
+    getSettings: () => ({ ...settings }),
+    setSettings: (partial) => {
+      settings = sanitizeSettings({ ...settings, ...(partial || {}) });
+      saveSettingsEverywhere();
+      syncUIFromSettings();
+      applyAudioSettingsNow();
+      return { ...settings };
+    },
+    sync: () => {
+      syncUIFromSettings();
+      applyAudioSettingsNow();
+    },
+    unlock: async () => {
+      await unlockGesture();
+      applyAudioSettingsNow();
+      maybeStartMusic();
+    },
+  };
+
+  // ───────────────────────── Boot ─────────────────────────
   function boot() {
+    // Intenta leer prefs del perfil (por si Auth carga rápido)
+    const fromProfile = loadAudioFromProfilePrefs();
+    if (fromProfile) settings = fromProfile;
+
     syncUIFromSettings();
     applyAudioSettingsNow();
+
+    bindGlobalUnlock();
     bind();
+    startProfileWatcher();
   }
 
   if (document.readyState === "loading") {

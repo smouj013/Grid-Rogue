@@ -1,10 +1,12 @@
-/* app.js — Grid Runner (PWA) v0.1.6 STABLE+FULLSCREEN + AUDIO + I18N
-   - v0.1.6:
-     ✅ Sistema de idiomas (I18N) multi-idioma + AUTO (detecta navegador)
-     ✅ Strings del juego localizadas (toasts, upgrades, stats, hints, confirm, etc.)
-     ✅ Selector de idioma en Opciones (se inyecta si no existe #optLang)
-     ✅ FIX: SFX UI apunta a sfx_ui_click.wav (ruta real típica)
-     ✅ Sprites preload más robusto (un sprite faltante no tumba el resto)
+/* app.js — Grid Runner (PWA) v0.1.7 STABLE+FULLSCREEN + AUDIO + I18N
+   - v0.1.7:
+     ✅ Opciones: panel con scroll seguro (si no cabe, siempre podrás bajar/subir)
+     ✅ Estética: fondos/overlays más “juicy” (gradientes, bordes, glow) vía CSS inyectado (no rompe tu styles.css)
+     ✅ Upgrades: overlay mucho mejor centrado + layout consistente (no 2 arriba y 1 abajo)
+     ✅ Upgrades: rarezas (Común/Rara/Épica/Legendaria) con color + badge
+     ✅ Upgrades: confetti/partículas de fondo al aparecer el panel de mejoras
+     ✅ Upgrades: evita upgrades “inferiores” si ya tienes uno superior (ej: imanes)
+     ✅ Feedback en juego: brillo/juice extra en tiles según upgrades (valores/boost/mult)
    - Música: HTMLAudio (nativo) + duck por volumen
    - SFX: WebAudio buffers + fallback procedural
    - Unlock móvil/iOS: audio se activa con el primer gesto
@@ -13,7 +15,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.6");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.7");
   window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
@@ -66,9 +68,7 @@
     const normalize = (raw) => {
       const s = String(raw || "").toLowerCase().trim();
       if (!s || s === "auto") return "auto";
-      // soporta "es-ES", "en-US", etc.
       const base = s.split("-")[0];
-      // alias rápidos
       if (base === "pt") return "pt";
       if (base === "ca") return "ca";
       return base;
@@ -102,6 +102,17 @@
         cell_coin: "Coin",
         cell_gem: "Gem",
         cell_bonus: "Bonus",
+        // UI
+        opt_language: "Idioma",
+        lang_auto: "Auto",
+        up_choose: "Elige una mejora",
+        up_level_title: "Nivel {0}",
+        rarity_common: "Común",
+        rarity_rare: "Rara",
+        rarity_epic: "Épica",
+        rarity_legendary: "Legendaria",
+        new_profile: "Crear nuevo…",
+        confirm_clear_local: "¿Borrar datos locales? (Perfiles, ajustes, runs)",
         // Tags
         tag_defense: "Defensa",
         tag_qol: "QoL",
@@ -134,9 +145,6 @@
         up_reroll_desc: "Ganas 1 reroll extra.",
         up_mult_name: "Mult +",
         up_mult_desc: "Sube multiplicador base (+0.10).",
-        confirm_clear_local: "¿Borrar datos locales? (Perfiles, ajustes, runs)",
-        opt_language: "Idioma",
-        lang_auto: "Auto",
       },
       en: {
         langName: "English",
@@ -165,12 +173,24 @@
         cell_coin: "Coin",
         cell_gem: "Gem",
         cell_bonus: "Bonus",
+        opt_language: "Language",
+        lang_auto: "Auto",
+        up_choose: "Choose an upgrade",
+        up_level_title: "Level {0}",
+        rarity_common: "Common",
+        rarity_rare: "Rare",
+        rarity_epic: "Epic",
+        rarity_legendary: "Legendary",
+        new_profile: "Create new…",
+        confirm_clear_local: "Clear local data? (Profiles, settings, runs)",
+        // Tags
         tag_defense: "Defense",
         tag_qol: "QoL",
         tag_points: "Points",
         tag_mobility: "Mobility",
         tag_upgrades: "Upgrades",
         tag_combo: "Combo",
+        // Upgrades
         up_shield_name: "Shield",
         up_shield_desc: "Blocks 1 KO (consumed).",
         up_mag1_name: "Magnet I",
@@ -195,9 +215,6 @@
         up_reroll_desc: "Gain 1 extra reroll.",
         up_mult_name: "Mult +",
         up_mult_desc: "Increase base multiplier (+0.10).",
-        confirm_clear_local: "Clear local data? (Profiles, settings, runs)",
-        opt_language: "Language",
-        lang_auto: "Auto",
       },
       fr: {
         langName: "Français",
@@ -226,6 +243,16 @@
         cell_coin: "Pièce",
         cell_gem: "Gemme",
         cell_bonus: "Bonus",
+        opt_language: "Langue",
+        lang_auto: "Auto",
+        up_choose: "Choisis une amélioration",
+        up_level_title: "Niveau {0}",
+        rarity_common: "Commune",
+        rarity_rare: "Rare",
+        rarity_epic: "Épique",
+        rarity_legendary: "Légendaire",
+        new_profile: "Créer nouveau…",
+        confirm_clear_local: "Effacer les données locales ? (Profils, réglages, runs)",
         tag_defense: "Défense",
         tag_qol: "QoL",
         tag_points: "Points",
@@ -256,9 +283,6 @@
         up_reroll_desc: "Gagne 1 relance.",
         up_mult_name: "Mult +",
         up_mult_desc: "Augmente le mult de base (+0,10).",
-        confirm_clear_local: "Effacer les données locales ? (Profils, réglages, runs)",
-        opt_language: "Langue",
-        lang_auto: "Auto",
       },
       de: {
         langName: "Deutsch",
@@ -287,6 +311,16 @@
         cell_coin: "Coin",
         cell_gem: "Gem",
         cell_bonus: "Bonus",
+        opt_language: "Sprache",
+        lang_auto: "Auto",
+        up_choose: "Wähle ein Upgrade",
+        up_level_title: "Level {0}",
+        rarity_common: "Gewöhnlich",
+        rarity_rare: "Selten",
+        rarity_epic: "Episch",
+        rarity_legendary: "Legendär",
+        new_profile: "Neu erstellen…",
+        confirm_clear_local: "Lokale Daten löschen? (Profile, Einstellungen, Runs)",
         tag_defense: "Verteidigung",
         tag_qol: "QoL",
         tag_points: "Punkte",
@@ -317,9 +351,6 @@
         up_reroll_desc: "Erhalte 1 zusätzlichen Reroll.",
         up_mult_name: "Mult +",
         up_mult_desc: "Erhöht Basismultiplikator (+0,10).",
-        confirm_clear_local: "Lokale Daten löschen? (Profile, Einstellungen, Runs)",
-        opt_language: "Sprache",
-        lang_auto: "Auto",
       },
       it: {
         langName: "Italiano",
@@ -348,6 +379,16 @@
         cell_coin: "Coin",
         cell_gem: "Gem",
         cell_bonus: "Bonus",
+        opt_language: "Lingua",
+        lang_auto: "Auto",
+        up_choose: "Scegli un upgrade",
+        up_level_title: "Livello {0}",
+        rarity_common: "Comune",
+        rarity_rare: "Raro",
+        rarity_epic: "Epico",
+        rarity_legendary: "Leggendario",
+        new_profile: "Crea nuovo…",
+        confirm_clear_local: "Cancellare i dati locali? (Profili, impostazioni, runs)",
         tag_defense: "Difesa",
         tag_qol: "QoL",
         tag_points: "Punti",
@@ -378,9 +419,6 @@
         up_reroll_desc: "Ottieni 1 reroll extra.",
         up_mult_name: "Mult +",
         up_mult_desc: "Aumenta mult base (+0,10).",
-        confirm_clear_local: "Cancellare i dati locali? (Profili, impostazioni, runs)",
-        opt_language: "Lingua",
-        lang_auto: "Auto",
       },
       pt: {
         langName: "Português",
@@ -409,6 +447,16 @@
         cell_coin: "Coin",
         cell_gem: "Gem",
         cell_bonus: "Bónus",
+        opt_language: "Idioma",
+        lang_auto: "Auto",
+        up_choose: "Escolhe um upgrade",
+        up_level_title: "Nível {0}",
+        rarity_common: "Comum",
+        rarity_rare: "Raro",
+        rarity_epic: "Épico",
+        rarity_legendary: "Lendário",
+        new_profile: "Criar novo…",
+        confirm_clear_local: "Apagar dados locais? (Perfis, definições, runs)",
         tag_defense: "Defesa",
         tag_qol: "QoL",
         tag_points: "Pontos",
@@ -439,9 +487,6 @@
         up_reroll_desc: "Ganhas 1 reroll extra.",
         up_mult_name: "Mult +",
         up_mult_desc: "Aumenta mult base (+0,10).",
-        confirm_clear_local: "Apagar dados locais? (Perfis, definições, runs)",
-        opt_language: "Idioma",
-        lang_auto: "Auto",
       },
       ca: {
         langName: "Català",
@@ -470,6 +515,16 @@
         cell_coin: "Coin",
         cell_gem: "Gem",
         cell_bonus: "Bonus",
+        opt_language: "Idioma",
+        lang_auto: "Auto",
+        up_choose: "Tria una millora",
+        up_level_title: "Nivell {0}",
+        rarity_common: "Comuna",
+        rarity_rare: "Rara",
+        rarity_epic: "Èpica",
+        rarity_legendary: "Legendària",
+        new_profile: "Crear nou…",
+        confirm_clear_local: "Esborrar dades locals? (Perfils, opcions, runs)",
         tag_defense: "Defensa",
         tag_qol: "QoL",
         tag_points: "Punts",
@@ -500,14 +555,10 @@
         up_reroll_desc: "Guanyes 1 reroll extra.",
         up_mult_name: "Mult +",
         up_mult_desc: "Puja mult base (+0,10).",
-        confirm_clear_local: "Esborrar dades locals? (Perfils, opcions, runs)",
-        opt_language: "Idioma",
-        lang_auto: "Auto",
       },
     };
 
     const supported = ["auto", ...Object.keys(dict)];
-
     let current = "es";
 
     function detectBrowser() {
@@ -537,7 +588,6 @@
     }
 
     function languageOptions() {
-      // orden fijo “bonito”
       const order = ["auto", "es", "en", "fr", "de", "it", "pt", "ca"];
       const out = [];
       for (const code of order) {
@@ -545,7 +595,6 @@
         if (code === "auto") out.push({ code, label: (dict[current]?.lang_auto || dict.es.lang_auto || "Auto") });
         else out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
       }
-      // añade cualquier extra no listado
       for (const code of supported) {
         if (order.includes(code)) continue;
         if (code === "auto") continue;
@@ -588,7 +637,7 @@
     muteAll: false,
 
     // I18N
-    lang: "auto", // "auto" o "es/en/fr/de/it/pt/ca"
+    lang: "auto",
   });
 
   let settings = (() => {
@@ -617,12 +666,140 @@
     try { navigator.vibrate(ms); } catch {}
   }
 
-  // aplica idioma ya (antes de strings)
+  // aplica idioma ya
   I18n.setLang(settings.lang);
+
+  // ───────────────────────── CSS patch v0.1.7 (sin tocar styles.css) ─────────────────────────
+  function injectPatchStyles017() {
+    try {
+      if (document.getElementById("grPatch017")) return;
+      const st = document.createElement("style");
+      st.id = "grPatch017";
+      st.textContent = `
+        /* v0.1.7 UI polish + scroll safety */
+        #stage{
+          background:
+            radial-gradient(1200px 800px at 30% 10%, rgba(106,176,255,.10), rgba(0,0,0,0) 60%),
+            radial-gradient(900px 700px at 70% 90%, rgba(255,211,90,.08), rgba(0,0,0,0) 55%),
+            linear-gradient(180deg, #050512, #030309);
+        }
+
+        /* Overlays: safe padding + smoother panel */
+        [id^="overlay"]{
+          padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+        }
+
+        /* Opciones: si el contenido no cabe => scroll siempre disponible */
+        #overlayOptions{ overflow: auto !important; -webkit-overflow-scrolling: touch; }
+        #overlayOptions .panel,
+        #overlayOptions .card,
+        #overlayOptions #optionsBody{
+          max-height: calc(100dvh - 140px);
+          overflow: auto;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,.10);
+          background: rgba(10,10,18,.86);
+          backdrop-filter: blur(10px);
+          box-shadow: 0 12px 40px rgba(0,0,0,.35);
+        }
+
+        /* Upgrades: layout consistente (evita 2+1 feo) */
+        #upgradeChoices{
+          display: grid !important;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          align-items: stretch;
+          justify-items: stretch;
+          width: 100%;
+          max-width: 980px;
+          margin: 12px auto 0;
+        }
+        @media (max-width: 680px){
+          #upgradeChoices{ grid-template-columns: 1fr !important; max-width: 520px; }
+        }
+
+        /* Up card look */
+        .upCard{
+          position: relative;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,.10);
+          background:
+            radial-gradient(600px 320px at 20% 10%, rgba(106,176,255,.10), rgba(0,0,0,0) 60%),
+            linear-gradient(180deg, rgba(18,18,30,.92), rgba(10,10,18,.92));
+          box-shadow: 0 10px 26px rgba(0,0,0,.35);
+          transform: translateZ(0);
+          will-change: transform, box-shadow;
+          transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+        }
+        .upCard:hover{
+          transform: translateY(-2px);
+          box-shadow: 0 14px 34px rgba(0,0,0,.42);
+          border-color: rgba(255,255,255,.18);
+        }
+        .upCard:active{ transform: translateY(0); }
+
+        .upCard .upTitle{
+          font-weight: 900;
+          letter-spacing: .2px;
+          text-shadow: 0 2px 10px rgba(0,0,0,.35);
+        }
+        .upCard[data-rarity="common"] .upTitle{ color: rgba(255,255,255,.92); }
+        .upCard[data-rarity="rare"] .upTitle{ color: rgba(106,176,255,.96); }
+        .upCard[data-rarity="epic"] .upTitle{ color: rgba(214,133,255,.96); }
+        .upCard[data-rarity="legendary"] .upTitle{ color: rgba(255,211,90,.98); }
+
+        .upCard[data-rarity="rare"]{ border-color: rgba(106,176,255,.22); }
+        .upCard[data-rarity="epic"]{ border-color: rgba(214,133,255,.22); }
+        .upCard[data-rarity="legendary"]{
+          border-color: rgba(255,211,90,.26);
+          box-shadow: 0 14px 40px rgba(255,211,90,.08), 0 12px 30px rgba(0,0,0,.40);
+        }
+
+        .upRarityBadge{
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.14);
+          background: rgba(0,0,0,.18);
+          font-weight: 800;
+          font-size: 12px;
+        }
+        .upCard[data-rarity="common"] .upRarityBadge{ color: rgba(255,255,255,.85); }
+        .upCard[data-rarity="rare"] .upRarityBadge{ color: rgba(106,176,255,.95); border-color: rgba(106,176,255,.24); }
+        .upCard[data-rarity="epic"] .upRarityBadge{ color: rgba(214,133,255,.95); border-color: rgba(214,133,255,.24); }
+        .upCard[data-rarity="legendary"] .upRarityBadge{ color: rgba(255,211,90,.98); border-color: rgba(255,211,90,.28); }
+
+        /* Upgrade overlay polish */
+        #overlayUpgrades{
+          background:
+            radial-gradient(1100px 800px at 50% 20%, rgba(106,176,255,.10), rgba(0,0,0,0) 62%),
+            radial-gradient(900px 700px at 70% 80%, rgba(255,211,90,.08), rgba(0,0,0,0) 60%),
+            rgba(0,0,0,.55);
+          backdrop-filter: blur(10px);
+        }
+        #overlayUpgrades .panel,
+        #overlayUpgrades .card{
+          border: 1px solid rgba(255,255,255,.12);
+          background: rgba(10,10,18,.88);
+          box-shadow: 0 16px 46px rgba(0,0,0,.45);
+        }
+
+        /* Toast a bit juicier */
+        #toast.show{
+          box-shadow: 0 12px 30px rgba(0,0,0,.35);
+          border: 1px solid rgba(255,255,255,.14);
+        }
+      `;
+      document.head.appendChild(st);
+    } catch {}
+  }
 
   // ───────────────────────── Audio (robusto) ─────────────────────────
   const AudioSys = (() => {
-    // ✅ WebAudio solo para SFX (latencia baja). Música con HTMLAudio (evita “slow/pitch raro”).
     const supportsCtx = (() => {
       try { return !!(window.AudioContext || window.webkitAudioContext); } catch { return false; }
     })();
@@ -637,18 +814,15 @@
       level: "assets/audio/sfx_levelup.wav",
       pick:  "assets/audio/sfx_pick.wav",
       reroll:"assets/audio/sfx_reroll.wav",
-      // ✅ FIX v0.1.6: nombre típico real (según tu carpeta)
       ui:    "assets/audio/sfx_ui_click.wav",
     };
 
-    // WebAudio (SFX)
     let ctx = null;
     let master = null;
     let sfxGain = null;
 
-    // HTMLAudio (Music)
     let musicEl = null;
-    let musicMode = "none"; // "html" | "procedural" | "none"
+    let musicMode = "none";
     let duckFactor = 1.0;
     let volAnimRaf = 0;
 
@@ -694,15 +868,12 @@
         el.preload = "auto";
         el.autoplay = false;
 
-        // iOS inline
         el.playsInline = true;
         try { el.setAttribute("playsinline", ""); } catch {}
         try { el.setAttribute("webkit-playsinline", ""); } catch {}
 
-        // ✅ CLAVE: evita rate “arrastrado”
         try { el.defaultPlaybackRate = 1; } catch {}
         try { el.playbackRate = 1; } catch {}
-        // ✅ CLAVE: preserva pitch
         try { el.preservesPitch = true; } catch {}
         try { el.mozPreservesPitch = true; } catch {}
         try { el.webkitPreservesPitch = true; } catch {}
@@ -1209,6 +1380,40 @@
   const particles = [];
   const floatTexts = [];
 
+  // Background stars (v0.1.7)
+  const bgStars = [];
+  function initBgStars() {
+    bgStars.length = 0;
+    const n = clampInt(Math.round(42 + (cssCanvasW * cssCanvasH) / 18000), 40, 140);
+    for (let i = 0; i < n; i++) {
+      bgStars.push({
+        x: Math.random() * Math.max(1, cssCanvasW),
+        y: Math.random() * Math.max(1, cssCanvasH),
+        s: 0.6 + Math.random() * 1.8,
+        a: 0.04 + Math.random() * 0.18,
+        vy: 6 + Math.random() * 22,
+        tw: 0.8 + Math.random() * 1.8,
+        t: Math.random() * 10,
+      });
+    }
+  }
+  function tickBgStars(dtMs) {
+    if (!bgStars.length) return;
+    const dt = dtMs / 1000;
+    for (const st of bgStars) {
+      st.t += dt * st.tw;
+      st.y += st.vy * dt;
+      if (st.y > cssCanvasH + 4) {
+        st.y = -4;
+        st.x = Math.random() * Math.max(1, cssCanvasW);
+        st.vy = 6 + Math.random() * 22;
+        st.a = 0.04 + Math.random() * 0.18;
+        st.s = 0.6 + Math.random() * 1.8;
+        st.tw = 0.8 + Math.random() * 1.8;
+      }
+    }
+  }
+
   // ───────────────────────── DOM refs ─────────────────────────
   let stage, canvasWrap, gameArea, hud, canvas, ctx;
   let brandSub;
@@ -1304,15 +1509,12 @@
   }
 
   function setupLanguageUI() {
-    // Si ya existe en HTML, úsalo
     optLang = $("optLang");
     if (optLang) return;
 
-    // Inyecta un selector mínimo dentro de Opciones (sin romper si el layout es distinto)
     if (!overlayOptions) return;
 
     try {
-      // Busca un contenedor razonable (primero un panel, si no, el primer div dentro)
       const host =
         overlayOptions.querySelector?.("#optionsBody") ||
         overlayOptions.querySelector?.(".panel") ||
@@ -1321,7 +1523,6 @@
 
       if (!host) return;
 
-      // Evita duplicados
       if (overlayOptions.querySelector?.("#optLang")) { optLang = $("optLang"); return; }
 
       const row = document.createElement("div");
@@ -1375,7 +1576,6 @@
     if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
     if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
 
-    // idioma
     if (optLang) {
       fillLanguageOptions();
       optLang.value = String(settings.lang || "auto");
@@ -1384,7 +1584,6 @@
     const isCoarse = matchMedia("(pointer:coarse)").matches;
     if (dpad) dpad.hidden = !(isCoarse && settings.showDpad);
 
-    // aplica data-i18n si existe en HTML
     I18n.applyDataAttrs(document);
 
     applyAudioSettingsNow();
@@ -1552,9 +1751,14 @@
 
   function spawnEatFX(t, x, y) {
     const col = CELL_COLORS[t] || "rgba(255,255,255,0.85)";
-    if (t === CellType.Coin) { spawnPop(x, y, col, 0.85); spawnSparks(x, y, "rgba(255,255,255,0.92)", 0.65); shake(55, 1.2); return; }
-    if (t === CellType.Gem)  { spawnPop(x, y, col, 0.95); spawnSparks(x, y, "rgba(170,210,255,0.95)", 0.85); shake(60, 1.35); return; }
-    if (t === CellType.Bonus){ spawnPop(x, y, col, 1.15); spawnSparks(x, y, "rgba(255,245,200,0.95)", 1.0); shake(75, 1.6); return; }
+    // v0.1.7: más “juice” según upgrades
+    const boostJuice = clamp(1 + scoreBoost * 0.85, 1, 1.85);
+    const multJuice = clamp(1 + (mult - 1) * 0.20, 1, 1.65);
+    const intensity = boostJuice * multJuice;
+
+    if (t === CellType.Coin) { spawnPop(x, y, col, 0.85 * intensity); spawnSparks(x, y, "rgba(255,255,255,0.92)", 0.65 * intensity); shake(55, 1.2); return; }
+    if (t === CellType.Gem)  { spawnPop(x, y, col, 0.95 * intensity); spawnSparks(x, y, "rgba(170,210,255,0.95)", 0.85 * intensity); shake(60, 1.35); return; }
+    if (t === CellType.Bonus){ spawnPop(x, y, col, 1.15 * intensity); spawnSparks(x, y, "rgba(255,245,200,0.95)", 1.0 * intensity); shake(75, 1.6); return; }
   }
 
   function applyCollect(t, checkCombo = true) {
@@ -1747,33 +1951,65 @@
     renderComboUI();
   }
 
-  // ───────────────────────── Upgrades ─────────────────────────
+  // ───────────────────────── Upgrades (v0.1.7: rarezas + jerarquías) ─────────────────────────
   const Upgrades = [
-    { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 6, apply() { shields++; } },
-    { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, apply() { magnet = Math.max(magnet, 1); } },
-    { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, apply() { magnet = 2; } },
-    { id: "mag3", nameKey: "up_mag3_name", descKey: "up_mag3_desc", tagKey: "tag_qol", max: 1, apply() { magnet = 3; } },
-    { id: "boost", nameKey: "up_boost_name", descKey: "up_boost_desc", tagKey: "tag_points", max: 10, apply() { scoreBoost += 0.08; } },
-    { id: "trap", nameKey: "up_trap_name", descKey: "up_trap_desc", tagKey: "tag_defense", max: 4, apply() { trapResist++; } },
-    { id: "zone", nameKey: "up_zone_name", descKey: "up_zone_desc", tagKey: "tag_mobility", max: 3, apply() { zoneExtra++; recomputeZone(); } },
-    { id: "coin", nameKey: "up_coin_name", descKey: "up_coin_desc", tagKey: "tag_points", max: 8, apply() { coinValue += 2; } },
-    { id: "gem", nameKey: "up_gem_name", descKey: "up_gem_desc", tagKey: "tag_points", max: 6, apply() { gemValue += 6; } },
-    { id: "bonus", nameKey: "up_bonus_name", descKey: "up_bonus_desc", tagKey: "tag_points", max: 6, apply() { bonusValue += 10; } },
-    { id: "reroll", nameKey: "up_reroll_name", descKey: "up_reroll_desc", tagKey: "tag_upgrades", max: 5, apply() { rerolls++; } },
-    { id: "mult", nameKey: "up_mult_name", descKey: "up_mult_desc", tagKey: "tag_combo", max: 10, apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
+    { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 6, rarity: "common", weight: 10, apply() { shields++; } },
+
+    // Magnet chain (no ofrecer inferiores si ya tienes superior)
+    { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, rarity: "rare", weight: 7, apply() { magnet = Math.max(magnet, 1); } },
+    { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, rarity: "epic", weight: 4, apply() { magnet = 2; } },
+    { id: "mag3", nameKey: "up_mag3_name", descKey: "up_mag3_desc", tagKey: "tag_qol", max: 1, rarity: "legendary", weight: 2, apply() { magnet = 3; } },
+
+    { id: "boost", nameKey: "up_boost_name", descKey: "up_boost_desc", tagKey: "tag_points", max: 10, rarity: "common", weight: 10, apply() { scoreBoost += 0.08; } },
+    { id: "trap", nameKey: "up_trap_name", descKey: "up_trap_desc", tagKey: "tag_defense", max: 4, rarity: "common", weight: 9, apply() { trapResist++; } },
+
+    { id: "zone", nameKey: "up_zone_name", descKey: "up_zone_desc", tagKey: "tag_mobility", max: 3, rarity: "epic", weight: 4, apply() { zoneExtra++; recomputeZone(); } },
+
+    { id: "coin", nameKey: "up_coin_name", descKey: "up_coin_desc", tagKey: "tag_points", max: 8, rarity: "common", weight: 10, apply() { coinValue += 2; } },
+    { id: "gem", nameKey: "up_gem_name", descKey: "up_gem_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7, apply() { gemValue += 6; } },
+    { id: "bonus", nameKey: "up_bonus_name", descKey: "up_bonus_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7, apply() { bonusValue += 10; } },
+
+    { id: "reroll", nameKey: "up_reroll_name", descKey: "up_reroll_desc", tagKey: "tag_upgrades", max: 5, rarity: "rare", weight: 6, apply() { rerolls++; } },
+    { id: "mult", nameKey: "up_mult_name", descKey: "up_mult_desc", tagKey: "tag_combo", max: 10, rarity: "epic", weight: 5, apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
   ];
 
   const pickedCount = new Map();
-  const canPick = (u) => (pickedCount.get(u.id) || 0) < (u.max ?? 999);
+
+  function isUpgradeAllowed(u) {
+    // max picks
+    if ((pickedCount.get(u.id) || 0) >= (u.max ?? 999)) return false;
+
+    // v0.1.7: no ofrecer inferiores de una cadena si ya tienes superior
+    if (u.id === "mag1") return magnet < 1;
+    if (u.id === "mag2") return magnet < 2;
+    if (u.id === "mag3") return magnet < 3;
+
+    return true;
+  }
+
+  const canPick = (u) => isUpgradeAllowed(u);
   const markPick = (u) => pickedCount.set(u.id, (pickedCount.get(u.id) || 0) + 1);
+
+  function pickWeighted(pool) {
+    let sum = 0;
+    for (const u of pool) sum += Math.max(0.0001, Number(u.weight) || 1);
+    let r = Math.random() * sum;
+    for (const u of pool) {
+      r -= Math.max(0.0001, Number(u.weight) || 1);
+      if (r <= 0) return u;
+    }
+    return pool[pool.length - 1];
+  }
 
   function chooseUpgrades(n = 3) {
     const pool = Upgrades.filter(canPick);
     const out = [];
     for (let i = 0; i < n; i++) {
       if (!pool.length) break;
-      const idx = randi(0, pool.length - 1);
-      out.push(pool.splice(idx, 1)[0]);
+      const u = pickWeighted(pool);
+      const idx = pool.indexOf(u);
+      if (idx >= 0) pool.splice(idx, 1);
+      out.push(u);
     }
     return out;
   }
@@ -1786,6 +2022,146 @@
     AudioSys.duckMusic(paused || inLevelUp || gameOver);
   }
 
+  // ───────────────────────── Upgrade Confetti FX (v0.1.7) ─────────────────────────
+  let upFxCanvas = null, upFxCtx = null;
+  const upConfetti = [];
+  let upFxW = 0, upFxH = 0;
+
+  function ensureUpgradeFxCanvas() {
+    if (!overlayUpgrades) return;
+    if (upFxCanvas && upFxCanvas.parentElement) return;
+
+    try {
+      const c = document.createElement("canvas");
+      c.id = "upFxCanvas";
+      c.style.position = "absolute";
+      c.style.left = "0";
+      c.style.top = "0";
+      c.style.width = "100%";
+      c.style.height = "100%";
+      c.style.pointerEvents = "none";
+      c.style.zIndex = "0"; // detrás del panel (si tu panel tiene z mayor)
+      overlayUpgrades.style.position = overlayUpgrades.style.position || "relative";
+      overlayUpgrades.appendChild(c);
+
+      upFxCanvas = c;
+      upFxCtx = c.getContext("2d", { alpha: true });
+
+      resizeUpgradeFxCanvas();
+    } catch {}
+  }
+
+  function resizeUpgradeFxCanvas() {
+    if (!upFxCanvas || !overlayUpgrades) return;
+    const r = overlayUpgrades.getBoundingClientRect();
+    const d = Math.max(1, Math.min(2.0, window.devicePixelRatio || 1));
+    upFxW = Math.max(1, Math.floor(r.width));
+    upFxH = Math.max(1, Math.floor(r.height));
+    upFxCanvas.width = Math.floor(upFxW * d);
+    upFxCanvas.height = Math.floor(upFxH * d);
+    try { upFxCtx.setTransform(d, 0, 0, d, 0, 0); } catch {}
+  }
+
+  function rarityLabel(r) {
+    if (r === "rare") return I18n.t("rarity_rare");
+    if (r === "epic") return I18n.t("rarity_epic");
+    if (r === "legendary") return I18n.t("rarity_legendary");
+    return I18n.t("rarity_common");
+  }
+
+  function confettiBurst(strength = 1) {
+    ensureUpgradeFxCanvas();
+    if (!upFxCtx) return;
+
+    const n = clampInt(Math.round(60 * strength), 30, 120);
+    for (let i = 0; i < n; i++) {
+      const x = Math.random() * upFxW;
+      const y = -10 - Math.random() * 40;
+      const sp = (120 + Math.random() * 260) * (0.7 + 0.6 * strength);
+      const ang = (Math.PI * 0.35) + Math.random() * (Math.PI * 0.30);
+      const vx = (Math.cos(ang) * sp) * (Math.random() < 0.5 ? -1 : 1) * 0.35;
+      const vy = Math.sin(ang) * sp;
+
+      const palette = [
+        "rgba(255,211,90,0.95)",
+        "rgba(106,176,255,0.95)",
+        "rgba(46,242,160,0.95)",
+        "rgba(214,133,255,0.95)",
+        "rgba(255,120,160,0.95)",
+      ];
+
+      upConfetti.push({
+        x, y, vx, vy,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() * 8 - 4),
+        w: 4 + Math.random() * 8,
+        h: 6 + Math.random() * 12,
+        life: 1100 + Math.random() * 900,
+        max: 2200,
+        col: palette[randi(0, palette.length - 1)],
+        kind: Math.random() < 0.65 ? "rect" : "tri",
+      });
+    }
+    if (upConfetti.length > 420) upConfetti.splice(0, upConfetti.length - 420);
+  }
+
+  function tickUpgradeFx(dtMs) {
+    if (!upFxCtx || !overlayUpgrades || overlayUpgrades.hidden) {
+      // si no está visible, limpiamos suave
+      if (upFxCtx && upFxCanvas) {
+        try { upFxCtx.clearRect(0, 0, upFxW, upFxH); } catch {}
+      }
+      upConfetti.length = 0;
+      return;
+    }
+
+    const dt = dtMs / 1000;
+    const g = 520;
+    for (let i = upConfetti.length - 1; i >= 0; i--) {
+      const p = upConfetti[i];
+      p.life -= dtMs;
+      if (p.life <= 0 || p.y > upFxH + 80) { upConfetti.splice(i, 1); continue; }
+
+      p.vy += g * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += p.vr * dt;
+      // wrap x
+      if (p.x < -40) p.x = upFxW + 40;
+      if (p.x > upFxW + 40) p.x = -40;
+    }
+
+    // draw
+    upFxCtx.clearRect(0, 0, upFxW, upFxH);
+    upFxCtx.save();
+    upFxCtx.globalCompositeOperation = "lighter";
+    for (const p of upConfetti) {
+      const t = clamp(p.life / p.max, 0, 1);
+      const a = clamp(0.92 * t, 0, 0.92);
+      upFxCtx.globalAlpha = a;
+      upFxCtx.fillStyle = p.col;
+
+      upFxCtx.save();
+      upFxCtx.translate(p.x, p.y);
+      upFxCtx.rotate(p.rot);
+
+      if (p.kind === "tri") {
+        upFxCtx.beginPath();
+        upFxCtx.moveTo(0, -p.h * 0.5);
+        upFxCtx.lineTo(-p.w * 0.5, p.h * 0.5);
+        upFxCtx.lineTo(p.w * 0.5, p.h * 0.5);
+        upFxCtx.closePath();
+        upFxCtx.fill();
+      } else {
+        upFxCtx.fillRect(-p.w * 0.5, -p.h * 0.5, p.w, p.h);
+      }
+
+      upFxCtx.restore();
+    }
+    upFxCtx.restore();
+    upFxCtx.globalAlpha = 1;
+  }
+
   function openUpgrade() {
     if (inLevelUp || gameOver) return;
     inLevelUp = true;
@@ -1795,12 +2171,15 @@
     levelStartScore = score;
     nextLevelAt = score + Math.round(240 + level * 150);
 
-    if (upTitle) upTitle.textContent = `Nivel ${level}`;
-    if (upSub) upSub.textContent = "Elige una mejora";
+    if (upTitle) upTitle.textContent = I18n.t("up_level_title", level);
+    if (upSub) upSub.textContent = I18n.t("up_choose");
 
     renderUpgradeChoices();
     overlayShow(overlayUpgrades);
     updatePillsNow();
+
+    // v0.1.7: confetti
+    confettiBurst(1.0 + Math.min(0.8, level * 0.03));
 
     AudioSys.sfx("level");
   }
@@ -1820,25 +2199,43 @@
       const desc = I18n.t(u.descKey);
       const tag = I18n.t(u.tagKey);
 
+      const rarity = (u.rarity || "common");
+      const rarityText = rarityLabel(rarity);
+
       const card = document.createElement("div");
       card.className = "upCard";
+      card.dataset.rarity = rarity;
+
       card.innerHTML = `
         <div class="upTitle">${name}</div>
         <div class="upDesc">${desc}</div>
         <div class="upMeta">
+          <span class="upRarityBadge">${rarityText}</span>
           <span class="badge">${tag}</span>
           <span class="badge">Lv ${(pickedCount.get(u.id) || 0) + 1}/${u.max}</span>
         </div>
       `;
+
       card.addEventListener("click", () => {
         markPick(u);
         u.apply();
+
+        // v0.1.7: feedback extra según rareza
+        const burst = (rarity === "legendary") ? 1.9 : (rarity === "epic") ? 1.4 : (rarity === "rare") ? 1.15 : 1.0;
+        confettiBurst(burst);
+
         showToast(I18n.t("toast_upgrade", name), 950);
         shake(120, 3);
-        flash("#6ab0ff", 120);
+        flash(
+          (rarity === "legendary") ? "#ffd35a" :
+          (rarity === "epic") ? "#d685ff" :
+          (rarity === "rare") ? "#6ab0ff" : "#ffffff",
+          120
+        );
         AudioSys.sfx("pick");
         closeUpgrade();
       });
+
       upgradeChoices?.appendChild(card);
     }
 
@@ -1957,6 +2354,30 @@
     ctx.restore();
   }
 
+  // v0.1.7: tile glows según upgrades de valor
+  function drawTileGlow(x, y, t, usedAlpha) {
+    // solo si no es usado
+    const a = (1 - usedAlpha);
+    if (a <= 0.01) return;
+
+    let k = 0;
+    if (t === CellType.Coin) k = clamp((coinValue - 10) / 16, 0, 1);
+    else if (t === CellType.Gem) k = clamp((gemValue - 30) / 48, 0, 1);
+    else if (t === CellType.Bonus) k = clamp((bonusValue - 60) / 80, 0, 1);
+    if (k <= 0.01) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.18 * k * (0.55 + 0.45 * (1 + scoreBoost));
+    const col =
+      (t === CellType.Coin) ? "rgba(46,242,160,0.95)" :
+      (t === CellType.Gem) ? "rgba(106,176,255,0.95)" :
+      "rgba(255,211,90,0.95)";
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, cellPx, cellPx);
+    ctx.restore();
+  }
+
   function draw(dtMs = 16) {
     if (!ctx) return;
     if (!gridReady || !ensureGridValid()) return;
@@ -1978,6 +2399,21 @@
     g.addColorStop(1, "#04040a");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
+
+    // v0.1.7: stars background
+    if (bgStars.length) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const st of bgStars) {
+        const tw = 0.55 + 0.45 * Math.sin(st.t);
+        const a = clamp(st.a * tw, 0, 0.24);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.fillRect(st.x, st.y, st.s, st.s);
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
 
     if (hitFlashT > 0) {
       const t = clamp(hitFlashT / hitFlashMax, 0, 1);
@@ -2020,12 +2456,28 @@
           (t === CellType.Trap) ? "trap" : "block";
 
         const pad = Math.max(2, Math.floor(cellPx * 0.08));
+
+        // v0.1.7: glow por upgrades de valor
+        if (!used && (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus)) {
+          drawTileGlow(x, y, t, 0);
+        }
+
         const ok = drawSprite(key, x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2, alpha);
         if (!ok) {
           ctx.globalAlpha = alpha;
           ctx.fillStyle = CELL_COLORS[t];
           ctx.fillRect(x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2);
           ctx.globalAlpha = 1;
+        }
+
+        // v0.1.7: trap resist feedback (outline suave)
+        if (!used && t === CellType.Trap && trapResist > 0) {
+          ctx.save();
+          ctx.globalAlpha = clamp(0.10 + trapResist * 0.06, 0.10, 0.32);
+          ctx.strokeStyle = "rgba(46,242,160,0.85)";
+          ctx.lineWidth = Math.max(1, Math.floor(cellPx * 0.06));
+          ctx.strokeRect(x + pad + 0.5, y + pad + 0.5, cellPx - pad * 2 - 1, cellPx - pad * 2 - 1);
+          ctx.restore();
         }
       }
     }
@@ -2057,6 +2509,22 @@
     const cy = py + cellPx / 2;
 
     drawMagnetZone(cx, cy);
+
+    // v0.1.7: aura suave por mult alto
+    if (mult > 1.2) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const rad = (0.55 + (mult - 1) * 0.22) * cellPx;
+      const gg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      gg.addColorStop(0, "rgba(214,133,255,0.10)");
+      gg.addColorStop(0.55, "rgba(106,176,255,0.06)");
+      gg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -2122,6 +2590,12 @@
 
     offX = Math.floor((cssCanvasW - gridW) / 2);
     offY = Math.floor((cssCanvasH - gridH) / 2);
+
+    // v0.1.7: stars
+    initBgStars();
+
+    // v0.1.7: upgrade fx canvas resize
+    resizeUpgradeFxCanvas();
 
     draw(16);
   }
@@ -2214,8 +2688,26 @@
     AudioSys.sfx("ui");
   }
 
-  function showOptions() { overlayShow(overlayOptions); pauseForOverlay(true); AudioSys.sfx("ui"); }
-  function hideOptions() { overlayHide(overlayOptions); if (!inLevelUp && !gameOver && running) pauseForOverlay(false); AudioSys.sfx("ui"); }
+  function showOptions() {
+    overlayShow(overlayOptions);
+    pauseForOverlay(true);
+    // v0.1.7: garantiza scroll usable
+    try {
+      requestAnimationFrame(() => {
+        const body =
+          overlayOptions?.querySelector?.("#optionsBody") ||
+          overlayOptions?.querySelector?.(".panel") ||
+          overlayOptions;
+        if (body) body.scrollTop = 0;
+      });
+    } catch {}
+    AudioSys.sfx("ui");
+  }
+  function hideOptions() {
+    overlayHide(overlayOptions);
+    if (!inLevelUp && !gameOver && running) pauseForOverlay(false);
+    AudioSys.sfx("ui");
+  }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
   let pendingReload = false;
@@ -2360,6 +2852,10 @@
 
     pillAccMs += dtMs;
     if (pillAccMs >= 100) { pillAccMs = 0; updatePillsNow(); }
+
+    // v0.1.7: bg stars + upgrade confetti
+    tickBgStars(dtMs);
+    tickUpgradeFx(dtMs);
   }
 
   function update(dtMs) {
@@ -2555,7 +3051,7 @@
 
     const optNew = document.createElement("option");
     optNew.value = "__new__";
-    optNew.textContent = "Crear nuevo…";
+    optNew.textContent = I18n.t("new_profile");
     profileSelect.appendChild(optNew);
 
     const ap = Auth.getActiveProfile?.();
@@ -2669,7 +3165,6 @@
     btnClearLocal = $("btnClearLocal");
     btnRepairPWA = $("btnRepairPWA");
 
-    // NEW AUDIO
     optMusicOn = $("optMusicOn");
     optMusicVol = $("optMusicVol");
     optMusicVolValue = $("optMusicVolValue");
@@ -2678,7 +3173,6 @@
     optMuteAll = $("optMuteAll");
     btnTestAudio = $("btnTestAudio");
 
-    // I18N (si existe)
     optLang = $("optLang");
 
     errMsg = $("errMsg");
@@ -2708,6 +3202,12 @@
       cacheDOM();
       window.__GRIDRUNNER_BOOTED = true;
 
+      // v0.1.7: UI patch styles
+      injectPatchStyles017();
+
+      // v0.1.7: confetti canvas init
+      ensureUpgradeFxCanvas();
+
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
 
@@ -2716,7 +3216,6 @@
 
       syncFromAuth();
 
-      // audio settings temprano (sin forzar unlock)
       applyAudioSettingsNow();
 
       recomputeZone();
@@ -2725,7 +3224,6 @@
 
       initAuthUI();
 
-      // ✅ crea UI de idioma antes de aplicar settings a UI
       setupLanguageUI();
       applySettingsToUI();
 
@@ -2759,7 +3257,6 @@
         saveSettings();
       });
 
-      // AUDIO binds
       optMusicOn?.addEventListener("change", () => {
         AudioSys.unlock();
         settings.musicOn = !!optMusicOn.checked;
@@ -2794,7 +3291,6 @@
         showToast(I18n.t("audio_ok"), 700);
       });
 
-      // I18N bind
       if (optLang) {
         optLang.addEventListener("change", () => {
           const v = String(optLang.value || "auto");
@@ -2803,10 +3299,8 @@
 
           I18n.setLang(settings.lang);
 
-          // re-aplica etiquetas del selector (para que “Auto” cambie)
           applySettingsToUI();
 
-          // refresca UI dinámica
           updatePillsNow();
           renderComboUI();
           if (overlayUpgrades && !overlayUpgrades.hidden) renderUpgradeChoices();

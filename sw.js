@@ -1,26 +1,41 @@
-/* sw.js — Grid Runner (v0.1.6)
-   ✅ Core cache-first + refresh en background (sin romper cache-bust ?v=)
-   ✅ Navegación: network-first + fallback index.html (APP_SHELL)
+/* sw.js — Grid Rogue (v0.1.7)
+   ✅ Core: cache-first + refresh en background (normaliza ?v=)
+   ✅ Navegación (SPA/PWA): network-first + fallback index.html (APP_SHELL)
    ✅ Runtime: stale-while-revalidate (assets)
    ✅ Update: SKIP_WAITING por mensaje + clients.claim + navigationPreload
    ✅ GH Pages/subcarpetas: usa registration.scope (claves absolutas)
-   ✅ Audio/Sprites: añadidos a CORE_ASSETS como best-effort (no rompe si falta)
+   ✅ Audio/Sprites: best-effort (no rompe si falta)
+   ✅ Mejoras v0.1.7:
+      - CACHE_PREFIX renombrado a "gridrogue-" (evita mezclar con builds viejos)
+      - CORE_ASSETS actualizado (incluye audio.js si lo usas)
+      - Normalización más consistente de claves (sin search/hash)
+      - Limpieza agresiva de caches antiguos (gridrunner-* también)
 */
 
-const VERSION = "v0.1.6";
-const CACHE_PREFIX = "gridrunner-";
+const VERSION = "v0.1.7";
+
+// ✅ Nuevo prefix (separa caches del nombre antiguo)
+const CACHE_PREFIX = "gridrogue-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
 
+// ✅ Limpieza también de prefixes antiguos para evitar “mezclas” y bugs raros
+const OLD_PREFIXES = ["gridrunner-", "gridrogue-"];
+
+// GH Pages / subcarpetas: scope absoluto
 const SCOPE = self.registration.scope;
 const APP_SHELL = new URL("index.html", SCOPE).toString();
 
+// ⚠️ Nota: aquí listamos rutas “sin query” porque cacheamos por stripSearch.
+// Tu HTML referencia `?v=0.1.7`, pero nosotros normalizamos a la ruta limpia.
 const CORE_ASSETS = [
   // App shell
   APP_SHELL,
   new URL("styles.css", SCOPE).toString(),
   new URL("app.js", SCOPE).toString(),
   new URL("auth.js", SCOPE).toString(),
+  // Si existe en tu proyecto (según tu estructura sí): audio.js
+  new URL("audio.js", SCOPE).toString(),
   new URL("manifest.webmanifest", SCOPE).toString(),
 
   // Icons
@@ -47,6 +62,9 @@ const CORE_ASSETS = [
   new URL("assets/audio/sfx_ui_click.wav", SCOPE).toString(),
   new URL("assets/audio/sfx_gameover.wav", SCOPE).toString(),
   new URL("assets/audio/sfx_combo.wav", SCOPE).toString(),
+  // (extras que están en tu repo; best-effort, no pasa nada si no)
+  new URL("assets/audio/sfx_block.wav", SCOPE).toString(),
+  new URL("assets/audio/sfx_upgrade.wav", SCOPE).toString(),
 
   // ✅ Sprites (best-effort)
   new URL("assets/sprites/tile_block.svg", SCOPE).toString(),
@@ -56,14 +74,15 @@ const CORE_ASSETS = [
   new URL("assets/sprites/tile_trap.svg", SCOPE).toString(),
 ];
 
-const CORE_SET = new Set(CORE_ASSETS.map(stripSearch));
-
 function stripSearch(inputUrl) {
   const u = new URL(inputUrl);
   u.search = "";
   u.hash = "";
   return u.toString();
 }
+
+// Set de core normalizado (sin ?v=...)
+const CORE_SET = new Set(CORE_ASSETS.map(stripSearch));
 
 function isSameOrigin(reqUrl) {
   return new URL(reqUrl).origin === self.location.origin;
@@ -96,7 +115,7 @@ async function precacheCore() {
   }
   await cache.put(stripSearch(APP_SHELL), shellRes);
 
-  // 2) resto best-effort
+  // 2) resto best-effort (NO rompe install si falta algo)
   await Promise.allSettled(
     CORE_ASSETS
       .filter((u) => stripSearch(u) !== stripSearch(APP_SHELL))
@@ -114,7 +133,10 @@ async function cleanupOldCaches() {
   const keys = await caches.keys();
   await Promise.all(
     keys.map((k) => {
-      if (!k.startsWith(CACHE_PREFIX)) return null;
+      // Borra cualquier cache de prefixes conocidos que NO sean los actuales
+      const isKnownPrefix = OLD_PREFIXES.some((p) => k.startsWith(p));
+      if (!isKnownPrefix) return null;
+
       if (k === CORE_CACHE || k === RUNTIME_CACHE) return null;
       return caches.delete(k);
     })
@@ -159,8 +181,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   const isNav = isHtmlNavigation(req);
 
-  // normaliza clave cuando hay cache-bust ?v=
+  // Normaliza clave cuando hay cache-bust ?v=
   const normalizedKey = shouldIgnoreSearch(url) ? stripSearch(req.url) : req.url;
+
+  // ¿Es core asset? (comparando normalizado)
   const looksCore = CORE_SET.has(stripSearch(req.url));
 
   // ───────────── Navegación: network-first + fallback shell ─────────────
@@ -170,12 +194,14 @@ self.addEventListener("fetch", (event) => {
         const core = await caches.open(CORE_CACHE);
 
         try {
+          // navigation preload (si está habilitado)
           const preload = await event.preloadResponse;
           if (preload && preload.ok) {
             core.put(stripSearch(APP_SHELL), preload.clone()).catch(() => {});
             return preload;
           }
 
+          // network-first
           const fresh = await fetch(req);
           if (fresh && fresh.ok) {
             core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
@@ -184,6 +210,7 @@ self.addEventListener("fetch", (event) => {
 
           throw new Error("Nav fetch not ok");
         } catch (_) {
+          // fallback al shell
           const cached = await core.match(stripSearch(APP_SHELL));
           return (
             cached ||

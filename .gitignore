@@ -1,0 +1,7 @@
+android
+www
+native
+tools
+node_modules
+package*
+capacitor*
