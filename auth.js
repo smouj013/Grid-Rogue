@@ -1,9 +1,9 @@
-/* auth.js — Grid Runner (PWA) v0.1.5
+/* auth.js — Grid Runner (PWA) v0.1.6
    ✅ Perfiles locales (robusto)
    ✅ Migración desde gridrunner_name_v1 + gridrunner_best_v1 (solo si NO hay perfiles)
    ✅ Validación + saneado de estado (corrige ids/valores raros)
    ✅ API ampliada: rename / delete / export / import / touchLogin
-   ✅ NUEVO v0.1.5: soporte opcional de "prefs" por perfil (incluye audio: musicOn/sfxOn + volúmenes)
+   ✅ Prefs opcional por perfil (incluye audio + idioma)
    ✅ Nunca rompe si localStorage falla (best-effort)
 */
 
@@ -50,7 +50,7 @@
 
   // ───────────────────────── Prefs (opcional por perfil) ─────────────────────────
   // No rompe compatibilidad: si prefs no existe, no pasa nada.
-  // Esto permite que el juego (app.js) pueda sincronizar audio por perfil si lo desea.
+  // v0.1.6: añade `lang` + `muteAll` manteniendo lo anterior.
   function sanitizePrefs(prefs) {
     const o = safeObj(prefs);
     if (!o) return null;
@@ -62,13 +62,20 @@
     if ("showDpad" in o) out.showDpad = !!o.showDpad;
     if ("fx" in o) out.fx = clamp(o.fx, 0.4, 1.25);
 
-    // ✅ Audio (v0.1.5)
+    // Audio
     if ("musicOn" in o) out.musicOn = !!o.musicOn;
     if ("sfxOn" in o) out.sfxOn = !!o.sfxOn;
     if ("musicVol" in o) out.musicVol = clamp(o.musicVol, 0, 1);
     if ("sfxVol" in o) out.sfxVol = clamp(o.sfxVol, 0, 1);
+    if ("muteAll" in o) out.muteAll = !!o.muteAll;
 
-    // Limpieza: si no quedó nada, null
+    // Idioma (código corto, ej: es/en/fr/it/pt/de)
+    if ("lang" in o) {
+      const s = safeString(o.lang).trim().toLowerCase();
+      const code = s.includes("-") ? s.split("-")[0] : (s.includes("_") ? s.split("_")[0] : s);
+      if (code) out.lang = code.slice(0, 8);
+    }
+
     return Object.keys(out).length ? out : null;
   }
 
@@ -114,7 +121,6 @@
       const sp = sanitizeProfile(p);
       if (!sp) continue;
 
-      // evitar ids duplicados
       if (seen.has(sp.id)) sp.id = uid();
       seen.add(sp.id);
 
@@ -248,8 +254,7 @@
     return false;
   }
 
-  // ───────────────────────── Prefs API (v0.1.5, opcional) ─────────────────────────
-  // Nota: no obliga a usarlo. Si no lo llamas, nada cambia.
+  // ───────────────────────── Prefs API (opcional) ─────────────────────────
   function getPrefsForActive() {
     const p = getActiveProfile();
     return p && p.prefs ? { ...p.prefs } : null;
@@ -261,7 +266,6 @@
 
     const sp = sanitizePrefs(prefs);
     if (!sp) {
-      // si viene vacío/null, borramos prefs
       if ("prefs" in p) delete p.prefs;
       p.lastLoginAt = now();
       saveState(state);
@@ -365,7 +369,7 @@
     clearAuth,
     clearLegacyKeys,
 
-    // ✅ v0.1.5 (opcional)
+    // Prefs (opcional)
     getPrefsForActive,
     setPrefsForActive,
     clearPrefsForActive,

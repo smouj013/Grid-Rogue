@@ -1,16 +1,19 @@
-/* app.js — Grid Runner (PWA) v0.1.5 STABLE+FULLSCREEN + AUDIO (MUSIC FIX)
-   - FIX música “lenta/borrosa”: BGM via HTMLAudio (nativo) + duck por volumen
-   - SFX via WebAudio (buffers) + fallback procedural
-   - Unlock móvil/iOS: audio se activa con el primer gesto (Start/tap/tecla)
-   - Header más limpio: solo acciones esenciales arriba (Pausa + Opciones)
-   - btnRestart movido a Pausa y GameOver
-   - SW update + install mantiene comportamiento
+/* app.js — Grid Runner (PWA) v0.1.6 STABLE+FULLSCREEN + AUDIO + I18N
+   - v0.1.6:
+     ✅ Sistema de idiomas (I18N) multi-idioma + AUTO (detecta navegador)
+     ✅ Strings del juego localizadas (toasts, upgrades, stats, hints, confirm, etc.)
+     ✅ Selector de idioma en Opciones (se inyecta si no existe #optLang)
+     ✅ FIX: SFX UI apunta a sfx_ui_click.wav (ruta real típica)
+     ✅ Sprites preload más robusto (un sprite faltante no tumba el resto)
+   - Música: HTMLAudio (nativo) + duck por volumen
+   - SFX: WebAudio buffers + fallback procedural
+   - Unlock móvil/iOS: audio se activa con el primer gesto
 */
 
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.5");
+  const APP_VERSION = String(window.APP_VERSION || "0.1.6");
   window.__GRIDRUNNER_BOOTED = false;
 
   // ───────────────────────── Utils ─────────────────────────
@@ -58,6 +61,565 @@
   const SETTINGS_KEY = "gridrunner_settings_v1";
   const RUNS_KEY = "gridrunner_runs_v1";
 
+  // ───────────────────────── I18N ─────────────────────────
+  const I18n = (() => {
+    const normalize = (raw) => {
+      const s = String(raw || "").toLowerCase().trim();
+      if (!s || s === "auto") return "auto";
+      // soporta "es-ES", "en-US", etc.
+      const base = s.split("-")[0];
+      // alias rápidos
+      if (base === "pt") return "pt";
+      if (base === "ca") return "ca";
+      return base;
+    };
+
+    const dict = {
+      es: {
+        langName: "Español",
+        defaultPlayer: "Jugador",
+        app_ready: "Listo",
+        app_loading: "Iniciando…",
+        app_pwa: "PWA…",
+        audio_ok: "Audio OK",
+        update_apply_end: "Update listo: se aplicará al terminar.",
+        update_available: "Actualización disponible.",
+        update_apply_end_short: "Se aplicará al terminar.",
+        pill_update: "Actualizar",
+        toast_trap: "Trampa",
+        toast_combo_mult: "Combo: +MULT",
+        toast_upgrade: "Mejora: {0}",
+        toast_reroll: "Reroll",
+        toast_skip: "Saltar",
+        toast_shield_saved: "El escudo salvó un KO",
+        name_min: "Nombre mínimo 2 letras",
+        combo_hint: "Completa la secuencia para subir multiplicador.",
+        stats_reason: "Motivo",
+        stats_level: "Nivel",
+        stats_time: "Tiempo",
+        stats_streak: "Racha",
+        stats_mult: "Mult",
+        cell_coin: "Coin",
+        cell_gem: "Gem",
+        cell_bonus: "Bonus",
+        // Tags
+        tag_defense: "Defensa",
+        tag_qol: "QoL",
+        tag_points: "Puntos",
+        tag_mobility: "Movilidad",
+        tag_upgrades: "Upgrades",
+        tag_combo: "Combo",
+        // Upgrades
+        up_shield_name: "Escudo",
+        up_shield_desc: "Bloquea 1 KO (se consume).",
+        up_mag1_name: "Imán I",
+        up_mag1_desc: "Atrae premios cercanos (radio 1).",
+        up_mag2_name: "Imán II",
+        up_mag2_desc: "Imán mejorado (radio 2).",
+        up_mag3_name: "Imán III",
+        up_mag3_desc: "Radio 3 (máximo).",
+        up_boost_name: "Puntos +",
+        up_boost_desc: "Más puntos (+8%).",
+        up_trap_name: "Resistencia a trampas",
+        up_trap_desc: "Reduce penalización de trampas.",
+        up_zone_name: "Zona +",
+        up_zone_desc: "Zona de movimiento más alta (+1 fila).",
+        up_coin_name: "Coin +",
+        up_coin_desc: "Coin vale más (+2).",
+        up_gem_name: "Gem +",
+        up_gem_desc: "Gem vale más (+6).",
+        up_bonus_name: "Bonus +",
+        up_bonus_desc: "Bonus vale más (+10).",
+        up_reroll_name: "Reroll +",
+        up_reroll_desc: "Ganas 1 reroll extra.",
+        up_mult_name: "Mult +",
+        up_mult_desc: "Sube multiplicador base (+0.10).",
+        confirm_clear_local: "¿Borrar datos locales? (Perfiles, ajustes, runs)",
+        opt_language: "Idioma",
+        lang_auto: "Auto",
+      },
+      en: {
+        langName: "English",
+        defaultPlayer: "Player",
+        app_ready: "Ready",
+        app_loading: "Starting…",
+        app_pwa: "PWA…",
+        audio_ok: "Audio OK",
+        update_apply_end: "Update ready: it will apply after the run.",
+        update_available: "Update available.",
+        update_apply_end_short: "It will apply after the run.",
+        pill_update: "Update",
+        toast_trap: "Trap",
+        toast_combo_mult: "Combo: +MULT",
+        toast_upgrade: "Upgrade: {0}",
+        toast_reroll: "Reroll",
+        toast_skip: "Skip",
+        toast_shield_saved: "Shield saved you from a KO",
+        name_min: "Name must be at least 2 characters",
+        combo_hint: "Complete the sequence to increase multiplier.",
+        stats_reason: "Reason",
+        stats_level: "Level",
+        stats_time: "Time",
+        stats_streak: "Streak",
+        stats_mult: "Mult",
+        cell_coin: "Coin",
+        cell_gem: "Gem",
+        cell_bonus: "Bonus",
+        tag_defense: "Defense",
+        tag_qol: "QoL",
+        tag_points: "Points",
+        tag_mobility: "Mobility",
+        tag_upgrades: "Upgrades",
+        tag_combo: "Combo",
+        up_shield_name: "Shield",
+        up_shield_desc: "Blocks 1 KO (consumed).",
+        up_mag1_name: "Magnet I",
+        up_mag1_desc: "Pulls nearby rewards (radius 1).",
+        up_mag2_name: "Magnet II",
+        up_mag2_desc: "Improved magnet (radius 2).",
+        up_mag3_name: "Magnet III",
+        up_mag3_desc: "Radius 3 (max).",
+        up_boost_name: "Score +",
+        up_boost_desc: "More points (+8%).",
+        up_trap_name: "Trap resistance",
+        up_trap_desc: "Reduces trap penalty.",
+        up_zone_name: "Zone +",
+        up_zone_desc: "Taller movement zone (+1 row).",
+        up_coin_name: "Coin +",
+        up_coin_desc: "Coin worth more (+2).",
+        up_gem_name: "Gem +",
+        up_gem_desc: "Gem worth more (+6).",
+        up_bonus_name: "Bonus +",
+        up_bonus_desc: "Bonus worth more (+10).",
+        up_reroll_name: "Reroll +",
+        up_reroll_desc: "Gain 1 extra reroll.",
+        up_mult_name: "Mult +",
+        up_mult_desc: "Increase base multiplier (+0.10).",
+        confirm_clear_local: "Clear local data? (Profiles, settings, runs)",
+        opt_language: "Language",
+        lang_auto: "Auto",
+      },
+      fr: {
+        langName: "Français",
+        defaultPlayer: "Joueur",
+        app_ready: "Prêt",
+        app_loading: "Démarrage…",
+        app_pwa: "PWA…",
+        audio_ok: "Audio OK",
+        update_apply_end: "MAJ prête : elle s’appliquera après la partie.",
+        update_available: "Mise à jour disponible.",
+        update_apply_end_short: "Après la partie.",
+        pill_update: "Mettre à jour",
+        toast_trap: "Piège",
+        toast_combo_mult: "Combo : +MULT",
+        toast_upgrade: "Amélioration : {0}",
+        toast_reroll: "Relance",
+        toast_skip: "Passer",
+        toast_shield_saved: "Bouclier : KO évité",
+        name_min: "Nom : минимум 2 caractères",
+        combo_hint: "Complète la séquence pour augmenter le multiplicateur.",
+        stats_reason: "Raison",
+        stats_level: "Niveau",
+        stats_time: "Temps",
+        stats_streak: "Série",
+        stats_mult: "Mult",
+        cell_coin: "Pièce",
+        cell_gem: "Gemme",
+        cell_bonus: "Bonus",
+        tag_defense: "Défense",
+        tag_qol: "QoL",
+        tag_points: "Points",
+        tag_mobility: "Mobilité",
+        tag_upgrades: "Amélios",
+        tag_combo: "Combo",
+        up_shield_name: "Bouclier",
+        up_shield_desc: "Bloque 1 KO (consommé).",
+        up_mag1_name: "Aimant I",
+        up_mag1_desc: "Attire les récompenses (rayon 1).",
+        up_mag2_name: "Aimant II",
+        up_mag2_desc: "Aimant amélioré (rayon 2).",
+        up_mag3_name: "Aimant III",
+        up_mag3_desc: "Rayon 3 (max).",
+        up_boost_name: "Score +",
+        up_boost_desc: "Plus de points (+8%).",
+        up_trap_name: "Résistance pièges",
+        up_trap_desc: "Réduit la pénalité des pièges.",
+        up_zone_name: "Zone +",
+        up_zone_desc: "Zone de mouvement plus haute (+1 ligne).",
+        up_coin_name: "Pièce +",
+        up_coin_desc: "Pièce vaut plus (+2).",
+        up_gem_name: "Gemme +",
+        up_gem_desc: "Gemme vaut plus (+6).",
+        up_bonus_name: "Bonus +",
+        up_bonus_desc: "Bonus vaut plus (+10).",
+        up_reroll_name: "Relance +",
+        up_reroll_desc: "Gagne 1 relance.",
+        up_mult_name: "Mult +",
+        up_mult_desc: "Augmente le mult de base (+0,10).",
+        confirm_clear_local: "Effacer les données locales ? (Profils, réglages, runs)",
+        opt_language: "Langue",
+        lang_auto: "Auto",
+      },
+      de: {
+        langName: "Deutsch",
+        defaultPlayer: "Spieler",
+        app_ready: "Bereit",
+        app_loading: "Startet…",
+        app_pwa: "PWA…",
+        audio_ok: "Audio OK",
+        update_apply_end: "Update bereit: wird nach dem Lauf angewendet.",
+        update_available: "Update verfügbar.",
+        update_apply_end_short: "Nach dem Lauf.",
+        pill_update: "Aktualisieren",
+        toast_trap: "Falle",
+        toast_combo_mult: "Combo: +MULT",
+        toast_upgrade: "Upgrade: {0}",
+        toast_reroll: "Neu würfeln",
+        toast_skip: "Überspringen",
+        toast_shield_saved: "Schild hat dich vor KO gerettet",
+        name_min: "Name: mindestens 2 Zeichen",
+        combo_hint: "Vervollständige die Sequenz für mehr Multiplikator.",
+        stats_reason: "Grund",
+        stats_level: "Level",
+        stats_time: "Zeit",
+        stats_streak: "Serie",
+        stats_mult: "Mult",
+        cell_coin: "Coin",
+        cell_gem: "Gem",
+        cell_bonus: "Bonus",
+        tag_defense: "Verteidigung",
+        tag_qol: "QoL",
+        tag_points: "Punkte",
+        tag_mobility: "Mobilität",
+        tag_upgrades: "Upgrades",
+        tag_combo: "Combo",
+        up_shield_name: "Schild",
+        up_shield_desc: "Blockt 1 KO (verbraucht).",
+        up_mag1_name: "Magnet I",
+        up_mag1_desc: "Zieht Belohnungen an (Radius 1).",
+        up_mag2_name: "Magnet II",
+        up_mag2_desc: "Besserer Magnet (Radius 2).",
+        up_mag3_name: "Magnet III",
+        up_mag3_desc: "Radius 3 (Max).",
+        up_boost_name: "Score +",
+        up_boost_desc: "Mehr Punkte (+8%).",
+        up_trap_name: "Fallenresistenz",
+        up_trap_desc: "Reduziert Fallenstrafe.",
+        up_zone_name: "Zone +",
+        up_zone_desc: "Höhere Bewegungszone (+1 Reihe).",
+        up_coin_name: "Coin +",
+        up_coin_desc: "Coin ist mehr wert (+2).",
+        up_gem_name: "Gem +",
+        up_gem_desc: "Gem ist mehr wert (+6).",
+        up_bonus_name: "Bonus +",
+        up_bonus_desc: "Bonus ist mehr wert (+10).",
+        up_reroll_name: "Reroll +",
+        up_reroll_desc: "Erhalte 1 zusätzlichen Reroll.",
+        up_mult_name: "Mult +",
+        up_mult_desc: "Erhöht Basismultiplikator (+0,10).",
+        confirm_clear_local: "Lokale Daten löschen? (Profile, Einstellungen, Runs)",
+        opt_language: "Sprache",
+        lang_auto: "Auto",
+      },
+      it: {
+        langName: "Italiano",
+        defaultPlayer: "Giocatore",
+        app_ready: "Pronto",
+        app_loading: "Avvio…",
+        app_pwa: "PWA…",
+        audio_ok: "Audio OK",
+        update_apply_end: "Aggiornamento pronto: si applicherà dopo la run.",
+        update_available: "Aggiornamento disponibile.",
+        update_apply_end_short: "Dopo la run.",
+        pill_update: "Aggiorna",
+        toast_trap: "Trappola",
+        toast_combo_mult: "Combo: +MULT",
+        toast_upgrade: "Miglioria: {0}",
+        toast_reroll: "Reroll",
+        toast_skip: "Salta",
+        toast_shield_saved: "Scudo: KO evitato",
+        name_min: "Nome: minimo 2 caratteri",
+        combo_hint: "Completa la sequenza per aumentare il moltiplicatore.",
+        stats_reason: "Motivo",
+        stats_level: "Livello",
+        stats_time: "Tempo",
+        stats_streak: "Serie",
+        stats_mult: "Mult",
+        cell_coin: "Coin",
+        cell_gem: "Gem",
+        cell_bonus: "Bonus",
+        tag_defense: "Difesa",
+        tag_qol: "QoL",
+        tag_points: "Punti",
+        tag_mobility: "Mobilità",
+        tag_upgrades: "Upgrade",
+        tag_combo: "Combo",
+        up_shield_name: "Scudo",
+        up_shield_desc: "Blocca 1 KO (consumato).",
+        up_mag1_name: "Magnete I",
+        up_mag1_desc: "Attira ricompense (raggio 1).",
+        up_mag2_name: "Magnete II",
+        up_mag2_desc: "Magnete migliorato (raggio 2).",
+        up_mag3_name: "Magnete III",
+        up_mag3_desc: "Raggio 3 (max).",
+        up_boost_name: "Punti +",
+        up_boost_desc: "Più punti (+8%).",
+        up_trap_name: "Resistenza trappole",
+        up_trap_desc: "Riduce la penalità delle trappole.",
+        up_zone_name: "Zona +",
+        up_zone_desc: "Zona movimento più alta (+1 riga).",
+        up_coin_name: "Coin +",
+        up_coin_desc: "Coin vale di più (+2).",
+        up_gem_name: "Gem +",
+        up_gem_desc: "Gem vale di più (+6).",
+        up_bonus_name: "Bonus +",
+        up_bonus_desc: "Bonus vale di più (+10).",
+        up_reroll_name: "Reroll +",
+        up_reroll_desc: "Ottieni 1 reroll extra.",
+        up_mult_name: "Mult +",
+        up_mult_desc: "Aumenta mult base (+0,10).",
+        confirm_clear_local: "Cancellare i dati locali? (Profili, impostazioni, runs)",
+        opt_language: "Lingua",
+        lang_auto: "Auto",
+      },
+      pt: {
+        langName: "Português",
+        defaultPlayer: "Jogador",
+        app_ready: "Pronto",
+        app_loading: "A iniciar…",
+        app_pwa: "PWA…",
+        audio_ok: "Áudio OK",
+        update_apply_end: "Update pronto: aplica-se no fim da run.",
+        update_available: "Atualização disponível.",
+        update_apply_end_short: "No fim da run.",
+        pill_update: "Atualizar",
+        toast_trap: "Armadilha",
+        toast_combo_mult: "Combo: +MULT",
+        toast_upgrade: "Upgrade: {0}",
+        toast_reroll: "Reroll",
+        toast_skip: "Saltar",
+        toast_shield_saved: "Escudo salvou-te de um KO",
+        name_min: "Nome: mínimo 2 caracteres",
+        combo_hint: "Completa a sequência para aumentar o multiplicador.",
+        stats_reason: "Motivo",
+        stats_level: "Nível",
+        stats_time: "Tempo",
+        stats_streak: "Sequência",
+        stats_mult: "Mult",
+        cell_coin: "Coin",
+        cell_gem: "Gem",
+        cell_bonus: "Bónus",
+        tag_defense: "Defesa",
+        tag_qol: "QoL",
+        tag_points: "Pontos",
+        tag_mobility: "Mobilidade",
+        tag_upgrades: "Upgrades",
+        tag_combo: "Combo",
+        up_shield_name: "Escudo",
+        up_shield_desc: "Bloqueia 1 KO (consome).",
+        up_mag1_name: "Íman I",
+        up_mag1_desc: "Atrai prémios (raio 1).",
+        up_mag2_name: "Íman II",
+        up_mag2_desc: "Íman melhorado (raio 2).",
+        up_mag3_name: "Íman III",
+        up_mag3_desc: "Raio 3 (máx).",
+        up_boost_name: "Pontos +",
+        up_boost_desc: "Mais pontos (+8%).",
+        up_trap_name: "Resistência a armadilhas",
+        up_trap_desc: "Reduz penalização das armadilhas.",
+        up_zone_name: "Zona +",
+        up_zone_desc: "Zona de movimento maior (+1 linha).",
+        up_coin_name: "Coin +",
+        up_coin_desc: "Coin vale mais (+2).",
+        up_gem_name: "Gem +",
+        up_gem_desc: "Gem vale mais (+6).",
+        up_bonus_name: "Bónus +",
+        up_bonus_desc: "Bónus vale mais (+10).",
+        up_reroll_name: "Reroll +",
+        up_reroll_desc: "Ganhas 1 reroll extra.",
+        up_mult_name: "Mult +",
+        up_mult_desc: "Aumenta mult base (+0,10).",
+        confirm_clear_local: "Apagar dados locais? (Perfis, definições, runs)",
+        opt_language: "Idioma",
+        lang_auto: "Auto",
+      },
+      ca: {
+        langName: "Català",
+        defaultPlayer: "Jugador",
+        app_ready: "A punt",
+        app_loading: "Iniciant…",
+        app_pwa: "PWA…",
+        audio_ok: "Àudio OK",
+        update_apply_end: "Actualització llesta: s’aplicarà en acabar la run.",
+        update_available: "Actualització disponible.",
+        update_apply_end_short: "En acabar la run.",
+        pill_update: "Actualitza",
+        toast_trap: "Trampa",
+        toast_combo_mult: "Combo: +MULT",
+        toast_upgrade: "Millora: {0}",
+        toast_reroll: "Reroll",
+        toast_skip: "Saltar",
+        toast_shield_saved: "L’escut t’ha salvat d’un KO",
+        name_min: "Nom: mínim 2 lletres",
+        combo_hint: "Completa la seqüència per pujar multiplicador.",
+        stats_reason: "Motiu",
+        stats_level: "Nivell",
+        stats_time: "Temps",
+        stats_streak: "Ratxa",
+        stats_mult: "Mult",
+        cell_coin: "Coin",
+        cell_gem: "Gem",
+        cell_bonus: "Bonus",
+        tag_defense: "Defensa",
+        tag_qol: "QoL",
+        tag_points: "Punts",
+        tag_mobility: "Mobilitat",
+        tag_upgrades: "Upgrades",
+        tag_combo: "Combo",
+        up_shield_name: "Escut",
+        up_shield_desc: "Bloqueja 1 KO (es consumeix).",
+        up_mag1_name: "Imant I",
+        up_mag1_desc: "Atrau premis (radi 1).",
+        up_mag2_name: "Imant II",
+        up_mag2_desc: "Imant millorat (radi 2).",
+        up_mag3_name: "Imant III",
+        up_mag3_desc: "Radi 3 (màxim).",
+        up_boost_name: "Punts +",
+        up_boost_desc: "Més punts (+8%).",
+        up_trap_name: "Resistència trampes",
+        up_trap_desc: "Redueix penalització de trampes.",
+        up_zone_name: "Zona +",
+        up_zone_desc: "Zona de moviment més alta (+1 fila).",
+        up_coin_name: "Coin +",
+        up_coin_desc: "Coin val més (+2).",
+        up_gem_name: "Gem +",
+        up_gem_desc: "Gem val més (+6).",
+        up_bonus_name: "Bonus +",
+        up_bonus_desc: "Bonus val més (+10).",
+        up_reroll_name: "Reroll +",
+        up_reroll_desc: "Guanyes 1 reroll extra.",
+        up_mult_name: "Mult +",
+        up_mult_desc: "Puja mult base (+0,10).",
+        confirm_clear_local: "Esborrar dades locals? (Perfils, opcions, runs)",
+        opt_language: "Idioma",
+        lang_auto: "Auto",
+      },
+    };
+
+    const supported = ["auto", ...Object.keys(dict)];
+
+    let current = "es";
+
+    function detectBrowser() {
+      const nav = (navigator.languages && navigator.languages[0]) || navigator.language || "es";
+      const n = normalize(nav);
+      return dict[n] ? n : "en";
+    }
+
+    function setLang(raw) {
+      const n = normalize(raw);
+      if (n === "auto") current = detectBrowser();
+      else current = dict[n] ? n : "en";
+      try { document.documentElement.lang = current; } catch {}
+    }
+
+    function getLang() { return current; }
+
+    function fmt(str, args) {
+      return String(str).replace(/\{(\d+)\}/g, (_, i) => (args && args[+i] != null) ? String(args[+i]) : "");
+    }
+
+    function t(key, ...args) {
+      const base = dict[current] || dict.en || dict.es;
+      const es = dict.es || {};
+      const val = (base && base[key] != null) ? base[key] : (es[key] != null ? es[key] : key);
+      return args.length ? fmt(val, args) : String(val);
+    }
+
+    function languageOptions() {
+      // orden fijo “bonito”
+      const order = ["auto", "es", "en", "fr", "de", "it", "pt", "ca"];
+      const out = [];
+      for (const code of order) {
+        if (!supported.includes(code)) continue;
+        if (code === "auto") out.push({ code, label: (dict[current]?.lang_auto || dict.es.lang_auto || "Auto") });
+        else out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
+      }
+      // añade cualquier extra no listado
+      for (const code of supported) {
+        if (order.includes(code)) continue;
+        if (code === "auto") continue;
+        out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
+      }
+      return out;
+    }
+
+    function applyDataAttrs(root = document) {
+      try {
+        root.querySelectorAll?.("[data-i18n]")?.forEach((el) => {
+          const k = el.getAttribute("data-i18n");
+          if (k) el.textContent = t(k);
+        });
+        root.querySelectorAll?.("[data-i18n-title]")?.forEach((el) => {
+          const k = el.getAttribute("data-i18n-title");
+          if (k) el.title = t(k);
+        });
+        root.querySelectorAll?.("[data-i18n-ph]")?.forEach((el) => {
+          const k = el.getAttribute("data-i18n-ph");
+          if (k) el.placeholder = t(k);
+        });
+      } catch {}
+    }
+
+    return { setLang, getLang, t, languageOptions, applyDataAttrs };
+  })();
+
+  // ───────────────────────── Settings ─────────────────────────
+  const defaultSettings = () => ({
+    useSprites: false,
+    vibration: true,
+    showDpad: true,
+    fx: 1.0,
+
+    // AUDIO
+    musicOn: true,
+    musicVol: 0.60,
+    sfxVol: 0.90,
+    muteAll: false,
+
+    // I18N
+    lang: "auto", // "auto" o "es/en/fr/de/it/pt/ca"
+  });
+
+  let settings = (() => {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    const s = raw ? safeParse(raw, null) : null;
+    const base = defaultSettings();
+    if (!s || typeof s !== "object") return base;
+    return {
+      ...base,
+      ...s,
+      fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
+
+      musicOn: (s.musicOn ?? base.musicOn) !== false,
+      musicVol: clamp(Number(s.musicVol ?? base.musicVol) || base.musicVol, 0, 1),
+      sfxVol: clamp(Number(s.sfxVol ?? base.sfxVol) || base.sfxVol, 0, 1),
+      muteAll: !!(s.muteAll ?? base.muteAll),
+
+      lang: (typeof s.lang === "string" ? s.lang : base.lang),
+    };
+  })();
+
+  function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
+  function vibrate(ms) {
+    if (!settings.vibration) return;
+    if (!("vibrate" in navigator)) return;
+    try { navigator.vibrate(ms); } catch {}
+  }
+
+  // aplica idioma ya (antes de strings)
+  I18n.setLang(settings.lang);
+
   // ───────────────────────── Audio (robusto) ─────────────────────────
   const AudioSys = (() => {
     // ✅ WebAudio solo para SFX (latencia baja). Música con HTMLAudio (evita “slow/pitch raro”).
@@ -75,7 +637,8 @@
       level: "assets/audio/sfx_levelup.wav",
       pick:  "assets/audio/sfx_pick.wav",
       reroll:"assets/audio/sfx_reroll.wav",
-      ui:    "assets/audio/sfx_ui.wav",
+      // ✅ FIX v0.1.6: nombre típico real (según tu carpeta)
+      ui:    "assets/audio/sfx_ui_click.wav",
     };
 
     // WebAudio (SFX)
@@ -139,12 +702,12 @@
         // ✅ CLAVE: evita rate “arrastrado”
         try { el.defaultPlaybackRate = 1; } catch {}
         try { el.playbackRate = 1; } catch {}
-        // ✅ CLAVE: preserva pitch (si alguien tocase playbackRate)
+        // ✅ CLAVE: preserva pitch
         try { el.preservesPitch = true; } catch {}
         try { el.mozPreservesPitch = true; } catch {}
         try { el.webkitPreservesPitch = true; } catch {}
 
-        el.muted = true;   // se aplicará luego
+        el.muted = true;
         el.volume = 0;
 
         musicEl = el;
@@ -185,7 +748,6 @@
       const step = () => {
         const t = performance.now();
         const k = clamp((t - t0) / Math.max(1, ms), 0, 1);
-        // easeOut
         const e = 1 - Math.pow(1 - k, 2);
         const v = from + (to - from) * e;
         setMusicVolumeImmediate(v);
@@ -197,7 +759,6 @@
     }
 
     async function unlock() {
-      // “unlocked” = hubo gesto; sirve para SFX (resume ctx) y para intentar play luego
       unlocked = true;
 
       if (supportsCtx) {
@@ -212,25 +773,20 @@
     function setMute(v) {
       muted = !!v;
 
-      // SFX
       if (master) master.gain.value = muted ? 0 : 1;
 
-      // Music
       if (muted) {
-        // pausa para ahorrar batería (y evitar “repro en silencio”)
         stopMusic();
       } else {
-        // vuelve a aplicar volumen
         const vv = effectiveMusicVolume();
         setMusicVolumeImmediate(vv);
-        // no auto-play aquí: startRun / toggle music ya lo lanzan con gesto
       }
     }
 
     function setMusicOn(v) {
       musicOn = !!v;
       if (!musicOn) stopMusic();
-      else startMusic(); // intentará (puede bloquear sin gesto, se ignora)
+      else startMusic();
     }
 
     function setSfxOn(v) {
@@ -244,7 +800,6 @@
 
       if (sfxGain) sfxGain.gain.value = sfxOn ? sfxVol : 0;
 
-      // Music: aplica volumen efectivo
       const vv = effectiveMusicVolume();
       setMusicVolumeImmediate(vv);
     }
@@ -252,8 +807,6 @@
     function duckMusic(on) {
       const targetDuck = on ? 0.35 : 1.0;
       duckFactor = targetDuck;
-
-      // suave (para que no “pegue”)
       const vv = effectiveMusicVolume();
       setMusicVolumeSmooth(vv, 140);
     }
@@ -310,7 +863,6 @@
       }
     }
 
-    // Procedural SFX fallback (si faltan wav)
     function beep({ f = 440, ms = 90, type = "square", gain = 0.18, slideTo = null } = {}) {
       const c = ensureCtx();
       if (!c || !unlocked) return false;
@@ -340,7 +892,7 @@
     }
 
     async function sfx(name) {
-      await unlock(); // asegura gesto/ctx
+      await unlock();
 
       if (!supportsCtx) return false;
 
@@ -367,7 +919,6 @@
         }
       }
 
-      // fallback por tipo
       if (k === "coin")  return beep({ f: 820, ms: 60, type: "square", gain: 0.14, slideTo: 980 });
       if (k === "gem")   return beep({ f: 620, ms: 85, type: "triangle", gain: 0.16, slideTo: 920 });
       if (k === "bonus") return beep({ f: 520, ms: 120, type: "sawtooth", gain: 0.12, slideTo: 1040 });
@@ -388,13 +939,11 @@
     }
 
     function stopMusic() {
-      // HTML music
       if (musicEl) {
         try {
           musicEl.pause();
           musicEl.currentTime = 0;
         } catch {}
-        // deja el volumen correcto (por si luego vuelve)
         try {
           musicEl.defaultPlaybackRate = 1;
           musicEl.playbackRate = 1;
@@ -408,10 +957,8 @@
 
       await unlock();
 
-      // ✅ preferencia: HTMLAudio siempre
       const el = ensureMusicEl();
       if (el) {
-        // aplica settings antes de play
         try {
           el.defaultPlaybackRate = 1;
           el.playbackRate = 1;
@@ -421,20 +968,16 @@
         if (vv <= 0.0001) return;
 
         try {
-          // Si ya está sonando, no fuerces
           if (!el.paused) return;
-
           const p = el.play();
           if (p && typeof p.then === "function") await p;
           musicMode = "html";
           return;
         } catch {
-          // Si autoplay/gesto bloquea, se ignora (se resolverá al pulsar Start/Test Audio)
-          // Si no soporta el formato, caemos a procedural:
+          // cae a procedural
         }
       }
 
-      // Fallback procedural (solo si HTMLAudio no funciona)
       if (!supportsCtx || !ctx) return;
       if (proceduralNode) return;
 
@@ -459,7 +1002,6 @@
 
         g.gain.value = 0.10;
 
-        // mezcla a destino (no a musicGain)
         o1.connect(g);
         o2.connect(g);
         g.connect(master);
@@ -510,44 +1052,6 @@
     };
   })();
 
-  // ───────────────────────── Settings ─────────────────────────
-  const defaultSettings = () => ({
-    useSprites: false,
-    vibration: true,
-    showDpad: true,
-    fx: 1.0,
-
-    // NEW AUDIO
-    musicOn: true,
-    musicVol: 0.60,
-    sfxVol: 0.90,
-    muteAll: false,
-  });
-
-  let settings = (() => {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    const s = raw ? safeParse(raw, null) : null;
-    const base = defaultSettings();
-    if (!s || typeof s !== "object") return base;
-    return {
-      ...base,
-      ...s,
-      fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
-
-      musicOn: (s.musicOn ?? base.musicOn) !== false,
-      musicVol: clamp(Number(s.musicVol ?? base.musicVol) || base.musicVol, 0, 1),
-      sfxVol: clamp(Number(s.sfxVol ?? base.sfxVol) || base.sfxVol, 0, 1),
-      muteAll: !!(s.muteAll ?? base.muteAll),
-    };
-  })();
-
-  function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
-  function vibrate(ms) {
-    if (!settings.vibration) return;
-    if (!("vibrate" in navigator)) return;
-    try { navigator.vibrate(ms); } catch {}
-  }
-
   function applyAudioSettingsNow() {
     try {
       AudioSys.setMute(!!settings.muteAll);
@@ -562,7 +1066,8 @@
   let activeProfileId = null;
   let playerName = (localStorage.getItem(NAME_KEY) || "").trim().slice(0, 16);
   let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
-  if (playerName.length < 2) playerName = "Jugador";
+
+  if (playerName.length < 2) playerName = I18n.t("defaultPlayer");
 
   function syncFromAuth() {
     try {
@@ -570,7 +1075,7 @@
       const p = Auth.getActiveProfile?.();
       if (!p) return;
       activeProfileId = p.id;
-      playerName = (p.name || "Jugador").trim().slice(0, 16) || "Jugador";
+      playerName = (p.name || I18n.t("defaultPlayer")).trim().slice(0, 16) || I18n.t("defaultPlayer");
       best = (Auth.getBestForActive?.() ?? best) | 0;
       localStorage.setItem(NAME_KEY, playerName);
       localStorage.setItem(BEST_KEY, String(best));
@@ -603,8 +1108,12 @@
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
     try {
       const tasks = keys.map(async ([k, file]) => {
-        const img = await loadImage(spriteUrl(file));
-        sprites.map.set(k, img);
+        try {
+          const img = await loadImage(spriteUrl(file));
+          sprites.map.set(k, img);
+        } catch {
+          // no rompe el resto
+        }
       });
       await Promise.race([Promise.all(tasks), timeout]);
       sprites.ready = sprites.map.size > 0;
@@ -721,6 +1230,9 @@
   // NEW AUDIO opts
   let optMusicOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
 
+  // I18N opts
+  let optLang = null;
+
   let errMsg, btnErrClose, btnErrReload;
 
   let comboSeq, comboTimerVal, comboHint, toast;
@@ -786,9 +1298,67 @@
     setPill(pillMult, mult.toFixed(2));
     setPill(pillLevel, `Lv ${level}`);
     setPill(pillSpeed, `${speedRowsPerSec().toFixed(1)}x`);
-    setPill(pillPlayer, playerName || "Jugador");
+    setPill(pillPlayer, playerName || I18n.t("defaultPlayer"));
     setOfflinePill();
     updateLevelProgressUI();
+  }
+
+  function setupLanguageUI() {
+    // Si ya existe en HTML, úsalo
+    optLang = $("optLang");
+    if (optLang) return;
+
+    // Inyecta un selector mínimo dentro de Opciones (sin romper si el layout es distinto)
+    if (!overlayOptions) return;
+
+    try {
+      // Busca un contenedor razonable (primero un panel, si no, el primer div dentro)
+      const host =
+        overlayOptions.querySelector?.("#optionsBody") ||
+        overlayOptions.querySelector?.(".panel") ||
+        overlayOptions.querySelector?.(".card") ||
+        overlayOptions;
+
+      if (!host) return;
+
+      // Evita duplicados
+      if (overlayOptions.querySelector?.("#optLang")) { optLang = $("optLang"); return; }
+
+      const row = document.createElement("div");
+      row.id = "optLangRow";
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.justifyContent = "space-between";
+      row.style.gap = "10px";
+      row.style.marginTop = "10px";
+
+      const lab = document.createElement("label");
+      lab.htmlFor = "optLang";
+      lab.textContent = I18n.t("opt_language");
+      lab.style.opacity = "0.9";
+
+      const sel = document.createElement("select");
+      sel.id = "optLang";
+      sel.style.minWidth = "140px";
+
+      row.appendChild(lab);
+      row.appendChild(sel);
+
+      host.appendChild(row);
+      optLang = sel;
+    } catch {}
+  }
+
+  function fillLanguageOptions() {
+    if (!optLang) return;
+    const opts = I18n.languageOptions();
+    optLang.innerHTML = "";
+    for (const o of opts) {
+      const op = document.createElement("option");
+      op.value = o.code;
+      op.textContent = o.label;
+      optLang.appendChild(op);
+    }
   }
 
   function applySettingsToUI() {
@@ -805,8 +1375,17 @@
     if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
     if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
 
+    // idioma
+    if (optLang) {
+      fillLanguageOptions();
+      optLang.value = String(settings.lang || "auto");
+    }
+
     const isCoarse = matchMedia("(pointer:coarse)").matches;
     if (dpad) dpad.hidden = !(isCoarse && settings.showDpad);
+
+    // aplica data-i18n si existe en HTML
+    I18n.applyDataAttrs(document);
 
     applyAudioSettingsNow();
     resize();
@@ -991,7 +1570,7 @@
       mult = clamp(mult * 0.92, 1.0, 4.0);
       vibrate(18);
       failCombo();
-      showToast("Trampa", 650);
+      showToast(I18n.t("toast_trap"), 650);
       flash("#ff6b3d", 220);
       shake(220, 7);
       AudioSys.sfx("trap");
@@ -1011,7 +1590,7 @@
         comboTime = comboTimeMax;
         if (comboIdx >= combo.length) {
           mult = clamp(mult + 0.15, 1.0, 4.0);
-          showToast("Combo: +MULT", 900);
+          showToast(I18n.t("toast_combo_mult"), 900);
           shake(140, 3.2);
           flash("#6ab0ff", 140);
           rerollCombo();
@@ -1086,7 +1665,7 @@
 
         if (shields > 0) {
           shields--;
-          showToast("Shield salvó un KO", 900);
+          showToast(I18n.t("toast_shield_saved"), 900);
           vibrate(24);
           shake(190, 6);
           flash("#6ab0ff", 140);
@@ -1120,9 +1699,9 @@
     return "help";
   }
   function nameForType(t) {
-    if (t === CellType.Coin) return "Coin";
-    if (t === CellType.Gem) return "Gem";
-    if (t === CellType.Bonus) return "Bonus";
+    if (t === CellType.Coin) return I18n.t("cell_coin");
+    if (t === CellType.Gem) return I18n.t("cell_gem");
+    if (t === CellType.Bonus) return I18n.t("cell_bonus");
     return "—";
   }
 
@@ -1159,7 +1738,7 @@
 
       comboSeq.appendChild(chip);
     }
-    comboHint.textContent = "Completa la secuencia para subir multiplicador.";
+    comboHint.textContent = I18n.t("combo_hint");
   }
 
   function failCombo() {
@@ -1170,18 +1749,18 @@
 
   // ───────────────────────── Upgrades ─────────────────────────
   const Upgrades = [
-    { id: "shield", name: "Shield", desc: "Bloquea 1 KO (se consume).", tag: "Defensa", max: 6, apply() { shields++; } },
-    { id: "mag1", name: "Imán I", desc: "Atrae premios cercanos (radio 1).", tag: "QoL", max: 1, apply() { magnet = Math.max(magnet, 1); } },
-    { id: "mag2", name: "Imán II", desc: "Imán mejorado (radio 2).", tag: "QoL", max: 1, apply() { magnet = 2; } },
-    { id: "mag3", name: "Imán III", desc: "Radio 3 (máximo).", tag: "QoL", max: 1, apply() { magnet = 3; } },
-    { id: "boost", name: "Score +", desc: "Más puntos (+8%).", tag: "Puntos", max: 10, apply() { scoreBoost += 0.08; } },
-    { id: "trap", name: "Resistencia trampas", desc: "Reduce penalización de trampas.", tag: "Defensa", max: 4, apply() { trapResist++; } },
-    { id: "zone", name: "Zona +", desc: "Zona de movimiento más alta (+1 fila).", tag: "Movilidad", max: 3, apply() { zoneExtra++; recomputeZone(); } },
-    { id: "coin", name: "Coin +", desc: "Coin vale más (+2).", tag: "Puntos", max: 8, apply() { coinValue += 2; } },
-    { id: "gem", name: "Gem +", desc: "Gem vale más (+6).", tag: "Puntos", max: 6, apply() { gemValue += 6; } },
-    { id: "bonus", name: "Bonus +", desc: "Bonus vale más (+10).", tag: "Puntos", max: 6, apply() { bonusValue += 10; } },
-    { id: "reroll", name: "Reroll +", desc: "Ganas 1 reroll extra.", tag: "Upgrades", max: 5, apply() { rerolls++; } },
-    { id: "mult", name: "Mult +", desc: "Sube multiplicador base (+0.10).", tag: "Combo", max: 10, apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
+    { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 6, apply() { shields++; } },
+    { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, apply() { magnet = Math.max(magnet, 1); } },
+    { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, apply() { magnet = 2; } },
+    { id: "mag3", nameKey: "up_mag3_name", descKey: "up_mag3_desc", tagKey: "tag_qol", max: 1, apply() { magnet = 3; } },
+    { id: "boost", nameKey: "up_boost_name", descKey: "up_boost_desc", tagKey: "tag_points", max: 10, apply() { scoreBoost += 0.08; } },
+    { id: "trap", nameKey: "up_trap_name", descKey: "up_trap_desc", tagKey: "tag_defense", max: 4, apply() { trapResist++; } },
+    { id: "zone", nameKey: "up_zone_name", descKey: "up_zone_desc", tagKey: "tag_mobility", max: 3, apply() { zoneExtra++; recomputeZone(); } },
+    { id: "coin", nameKey: "up_coin_name", descKey: "up_coin_desc", tagKey: "tag_points", max: 8, apply() { coinValue += 2; } },
+    { id: "gem", nameKey: "up_gem_name", descKey: "up_gem_desc", tagKey: "tag_points", max: 6, apply() { gemValue += 6; } },
+    { id: "bonus", nameKey: "up_bonus_name", descKey: "up_bonus_desc", tagKey: "tag_points", max: 6, apply() { bonusValue += 10; } },
+    { id: "reroll", nameKey: "up_reroll_name", descKey: "up_reroll_desc", tagKey: "tag_upgrades", max: 5, apply() { rerolls++; } },
+    { id: "mult", nameKey: "up_mult_name", descKey: "up_mult_desc", tagKey: "tag_combo", max: 10, apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
   ];
 
   const pickedCount = new Map();
@@ -1237,20 +1816,24 @@
     if (upgradeChoices) upgradeChoices.innerHTML = "";
 
     for (const u of currentUpgradeChoices) {
+      const name = I18n.t(u.nameKey);
+      const desc = I18n.t(u.descKey);
+      const tag = I18n.t(u.tagKey);
+
       const card = document.createElement("div");
       card.className = "upCard";
       card.innerHTML = `
-        <div class="upTitle">${u.name}</div>
-        <div class="upDesc">${u.desc}</div>
+        <div class="upTitle">${name}</div>
+        <div class="upDesc">${desc}</div>
         <div class="upMeta">
-          <span class="badge">${u.tag}</span>
+          <span class="badge">${tag}</span>
           <span class="badge">Lv ${(pickedCount.get(u.id) || 0) + 1}/${u.max}</span>
         </div>
       `;
       card.addEventListener("click", () => {
         markPick(u);
         u.apply();
-        showToast(`Mejora: ${u.name}`, 950);
+        showToast(I18n.t("toast_upgrade", name), 950);
         shake(120, 3);
         flash("#6ab0ff", 120);
         AudioSys.sfx("pick");
@@ -1267,7 +1850,7 @@
     if (rerolls <= 0) return;
     rerolls--;
     renderUpgradeChoices();
-    showToast("Reroll", 650);
+    showToast(I18n.t("toast_reroll"), 650);
     shake(90, 2);
     flash("#ffd35a", 110);
     AudioSys.sfx("reroll");
@@ -1747,11 +2330,11 @@
 
     if (goStats) {
       goStats.innerHTML = `
-        <div class="line"><span>Motivo</span><span>${reason}</span></div>
-        <div class="line"><span>Nivel</span><span>${level}</span></div>
-        <div class="line"><span>Tiempo</span><span>${Math.round(runTime)}s</span></div>
-        <div class="line"><span>Racha</span><span>${streak}</span></div>
-        <div class="line"><span>Mult</span><span>${mult.toFixed(2)}</span></div>
+        <div class="line"><span>${I18n.t("stats_reason")}</span><span>${reason}</span></div>
+        <div class="line"><span>${I18n.t("stats_level")}</span><span>${level}</span></div>
+        <div class="line"><span>${I18n.t("stats_time")}</span><span>${Math.round(runTime)}s</span></div>
+        <div class="line"><span>${I18n.t("stats_streak")}</span><span>${streak}</span></div>
+        <div class="line"><span>${I18n.t("stats_mult")}</span><span>${mult.toFixed(2)}</span></div>
       `;
     }
 
@@ -1827,17 +2410,17 @@
       document.referrer.includes("android-app://");
   }
 
-  function markUpdateAvailable(msg = "Actualizar") {
+  function markUpdateAvailable(msg = null) {
     if (!pillUpdate) return;
     pillUpdate.hidden = false;
-    setPill(pillUpdate, msg);
+    setPill(pillUpdate, msg || I18n.t("pill_update"));
   }
 
   function requestAppReload() {
     if (running && !gameOver) {
       pendingReload = true;
-      markUpdateAvailable("Actualizar");
-      showToast("Update listo: se aplicará al terminar.", 1200);
+      markUpdateAvailable(I18n.t("pill_update"));
+      showToast(I18n.t("update_apply_end"), 1200);
       return;
     }
     location.reload();
@@ -1907,7 +2490,7 @@
       AudioSys.unlock();
       if (running && !gameOver) {
         pendingReload = true;
-        showToast("Se aplicará al terminar.", 900);
+        showToast(I18n.t("update_apply_end_short"), 900);
         return;
       }
       applySWUpdateNow();
@@ -1921,15 +2504,15 @@
         swReg = await navigator.serviceWorker.register(swUrl);
 
         try { await swReg.update(); } catch {}
-        if (swReg.waiting) markUpdateAvailable("Actualizar");
+        if (swReg.waiting) markUpdateAvailable(I18n.t("pill_update"));
 
         swReg.addEventListener("updatefound", () => {
           const nw = swReg.installing;
           if (!nw) return;
           nw.addEventListener("statechange", () => {
             if (nw.state === "installed" && navigator.serviceWorker.controller) {
-              markUpdateAvailable("Actualizar");
-              showToast("Actualización disponible.", 1100);
+              markUpdateAvailable(I18n.t("pill_update"));
+              showToast(I18n.t("update_available"), 1100);
             }
           });
         });
@@ -2095,6 +2678,9 @@
     optMuteAll = $("optMuteAll");
     btnTestAudio = $("btnTestAudio");
 
+    // I18N (si existe)
+    optLang = $("optLang");
+
     errMsg = $("errMsg");
     btnErrClose = $("btnErrClose");
     btnErrReload = $("btnErrReload");
@@ -2125,12 +2711,12 @@
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
 
-      if (loadingSub) loadingSub.textContent = "Iniciando…";
+      if (loadingSub) loadingSub.textContent = I18n.t("app_loading");
       setState("loading");
 
       syncFromAuth();
 
-      // aplica audio settings temprano (sin forzar unlock)
+      // audio settings temprano (sin forzar unlock)
       applyAudioSettingsNow();
 
       recomputeZone();
@@ -2138,6 +2724,9 @@
       rerollCombo();
 
       initAuthUI();
+
+      // ✅ crea UI de idioma antes de aplicar settings a UI
+      setupLanguageUI();
       applySettingsToUI();
 
       resize();
@@ -2202,13 +2791,33 @@
         applyAudioSettingsNow();
         AudioSys.startMusic();
         AudioSys.sfx("coin");
-        showToast("Audio OK", 700);
+        showToast(I18n.t("audio_ok"), 700);
       });
+
+      // I18N bind
+      if (optLang) {
+        optLang.addEventListener("change", () => {
+          const v = String(optLang.value || "auto");
+          settings.lang = v;
+          saveSettings();
+
+          I18n.setLang(settings.lang);
+
+          // re-aplica etiquetas del selector (para que “Auto” cambie)
+          applySettingsToUI();
+
+          // refresca UI dinámica
+          updatePillsNow();
+          renderComboUI();
+          if (overlayUpgrades && !overlayUpgrades.hidden) renderUpgradeChoices();
+          if (brandSub) brandSub.textContent = I18n.t("app_ready");
+        });
+      }
 
       btnRepairPWA?.addEventListener("click", repairPWA);
 
       btnClearLocal?.addEventListener("click", () => {
-        const ok = confirm("¿Borrar datos locales? (Perfiles, settings, runs)");
+        const ok = confirm(I18n.t("confirm_clear_local"));
         if (!ok) return;
         localStorage.clear();
         location.reload();
@@ -2218,7 +2827,7 @@
       btnErrReload?.addEventListener("click", () => location.reload());
 
       btnReroll?.addEventListener("click", rerollUpgrades);
-      btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast("Saltar", 650); AudioSys.sfx("ui"); });
+      btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast(I18n.t("toast_skip"), 650); AudioSys.sfx("ui"); });
 
       btnStart?.addEventListener("click", async () => {
         await AudioSys.unlock();
@@ -2227,7 +2836,7 @@
           if (profileSelect.value === "__new__") {
             const nm = (startName?.value || "").trim();
             const p = Auth.createProfile?.(nm);
-            if (!p) { showToast("Nombre mínimo 2 letras", 900); return; }
+            if (!p) { showToast(I18n.t("name_min"), 900); return; }
             syncFromAuth();
             initAuthUI();
           } else {
@@ -2247,7 +2856,7 @@
         if (e.key === "Enter" || e.key === " ") resetRun(true);
       });
 
-      if (loadingSub) loadingSub.textContent = "PWA…";
+      if (loadingSub) loadingSub.textContent = I18n.t("app_pwa");
       setupPWA();
       preloadSpritesWithTimeout(900);
 
@@ -2264,7 +2873,7 @@
         await overlayFadeOut(overlayLoading, 180);
         overlayShow(overlayStart);
         setState("menu");
-        if (brandSub) brandSub.textContent = "Listo";
+        if (brandSub) brandSub.textContent = I18n.t("app_ready");
         updatePillsNow();
       }, wait);
 

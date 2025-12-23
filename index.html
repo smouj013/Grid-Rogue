@@ -1,3 +1,4 @@
+<!-- index.html — Grid Rogue v0.1.6 -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -8,12 +9,12 @@
   <meta name="theme-color" content="#0b0b10" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Grid Runner" />
+  <meta name="apple-mobile-web-app-title" content="Grid Rogue" />
 
-  <title>Grid Runner</title>
+  <title>Grid Rogue</title>
 
   <script>
-    window.APP_VERSION = "0.1.5";
+    window.APP_VERSION = "0.1.6";
   </script>
 
   <!-- ✅ Repair Mode (NO depende de app.js) -->
@@ -57,12 +58,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.1.5" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.1.6" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.1.5" />
+  <link rel="stylesheet" href="./styles.css?v=0.1.6" />
 </head>
 
 <body>
@@ -78,7 +79,7 @@
       <div class="brand">
         <div class="brandDot" aria-hidden="true"></div>
         <div class="brandText">
-          <div class="brandTitle">Grid Runner</div>
+          <div class="brandTitle">Grid Rogue</div>
           <div class="brandSub" id="brandSub">Upgrades • combos • arcade</div>
         </div>
       </div>
@@ -110,7 +111,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.5</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.6</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -206,7 +207,7 @@
                 <span class="ms">grid_view</span>
               </div>
               <div class="splashText">
-                <div class="title">Grid Runner</div>
+                <div class="title">Grid Rogue</div>
                 <div class="sub">
                   Cargando
                   <span class="dots" aria-hidden="true">
@@ -355,6 +356,12 @@
                 <input id="optMusicOn" type="checkbox" />
               </label>
 
+              <!-- ✅ añadido en v0.1.6 para compatibilidad con audio.js -->
+              <label class="optRow">
+                <span>Efectos (SFX)</span>
+                <input id="optSfxOn" type="checkbox" />
+              </label>
+
               <div class="optRow sliderRow">
                 <span>Vol. música</span>
                 <input id="optMusicVol" type="range" min="0" max="1" step="0.01" />
@@ -489,7 +496,7 @@
     })();
   </script>
 
-  <script src="./auth.js?v=0.1.5" defer></script>
-  <script src="./app.js?v=0.1.5" defer></script>
+  <script src="./auth.js?v=0.1.6" defer></script>
+  <script src="./app.js?v=0.1.6" defer></script>
 </body>
 </html>
