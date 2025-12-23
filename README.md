@@ -1,4 +1,4 @@
-# Grid Rogue — Arcade Roguelite (v0.1.7)
+# Grid Rogue — Arcade Roguelite (v0.1.8)
 
 **Grid Rogue** es un **arcade roguelite en cuadrícula**: runs cortas, decisiones rápidas, **upgrades** al subir de nivel, **combos** por secuencias y un gameplay que se vuelve más “peligroso” cuanto mejor juegas.  
 Diseñado para sentirse **fluido, directo y adictivo**, con **feedback juicy** (SFX, animaciones, resaltados) y controles cómodos tanto en **móvil (portrait)** como en escritorio.
