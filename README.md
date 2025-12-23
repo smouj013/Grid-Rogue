@@ -24,7 +24,7 @@ Optimizado para **móvil (portrait)** y fluido también en escritorio.
 
 Sube todo en la **raíz** del repositorio (sin carpetas extra tipo `/dist`):
 
-´´´
+```
 /
 .nojekyll
 index.html
@@ -65,7 +65,7 @@ tile_bonus.svg
 tile_coin.svg
 tile_gem.svg
 tile_trap.svg
-´´´
+```
 ---
 
 ## 🚀 Deploy en GitHub Pages (paso a paso)
