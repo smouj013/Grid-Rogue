@@ -1,5 +1,6 @@
 /* auth.js — Grid Rogue v0.1.9
    (misma API, migración y robustez que v0.1.8)
+   - Compat: window.GRUtils o window.Utils
 */
 (() => {
   "use strict";
