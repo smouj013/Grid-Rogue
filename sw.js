@@ -1,12 +1,12 @@
-/* sw.js — Grid Rogue (v0.2.0)
-   ✅ v0.2.0:
-   - VERSION bump + claves de cache nuevas
-   - GH Pages/subcarpetas: usa self.registration.scope y URLs absolutas (clave estable)
-   - Precache core robusto (index obligatorio, resto best-effort)
-   - Offline navegación: devuelve index.html
-   - Runtime cache: stale-while-revalidate
-   - Audio: soporte Range (206) para iOS/Android
-   - Ignora query en assets estáticos (cache-key estable) pero respeta query en otros
+/* sw.js — Grid Rogue (v0.2.0) — UPDATED
+   ✅ Robusto para GH Pages / subcarpetas (scope estable)
+   ✅ Precache core: index obligatorio + resto best-effort
+   ✅ Offline navegación: devuelve index.html
+   ✅ Core: stale-while-revalidate (key sin query en estáticos)
+   ✅ Runtime: stale-while-revalidate suave
+   ✅ Audio: soporte Range (206) usando fetch del recurso completo y slice (iOS/Android)
+   ✅ Limpieza de caches antiguos (gridrunner/gridrogue)
+   ✅ Evita caches de respuestas opacas / no-ok
 */
 "use strict";
 
@@ -115,6 +115,14 @@ function isAudioPath(urlObj) {
   return p.endsWith(".mp3") || p.endsWith(".wav") || p.endsWith(".ogg");
 }
 
+function canCacheResponse(res) {
+  // Evita cachear opaque (no-cors) y respuestas malas
+  if (!res) return false;
+  if (!res.ok) return false;
+  if (res.type === "opaque") return false;
+  return true;
+}
+
 // ───────────────────────── Range support (audio) ─────────────────────────
 function parseRange(rangeHeader, size) {
   const m = String(rangeHeader || "").match(/bytes=(\d*)-(\d*)/i);
@@ -134,6 +142,8 @@ function parseRange(rangeHeader, size) {
 }
 
 async function makeRangedResponse(fullResponse, rangeHeader) {
+  // Importante: fullResponse debe ser una respuesta COMPLETA (200),
+  // aquí la convertimos en 206 con slice de ArrayBuffer.
   const buf = await fullResponse.arrayBuffer();
   const size = buf.byteLength;
 
@@ -173,7 +183,7 @@ async function precacheCore() {
       .map(async (url) => {
         try {
           const res = await fetch(new Request(url, { cache: "reload" }));
-          if (!res || !res.ok) throw new Error(`Precache failed: ${url} (${res?.status})`);
+          if (!canCacheResponse(res)) throw new Error(`Precache failed: ${url} (${res?.status})`);
           await cache.put(stripSearch(url), res);
         } catch (_) {}
       })
@@ -241,6 +251,7 @@ self.addEventListener("fetch", (event) => {
       (async () => {
         const key = stripSearch(req.url);
 
+        // 1) intenta caches (core -> runtime)
         const core = await caches.open(CORE_CACHE);
         let cached = await core.match(key);
 
@@ -257,13 +268,27 @@ self.addEventListener("fetch", (event) => {
           }
         }
 
-        return fetch(req);
+        // 2) si no hay cache, pedimos COMPLETO (sin Range) y luego cortamos
+        try {
+          const full = await fetch(new Request(key, { cache: "no-store" }));
+          if (!full || !full.ok) return fetch(req);
+
+          // guarda best-effort en runtime (clave sin query)
+          try {
+            const runtime = await caches.open(RUNTIME_CACHE);
+            if (canCacheResponse(full)) runtime.put(key, full.clone()).catch(() => {});
+          } catch (_) {}
+
+          return await makeRangedResponse(full, req.headers.get("range"));
+        } catch (_) {
+          return fetch(req);
+        }
       })()
     );
     return;
   }
 
-  // Navegación (HTML)
+  // Navegación (HTML) -> network-first + fallback a shell
   if (isNav) {
     event.respondWith(
       (async () => {
@@ -278,7 +303,6 @@ self.addEventListener("fetch", (event) => {
 
           const fresh = await fetch(req);
           if (fresh && fresh.ok) {
-            // mantenemos el shell actualizado
             core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
             return fresh;
           }
@@ -310,7 +334,7 @@ self.addEventListener("fetch", (event) => {
 
         const refresh = fetch(req)
           .then((res) => {
-            if (res && res.ok) core.put(key, res.clone()).catch(() => {});
+            if (canCacheResponse(res)) core.put(key, res.clone()).catch(() => {});
             return res;
           })
           .catch(() => null);
@@ -321,20 +345,25 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Runtime: cache-first + update (stale-while-revalidate suave)
+  // Runtime: stale-while-revalidate suave (cache si existe, pero siempre intenta refrescar)
   event.respondWith(
     (async () => {
       const runtime = await caches.open(RUNTIME_CACHE);
       const cached = await runtime.match(normalizedKey);
 
-      const fetchPromise = fetch(req)
+      const refresh = fetch(req)
         .then((res) => {
-          if (res && res.ok) runtime.put(normalizedKey, res.clone()).catch(() => {});
+          if (canCacheResponse(res)) runtime.put(normalizedKey, res.clone()).catch(() => {});
           return res;
         })
-        .catch(() => cached);
+        .catch(() => null);
 
-      return cached || fetchPromise || new Response("", { status: 504 });
+      if (cached) {
+        refresh.catch(() => {});
+        return cached;
+      }
+
+      return (await refresh) || new Response("", { status: 504 });
     })()
   );
 });

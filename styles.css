@@ -33,7 +33,8 @@
 
   --overlayBack: rgba(0,0,0,0.50);
 
-  --hudH: 168px;
+  /* HUD: tamaño elástico (evita desfases en pantallas bajas) */
+  --hudMax: clamp(132px, 18svh, 190px);
 
   --panelMaxW: 560px;
   --panelWideMaxW: 980px;
@@ -112,7 +113,6 @@ a{ color:inherit; }
 .mono{
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
-
 .tiny{ font-size:12px; }
 .muted{ color: var(--muted); }
 
@@ -310,7 +310,7 @@ input[type="range"]{ accent-color: var(--accent); }
   display:flex;
   flex-direction:column;
   min-height:0;
-  gap:12px;
+  gap:10px;
   padding:
     10px
     10px
@@ -322,12 +322,9 @@ input[type="range"]{ accent-color: var(--accent); }
   position:relative;
   z-index:12;
   pointer-events:none;
-  height: var(--hudH);
-  min-height: var(--hudH);
-  max-height: var(--hudH);
-  overflow: visible;
   display:flex;
   justify-content:center;
+  max-height: var(--hudMax);
 }
 
 .combo{
@@ -339,8 +336,11 @@ input[type="range"]{ accent-color: var(--accent); }
   border:1px solid rgba(255,255,255,0.10);
   backdrop-filter: blur(12px);
   box-shadow: 0 12px 26px rgba(0,0,0,0.30);
-  position:relative;
   overflow: visible;
+
+  display:flex;
+  flex-direction:column;
+  gap:10px;
 }
 
 .comboTop{
@@ -388,24 +388,19 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 
 .comboHint{
-  margin-top:10px;
   font-size:12.5px;
   color: rgba(255,255,255,0.72);
 }
 
 .hudFloat{
-  position:absolute;
-  left:12px;
-  right:12px;
-  top:60px;
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
   gap:10px;
   pointer-events:none;
-  z-index: 5;
 }
 
+/* HP: el JS suele “pintar” corazones dentro, así que el icono va en pseudo-elemento */
 .hpWrap{
   display:flex;
   align-items:center;
@@ -417,17 +412,18 @@ input[type="range"]{ accent-color: var(--accent); }
   background: rgba(0,0,0,0.18);
   backdrop-filter: blur(10px);
 }
-
-.hpIcon{
+.hpWrap::before{
+  content:"favorite";
+  font-family:"Material Symbols Rounded";
+  font-weight:700;
+  font-size:18px;
+  line-height:1;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   font-variation-settings:"FILL" 1, "wght" 700, "GRAD" 0, "opsz" 28;
   color: rgba(255,120,150,0.95);
-}
-
-.hpHearts{
-  display:inline-flex;
-  gap:4px;
-  align-items:center;
-  flex-wrap:nowrap;
+  margin-right:2px;
 }
 
 .heart{
@@ -448,11 +444,6 @@ input[type="range"]{ accent-color: var(--accent); }
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(255,255,255,0.04);
   color: rgba(255,255,255,0.78);
-}
-
-.hpText{
-  font-size:12px;
-  color: rgba(255,255,255,0.70);
 }
 
 .buffDock{
@@ -516,18 +507,8 @@ input[type="range"]{ accent-color: var(--accent); }
 .buffBadge[data-kind="reroll"]{ border-color: rgba(255,211,90,0.28); }
 .buffBadge[data-kind="hp"]{ border-color: rgba(255,120,160,0.28); }
 
-#hpHearts, #buffBadges{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  flex-wrap:wrap;
-}
-#hpText{ color: rgba(255,255,255,0.70); font-size:12px; }
-
 .levelProg,
 .levelProgress{
-  position:relative;
-  margin-top:56px;
   border-radius: 14px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(255,255,255,0.03);
@@ -631,6 +612,10 @@ input[type="range"]{ accent-color: var(--accent); }
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
   image-rendering: pixelated;
   touch-action: none;
+
+  /* robusto: evita “estirar” raro si el JS no setea tamaño a tiempo */
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .dpad{
@@ -877,7 +862,6 @@ input[type="range"]{ accent-color: var(--accent); }
   min-height:0;
   position:relative;
 }
-
 .upgradesPanel .panelBody{
   flex:1;
   min-height:0;
@@ -893,7 +877,6 @@ input[type="range"]{ accent-color: var(--accent); }
   gap: 14px;
   padding-bottom: 10px;
 }
-
 @media (min-width:840px){
   .upgradeChoices{ grid-template-columns: 1fr 1fr; }
 }
@@ -919,7 +902,6 @@ input[type="range"]{ accent-color: var(--accent); }
   align-items:flex-start;
   gap:12px;
 }
-
 .upIcon{
   width:46px; height:46px;
   border-radius: 14px;
@@ -931,8 +913,8 @@ input[type="range"]{ accent-color: var(--accent); }
   flex:0 0 auto;
 }
 .upIcon .ms{ font-size:22px; }
-
 .upHeadText{ min-width:0; flex:1; }
+
 .upTitle{
   font-weight:950;
   font-size:15px;
@@ -944,7 +926,6 @@ input[type="range"]{ accent-color: var(--accent); }
   gap:8px;
   margin-top:8px;
 }
-
 .badge, .upRarityBadge{
   display:inline-flex;
   align-items:center;
@@ -956,7 +937,6 @@ input[type="range"]{ accent-color: var(--accent); }
   font-size:11.5px;
   color: rgba(255,255,255,0.80);
 }
-
 .upRarityBadge{
   border-color: rgba(106,176,255,0.22);
   background: rgba(106,176,255,0.10);
@@ -1038,16 +1018,12 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 
 @media (max-width:520px){
-  :root{ --hudH: 178px; }
-  .combo{ padding: 14px 12px; }
-  .hudFloat{ top:62px; left:10px; right:10px; }
+  .combo{ padding: 14px 12px; gap:10px; }
   .buffBar{ max-width: 70%; }
   .railFrame{ border-radius: 16px; }
-  .levelProg, .levelProgress{ margin-top: 62px; padding: 12px 10px; }
 }
 
 @media (max-width:380px){
-  .hpText{ display:none; }
   #levelProgText{ max-width: 40ch; }
 }
 

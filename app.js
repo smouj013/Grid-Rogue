@@ -1,23 +1,60 @@
 /* app.js — Grid Rogue v0.2.0 (STABLE+FULLSCREEN + AUDIO + I18N)
-   v0.2.0:
-   - HUD HP + Buff Badges en capa flotante (NO afecta barra de nivel / NO empuja layouts).
-   - Posicionado robusto anclado a #levelProgress (o fallback).
-   - Upgrades panel: canvas FX no interfiere (host relative) + mejor padding (CSS).
-   - GameArea puede expandirse más si hay espacio (CSS) manteniendo grid intacto.
-   - Mantiene migración gridrunner_* -> gridrogue_* y compat flags.
+   ✅ Mantiene compatibilidad con:
+   - utils.js (window.GRUtils)
+   - audio.js (window.AudioSys)
+   - localization.js (window.I18n)
+   - auth.js (window.Auth) si existe
+   - rendiment.js (window.GRPerf) si existe (opcional, no rompe nada)
+
+   Mejoras incluidas (sin cambiar “version target” 0.2.0):
+   - Guard robusto anti doble carga (SW/duplicados/script reinyectado)
+   - performance.now() con fallback (navegadores raros)
+   - escapeAttr sin depender de String.prototype.replaceAll
+   - Integración opcional GRPerf: mide boot + sampling seguro (sin tocar UI si no existe)
+   - Fatal-stop del loop en error grave (evita spam de errores)
 */
 
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.2.0");
+  // ───────────────────────── Guard anti doble carga ─────────────────────────
+  const g = (typeof globalThis !== "undefined") ? globalThis : window;
+  const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V0200";
+  try {
+    if (g && g[LOAD_GUARD]) return;
+    if (g) g[LOAD_GUARD] = true;
+  } catch (_) {}
 
-  // Compat flags (failsafe/index antiguo)
-  window.__GRIDRUNNER_BOOTED = false;
-  window.__GRIDROGUE_BOOTED = false;
+  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.0");
+
+  // Compat flags (failsafe/index antiguo) — no pisar si ya existen
+  try {
+    if (typeof window.__GRIDRUNNER_BOOTED === "undefined") window.__GRIDRUNNER_BOOTED = false;
+    if (typeof window.__GRIDROGUE_BOOTED === "undefined") window.__GRIDROGUE_BOOTED = false;
+  } catch (_) {}
+
+  // ───────────────────────── Perf helpers (fallback) ─────────────────────────
+  const pNow = (() => {
+    try {
+      if (typeof performance !== "undefined" && typeof performance.now === "function") return () => performance.now();
+    } catch {}
+    return () => Date.now();
+  })();
+
+  // Optional: GRPerf (rendiment.js)
+  const GRPerf = (typeof window !== "undefined" && window.GRPerf) ? window.GRPerf : null;
+  const perfEndBoot = (() => {
+    try {
+      if (!GRPerf) return null;
+      GRPerf.setConfig?.({ targetFps: 60, autoPauseOnHidden: true, emitIntervalMs: 500 });
+      return GRPerf.measure?.("boot_total");
+    } catch {
+      return null;
+    }
+  })();
 
   // ───────────────────────── Imports (globals) ─────────────────────────
-  const U = window.GRUtils || {};
+  const U = (typeof window !== "undefined" && window.GRUtils) ? window.GRUtils : {};
 
   const clamp = U.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
   const clampInt = U.clampInt || ((v, a, b) => {
@@ -46,7 +83,7 @@
 
   const setState = U.setState || ((s) => { try { document.body.dataset.state = s; } catch {} });
 
-  const I18n = window.I18n || {
+  const I18n = (typeof window !== "undefined" && window.I18n) ? window.I18n : {
     setLang() {},
     getLang() { return "es"; },
     t(k, a) { return (a != null) ? `${k} ${a}` : k; },
@@ -65,7 +102,7 @@
     return String(fallback).replace("{0}", String(arg));
   }
 
-  const AudioSys = window.AudioSys || {
+  const AudioSys = (typeof window !== "undefined" && window.AudioSys) ? window.AudioSys : {
     unlock: async () => true,
     sfx: async () => false,
     startMusic: async () => {},
@@ -214,18 +251,60 @@
   }
 
   function installAntiScrollGuards() {
-    const allowScrollInOptions = (target) => {
-      if (!overlayOptions || overlayOptions.hidden) return false;
-      const body =
-        overlayOptions.querySelector?.("#optionsBody") ||
-        overlayOptions.querySelector?.(".options") ||
-        overlayOptions;
-      return !!(body && target && (target === body || target.closest?.("#optionsBody") || target.closest?.(".options")));
+    const isScrollableInOptions = (target, event) => {
+      try {
+        if (!overlayOptions || overlayOptions.hidden) return false;
+        if (!target) return false;
+
+        // Si el evento viene de un elemento fuera de opciones, bloquea
+        if (!overlayOptions.contains(target)) return false;
+
+        // Permite inputs/selects (gestos internos)
+        const tag = (target.tagName || "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return true;
+
+        // Composed path (mejor para componentes/Shadow DOM)
+        const path = (event && typeof event.composedPath === "function") ? event.composedPath() : null;
+        const iter = (path && path.length) ? path : null;
+
+        const canScrollEl = (el) => {
+          if (!el || el === document || el === window) return false;
+          if (el === overlayOptions) return false;
+          if (!el.getBoundingClientRect) return false;
+          const st = getComputedStyle(el);
+          const oy = st.overflowY;
+          if ((oy !== "auto" && oy !== "scroll") || (el.scrollHeight <= el.clientHeight + 2)) return false;
+          return true;
+        };
+
+        if (iter) {
+          for (const el of iter) {
+            if (el === overlayOptions) break;
+            if (canScrollEl(el)) return true;
+          }
+        } else {
+          // Fallback por ancestors
+          let el = target;
+          while (el && el !== overlayOptions) {
+            if (canScrollEl(el)) return true;
+            el = el.parentElement;
+          }
+        }
+
+        // Fallbacks antiguos
+        const body =
+          overlayOptions.querySelector?.("#optionsBody") ||
+          overlayOptions.querySelector?.(".options") ||
+          overlayOptions;
+        return !!(body && (target === body || target.closest?.("#optionsBody") || target.closest?.(".options")));
+      } catch {
+        return false;
+      }
     };
 
     const preventIfNeeded = (e) => {
       if (!e.cancelable) return;
-      if (allowScrollInOptions(e.target)) return;
+      if (isScrollableInOptions(e.target, e)) return;
       e.preventDefault();
     };
 
@@ -234,7 +313,7 @@
   }
 
   // ───────────────────────── Auth ─────────────────────────
-  const Auth = window.Auth || null;
+  const Auth = (typeof window !== "undefined" && window.Auth) ? window.Auth : null;
   let activeProfileId = null;
 
   let playerName = (migrateKeyIfNeeded(NAME_KEY, NAME_KEY_OLD) || "").trim().slice(0, 16);
@@ -527,9 +606,16 @@
   let hudBuffs = null;
   let _hudPosRAF = 0;
 
+  // Observers
+  let _hudRO = null;
+  let _hudAnchorRO = null;
+
   // ───────────────────────── Error handling global ─────────────────────────
+  let fatalStop = false;
+
   function showFatal(err) {
     try {
+      fatalStop = true;
       console.error(err);
       try { overlayHide(overlayLoading); } catch {}
       const msg =
@@ -583,15 +669,31 @@
 
   function escapeAttr(s) {
     const v = String(s ?? "");
+    // Sin replaceAll (compat)
     return v
-      .replaceAll("&", "&amp;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;");
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   }
 
-  // ───────────────────────── HUD FLOAT LAYER (v0.2.0) ─────────────────────────
+  // ───────────────────────── HUD FLOAT LAYER ─────────────────────────
+  function ensureCriticalCSS() {
+    if (document.getElementById("grCriticalCss")) return;
+    try {
+      const st = document.createElement("style");
+      st.id = "grCriticalCss";
+      st.textContent = `
+        #hudFloat{position:absolute;inset:0;pointer-events:none;z-index:40;}
+        #hudStatus{position:absolute;left:0;top:0;transform:translate(0,0);pointer-events:none;will-change:transform;}
+        .upFxCanvas{position:absolute;inset:0;pointer-events:none;}
+      `.trim();
+      document.head.appendChild(st);
+    } catch {}
+  }
+
   function ensureHudFloatLayer() {
+    ensureCriticalCSS();
     if (hudFloat && hudFloat.parentElement) return;
     const existing = $("hudFloat");
     if (existing) { hudFloat = existing; return; }
@@ -600,6 +702,12 @@
     if (!host) return;
 
     try {
+      // host debe ser contenedor de posicionamiento
+      try {
+        const cs = getComputedStyle(host);
+        if (cs.position === "static") host.style.position = "relative";
+      } catch {}
+
       const f = document.createElement("div");
       f.id = "hudFloat";
       f.className = "hudFloat";
@@ -634,22 +742,26 @@
     const refRect = ref.getBoundingClientRect?.();
     if (!refRect) return;
 
+    const vv = window.visualViewport || null;
+    const vvTop = vv ? Math.max(0, vv.offsetTop || 0) : 0;
+    const vvLeft = vv ? Math.max(0, vv.offsetLeft || 0) : 0;
+
     const anchor = getLevelProgressAnchor();
 
     // Fallback: esquina superior derecha del HUD
     let x = Math.max(0, Math.round(refRect.width - 260));
-    let y = 8;
+    let y = 8 + vvTop;
     let w = 260;
 
     if (anchor?.getBoundingClientRect) {
       const a = anchor.getBoundingClientRect();
-      x = Math.round(a.left - refRect.left);
-      y = Math.round(a.bottom - refRect.top + 6);
+      x = Math.round((a.left - refRect.left) + vvLeft);
+      y = Math.round((a.bottom - refRect.top) + 6 + vvTop);
       w = Math.round(a.width);
 
       // Si se sale por abajo, lo colocamos arriba del anchor
-      if ((y + 52) > refRect.height) {
-        y = Math.round(a.top - refRect.top - 52 - 6);
+      if ((y + 52) > (refRect.height + vvTop)) {
+        y = Math.round((a.top - refRect.top) - 52 - 6 + vvTop);
       }
       x = clampInt(x, 6, Math.max(6, Math.round(refRect.width - 6 - w)));
       y = clampInt(y, 6, Math.max(6, Math.round(refRect.height - 6 - 52)));
@@ -662,24 +774,19 @@
   }
 
   function shouldShowHudStatus() {
-    // Visible sólo cuando tiene sentido y no molesta overlays “grandes”
     if (!running) return false;
     if (overlayUpgrades && !overlayUpgrades.hidden) return false;
     if (overlayOptions && !overlayOptions.hidden) return false;
     if (overlayGameOver && !overlayGameOver.hidden) return false;
     if (overlayLoading && !overlayLoading.hidden) return false;
     if (overlayError && !overlayError.hidden) return false;
-    // Pausa: lo dejamos visible (se ve útil), pero si lo prefieres oculto:
-    // if (overlayPaused && !overlayPaused.hidden) return false;
     return true;
   }
 
-  // ✅ HUD status (HP + Buffs) — en capa flotante
   function ensureHudStatusUI() {
     ensureHudFloatLayer();
     if (!hudFloat) return;
 
-    // Si ya existe en DOM (por HTML), reusarlo
     const existing = $("hudStatus");
     if (existing) {
       hudStatus = existing;
@@ -695,6 +802,7 @@
       const wrap = document.createElement("div");
       wrap.id = "hudStatus";
       wrap.className = "statusBar";
+      wrap.style.pointerEvents = "none";
 
       const hearts = document.createElement("div");
       hearts.id = "hudHearts";
@@ -712,6 +820,28 @@
       hudStatus = wrap;
       hudHearts = hearts;
       hudBuffs = buffs;
+    } catch {}
+  }
+
+  function installHudObservers() {
+    try {
+      if (window.ResizeObserver) {
+        if (!_hudRO && (hud || stage)) {
+          _hudRO = new ResizeObserver(() => scheduleHudStatusPosition());
+          _hudRO.observe(hud || stage);
+        }
+
+        const anchor = getLevelProgressAnchor();
+        if (!_hudAnchorRO && anchor) {
+          _hudAnchorRO = new ResizeObserver(() => scheduleHudStatusPosition());
+          _hudAnchorRO.observe(anchor);
+        }
+      }
+
+      window.visualViewport?.addEventListener?.("resize", scheduleHudStatusPosition, { passive: true });
+      window.visualViewport?.addEventListener?.("scroll", scheduleHudStatusPosition, { passive: true });
+
+      document.fonts?.ready?.then?.(() => scheduleHudStatusPosition()).catch?.(() => {});
     } catch {}
   }
 
@@ -832,6 +962,7 @@
     if (hudStatus) {
       hudStatus.hidden = !shouldShowHudStatus();
       hudStatus.classList.toggle("compact", isMobileLayout());
+      hudStatus.style.pointerEvents = "none";
     }
     updateHeartsUI();
     updateBuffsUI();
@@ -1461,12 +1592,12 @@
     if (upFxCanvas && upFxCanvas.parentElement) return;
 
     try {
-      // ✅ IMPORTANT: asegurar host en relative para que el canvas absolute no rompa layout
       host.style.position = host.style.position || "relative";
 
       const c = document.createElement("canvas");
       c.id = "upFxCanvas";
       c.className = "upFxCanvas";
+      c.style.pointerEvents = "none";
       host.appendChild(c);
 
       upFxCanvas = c;
@@ -1539,13 +1670,13 @@
     }
 
     const dt = dtMs / 1000;
-    const g = 520;
+    const g0 = 520;
     for (let i = upConfetti.length - 1; i >= 0; i--) {
       const p = upConfetti[i];
       p.life -= dtMs;
       if (p.life <= 0 || p.y > upFxH + 80) { upConfetti.splice(i, 1); continue; }
 
-      p.vy += g * dt;
+      p.vy += g0 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.rot += p.vr * dt;
@@ -1796,11 +1927,11 @@
 
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
-    g.addColorStop(0, "rgba(106,176,255,0.12)");
-    g.addColorStop(0.55, "rgba(106,176,255,0.06)");
-    g.addColorStop(1, "rgba(106,176,255,0.0)");
-    ctx.fillStyle = g;
+    const gg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
+    gg.addColorStop(0, "rgba(106,176,255,0.12)");
+    gg.addColorStop(0.55, "rgba(106,176,255,0.06)");
+    gg.addColorStop(1, "rgba(106,176,255,0.0)");
+    ctx.fillStyle = gg;
     ctx.beginPath();
     ctx.arc(cx, cy, rad * 1.15, 0, Math.PI * 2);
     ctx.fill();
@@ -1819,18 +1950,18 @@
   function drawShieldAura(cx, cy) {
     if (shields <= 0) return;
 
-    const phase = (running ? runTime : (performance.now() / 1000));
+    const phase = (running ? runTime : (pNow() / 1000));
     const pulse = 0.5 + 0.5 * Math.sin(phase * 3.6);
     const rad = cellPx * (0.78 + 0.06 * pulse);
 
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
 
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
-    g.addColorStop(0.0, "rgba(106,176,255,0.00)");
-    g.addColorStop(0.38, `rgba(106,176,255,${(0.10 + 0.06 * pulse).toFixed(3)})`);
-    g.addColorStop(1.0, "rgba(106,176,255,0.00)");
-    ctx.fillStyle = g;
+    const gg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
+    gg.addColorStop(0.0, "rgba(106,176,255,0.00)");
+    gg.addColorStop(0.38, `rgba(106,176,255,${(0.10 + 0.06 * pulse).toFixed(3)})`);
+    gg.addColorStop(1.0, "rgba(106,176,255,0.00)");
+    ctx.fillStyle = gg;
     ctx.beginPath();
     ctx.arc(cx, cy, rad * 1.15, 0, Math.PI * 2);
     ctx.fill();
@@ -1885,10 +2016,10 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
 
-    const g = ctx.createLinearGradient(0, 0, 0, cssCanvasH);
-    g.addColorStop(0, "#060610");
-    g.addColorStop(1, "#04040a");
-    ctx.fillStyle = g;
+    const bg = ctx.createLinearGradient(0, 0, 0, cssCanvasH);
+    bg.addColorStop(0, "#060610");
+    bg.addColorStop(1, "#04040a");
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
 
     if (bgStars.length) {
@@ -2054,7 +2185,6 @@
     updateVhUnit();
     applyRowsIfNeeded({ forceReset: false });
 
-    // ✅ v0.2.0: usar canvasWrap si existe (mejor control de “panel”)
     const host = canvasWrap || gameArea;
     const r = host.getBoundingClientRect();
     const availW = Math.max(240, Math.floor(r.width));
@@ -2147,7 +2277,7 @@
       active = true;
       sx = e.clientX;
       sy = e.clientY;
-      st = performance.now();
+      st = pNow();
       canvas.setPointerCapture?.(e.pointerId);
     });
 
@@ -2158,7 +2288,7 @@
 
       const dx = e.clientX - sx;
       const dy = e.clientY - sy;
-      const dt = performance.now() - st;
+      const dt = pNow() - st;
 
       const adx = Math.abs(dx), ady = Math.abs(dy);
       if (dt < 650 && (adx > 22 || ady > 22)) {
@@ -2407,6 +2537,7 @@
   }
 
   function frame(t) {
+    if (fatalStop) return;
     try {
       const dt = clamp(t - lastT, 0, 50);
       lastT = t;
@@ -2416,6 +2547,7 @@
       draw(dt);
     } catch (e) {
       showFatal(e);
+      return;
     }
     requestAnimationFrame(frame);
   }
@@ -2730,10 +2862,11 @@
 
   async function boot() {
     try {
-      const bootStartedAt = performance.now();
+      const bootStartedAt = pNow();
 
       cacheDOM();
 
+      // flags de “ya arrancó” (para index/repair-mode)
       window.__GRIDRUNNER_BOOTED = true;
       window.__GRIDROGUE_BOOTED = true;
 
@@ -2743,6 +2876,7 @@
 
       ensureUpgradeFxCanvas();
       ensureHudStatusUI();
+      installHudObservers();
 
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
@@ -2919,13 +3053,16 @@
       setupPWA();
       preloadSpritesWithTimeout(900);
 
+      // Perf sampling opcional (no rompe nada si no existe)
+      try { GRPerf?.start?.(); } catch {}
+
       resetRun(true);
 
-      lastT = performance.now();
+      lastT = pNow();
       requestAnimationFrame(frame);
 
       const SPLASH_MIN_MS = 1400;
-      const elapsed = performance.now() - bootStartedAt;
+      const elapsed = pNow() - bootStartedAt;
       const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
 
       setTimeout(async () => {
@@ -2943,6 +3080,9 @@
           updateStatusHUD();
         }
       });
+
+      // Cierra medición de boot si existe
+      try { perfEndBoot?.(); } catch {}
 
     } catch (e) {
       showFatal(e);

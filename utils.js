@@ -1,13 +1,11 @@
-/* utils.js — Grid Rogue v0.2.0
+/* utils.js — Grid Rogue v0.2.0 (UPDATED+HARDENED)
    Helpers compartidos (clamps, DOM, overlays, viewport-fix móvil, scroll-lock, etc.)
-   ✅ v0.2.0:
-   - HUD helpers actualizados al layout nuevo:
-     - Prioriza #hudHearts y #hudBuffs (dentro de #hudFloat)
-     - Mantiene fallback a IDs legacy (#hpHearts / #buffBadges / #hpText)
-     - Si falta el layout nuevo, lo crea en #combo dentro del HUD sin romper nada
-   - Buff badges: dataset kind + soporte para timer y contador
-   - overlay fadeIn/fadeOut compatible con styles.css
-   - Exporta canLS + alias window.Utils para compat con builds anteriores
+   ✅ HUD helpers robustos (layout nuevo + fallback legacy + autocreación sin romper)
+   ✅ overlay fadeIn/fadeOut compatible con styles.css
+   ✅ viewport vars con visualViewport + fallback + fix iOS (100vh)
+   ✅ scroll-lock con contador (no rompe overlays encadenados)
+   ✅ canLS/ls helpers con fallback RAM si LS bloqueado
+   ✅ Exporta window.GRUtils + alias window.Utils (compat)
 */
 (() => {
   "use strict";
@@ -16,8 +14,12 @@
 
   // ───────────────────────── Math / Random ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const clampInt = (v, a, b) =>
-    (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : (a | 0));
+  const clampInt = (v, a, b) => {
+    v = Number(v);
+    if (!Number.isFinite(v)) v = a;
+    v = v | 0;
+    return Math.max(a | 0, Math.min(b | 0, v));
+  };
   const lerp = (a, b, t) => a + (b - a) * t;
   const invLerp = (a, b, v) => (a === b ? 0 : (v - a) / (b - a));
   const randi = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
@@ -69,18 +71,38 @@
     }
   }
 
-  function lsGet(key, fallback) {
-    try {
-      const v = localStorage.getItem(key);
-      return v == null ? fallback : safeParse(v, fallback);
-    } catch {
-      return fallback;
+  // Fallback RAM cuando LS está bloqueado (Safari privado, policies, etc.)
+  const __RAM = Object.create(null);
+
+  function lsGetRaw(key) {
+    try { return localStorage.getItem(key); } catch { return (__RAM[key] ?? null); }
+  }
+  function lsSetRaw(key, value) {
+    try { localStorage.setItem(key, String(value ?? "")); return true; } catch {
+      __RAM[key] = String(value ?? "");
+      return false;
     }
   }
-  function lsSet(key, value) {
-    try { localStorage.setItem(key, safeStringify(value, "")); return true; } catch { return false; }
+  function lsDelRaw(key) {
+    try { localStorage.removeItem(key); delete __RAM[key]; return true; } catch {
+      delete __RAM[key];
+      return false;
+    }
   }
-  function lsDel(key) { try { localStorage.removeItem(key); return true; } catch { return false; } }
+
+  function lsGet(key, fallback) {
+    const raw = lsGetRaw(key);
+    if (raw == null) return fallback;
+    return safeParse(raw, fallback);
+  }
+  function lsSet(key, value) {
+    const raw = safeStringify(value, "");
+    if (!raw) return false;
+    return lsSetRaw(key, raw) || !canLS();
+  }
+  function lsDel(key) {
+    return lsDelRaw(key) || !canLS();
+  }
 
   // ───────────────────────── DOM helpers ─────────────────────────
   const $ = (id) => document.getElementById(id);
@@ -154,6 +176,7 @@
   function pulse(el, className = "pulse", ms = 220) {
     if (!el) return;
     el.classList.remove(className);
+    // fuerza reflow
     void el.offsetHeight;
     el.classList.add(className);
     if (ms > 0) setTimeout(() => el.classList.remove(className), ms);
@@ -199,6 +222,10 @@
 
       document.documentElement.style.setProperty("--vh", `${h * 0.01}px`);
       document.documentElement.style.setProperty("--vw", `${w * 0.01}px`);
+
+      // extra: offset por teclado/scroll del visualViewport (iOS)
+      const offY = (vv && Number.isFinite(vv.offsetTop)) ? vv.offsetTop : 0;
+      document.documentElement.style.setProperty("--vvoffY", `${offY}px`);
 
       if (document.body?.dataset) {
         document.body.dataset.mobile = isMobileLike() ? "1" : "0";
@@ -267,28 +294,32 @@
 
   // ───────────────────────── HUD helpers (v0.2.0) ─────────────────────────
   function ensureHudNodes() {
-    // v0.2.0: el layout nuevo vive dentro de .combo:
-    // .hudFloat  -> #hudHearts + #hudBuffs
+    // Layout esperado:
+    // #hud (dentro de #canvasWrap)
+    //   .combo
+    //     #hudFloat
+    //       #hudHearts
+    //       .buffDock > #hudBuffs
     const hud = $("hud");
     if (!hud) return;
 
     const combo = qs(".combo", hud) || $("combo") || null;
     if (!combo) return;
 
+    // Si ya existe el layout nuevo, ok
     let hudHearts = $("hudHearts");
     let hudBuffs = $("hudBuffs");
     if (hudHearts && hudBuffs) return;
 
-    // Si hay legacy (old builds) no duplicamos, lo usaremos como fallback.
+    // Si solo existe legacy, no lo duplicamos (lo usaremos como fallback)
     const legacyHearts = $("hpHearts");
     const legacyBuffs = $("buffBadges");
     if ((!hudHearts && legacyHearts) || (!hudBuffs && legacyBuffs)) return;
 
-    // Crear dock flotante (no empuja la barra de nivel)
+    // Crear el flotante si falta (no empuja la barra de nivel)
     let hudFloat = $("hudFloat");
     if (!hudFloat) {
       hudFloat = createEl("div", { id: "hudFloat", class: "hudFloat" });
-      // Insertar antes del levelProg si existe, sino al final del combo
       const levelProg = $("levelProg");
       if (levelProg && levelProg.parentElement === combo) combo.insertBefore(hudFloat, levelProg);
       else combo.appendChild(hudFloat);
@@ -309,14 +340,17 @@
   }
 
   function getHeartsEl() {
+    // Prioridad layout nuevo
     return $("hudHearts") || $("hpHearts") || null;
   }
   function getBuffsEl() {
+    // Prioridad layout nuevo
     return $("hudBuffs") || $("buffBadges") || null;
   }
 
   function setHP(current, max = 10) {
     ensureHudNodes();
+
     const heartsEl = getHeartsEl();
     if (!heartsEl) return;
 
@@ -325,15 +359,37 @@
 
     clearEl(heartsEl);
 
+    // Si estamos en layout nuevo, añadimos icono y contenedor como en tu CSS
+    const isNew = heartsEl.id === "hudHearts";
+    if (isNew) {
+      heartsEl.appendChild(createEl("span", { class: "ms hpIcon", text: "favorite", "aria-hidden": "true" }));
+      const row = createEl("span", { class: "hpHearts", "aria-hidden": "true" });
+      for (let i = 0; i < mx; i++) {
+        const full = i < cur;
+        row.appendChild(createEl("span", { class: `ms heart ${full ? "full" : "empty"}`, text: "favorite" }));
+      }
+      heartsEl.appendChild(row);
+
+      // Si mx es grande, añade “+N” para no romper UI
+      if (mx > 12) {
+        const more = createEl("span", { class: "hpMore", text: `+${mx - 12}` });
+        // visual: mostramos 12 corazones y el resto como +N
+        // (para evitar overflow en móviles)
+        while (row.childNodes.length > 12) row.removeChild(row.lastChild);
+        heartsEl.appendChild(more);
+      }
+
+      heartsEl.appendChild(createEl("span", { class: "hpText", text: `${cur}/${mx}` }));
+      return;
+    }
+
+    // Legacy simple
     for (let i = 0; i < mx; i++) {
       const full = i < cur;
       heartsEl.appendChild(
-        createEl("span", { class: `heart ${full ? "full" : "empty"}`, "aria-hidden": "true" }, [
-          createEl("span", { class: "ms", text: "favorite" })
-        ])
+        createEl("span", { class: `ms heart ${full ? "full" : "empty"}`, text: "favorite", "aria-hidden": "true" })
       );
     }
-
     const hpText = $("hpText");
     if (hpText) hpText.textContent = `${cur}/${mx}`;
   }
@@ -341,6 +397,7 @@
   // buffs: [{ key, kind, icon, rarity, count, timeLeft, duration, title/name }]
   function setBuffs(buffs) {
     ensureHudNodes();
+
     const wrap = getBuffsEl();
     if (!wrap) return;
 
@@ -364,21 +421,21 @@
         Number.isFinite(duration) && duration > 0 &&
         Number.isFinite(timeLeft) && timeLeft >= 0;
 
-      const pct = hasTimer ? clamp(timeLeft / duration, 0, 1) : 1;
-
       const badge = createEl("div", {
         class: "buffBadge",
         title: String(b.title || b.name || key),
         dataset: { key, rarity, kind },
       });
 
-      badge.style.setProperty("--pct", String(pct));
+      // Icono
       badge.appendChild(createEl("span", { class: "ms bIcon", text: icon, "aria-hidden": "true" }));
 
+      // Timer (si hay)
       const timeEl = createEl("span", { class: "bTime", text: hasTimer ? fmtSeconds(timeLeft) : "" });
       if (!hasTimer) timeEl.hidden = true;
       badge.appendChild(timeEl);
 
+      // Count (si >1)
       const countEl = createEl("span", { class: "bCount", text: String(count) });
       if (count <= 1) countEl.hidden = true;
       badge.appendChild(countEl);
@@ -403,6 +460,7 @@
     // JSON/Storage
     safeParse, safeStringify,
     canLS, lsGet, lsSet, lsDel,
+    lsGetRaw, lsSetRaw, lsDelRaw,
 
     // DOM
     $, qs, qsa,
