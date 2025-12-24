@@ -332,11 +332,11 @@
   }
   async function preloadSpritesWithTimeout(timeoutMs = 900) {
     const keys = [
-      ["coin", "tile_coin.svg"],
-      ["gem", "tile_gem.svg"],
-      ["bonus", "tile_bonus.svg"],
-      ["trap", "tile_trap.svg"],
-      ["block", "tile_block.svg"],
+      ["coin", "tile_coin.png"],
+      ["gem", "tile_gem.png"],
+      ["bonus", "tile_bonus.png"],
+      ["trap", "tile_trap.png"],
+      ["block", "tile_block.png"],
       ["player", "tile_player.svg"], // si no existe, fallback a cuadrado
     ];
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
