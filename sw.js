@@ -1,5 +1,5 @@
 /* sw.js — Grid Rogue (v0.1.9)
-   ✅ Igual que v0.1.8 pero con bump de VERSION.
+   ✅ Igual que v0.1.8 pero con bump de VERSION + compat con rendiment.js
    - GH Pages/subcarpetas: usa self.registration.scope y URLs absolutas
    - Precache core robusto (index obligatorio, resto best-effort)
    - Offline navegación: devuelve index.html
@@ -33,6 +33,11 @@ const CORE_ASSETS = [
   new URL("audio_sys.js", SCOPE).toString(),
   new URL("audio.js", SCOPE).toString(),
   new URL("auth.js", SCOPE).toString(),
+
+  // ✅ Rendimiento / perf (debe ir antes de app.js en index.html)
+  new URL("rendiment.js", SCOPE).toString(),
+
+  // Main
   new URL("app.js", SCOPE).toString(),
 
   // Manifest

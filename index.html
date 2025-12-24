@@ -1,10 +1,3 @@
-<!-- index.html — Grid Rogue v0.1.9 (COMPAT con app.js + styles.css)
-  ✅ Claves de compatibilidad:
-  - IDs EXACTOS que app.js usa para HUD de vida/buffs: #hudStatus / #hudHearts / #hudBuffs (evita duplicidades).
-  - Mantiene todos los IDs que cachea app.js (pills, overlays, botones, inputs, etc.).
-  - Incluye selector de idioma (#optLang) para que app.js NO lo inyecte y no duplique filas.
-  - Sin markup “extra” de corazones pre-render (app.js rellena #hudHearts).
--->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -20,17 +13,13 @@
 
   <title>Grid Rogue</title>
 
-  <!-- ✅ Version global (app.js la lee) -->
   <script>
     window.APP_VERSION = "0.1.9";
   </script>
 
-  <!-- ✅ Repair Mode (NO depende de app.js) -->
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
-
-      // Compat interna
       window.__GRIDRUNNER_NOSW = qs.has("nosw");
 
       async function nukeSWAndCaches() {
@@ -60,7 +49,6 @@
     })();
   </script>
 
-  <!-- Material Symbols -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -84,7 +72,6 @@
   </noscript>
 
   <div id="app">
-    <!-- Topbar -->
     <header class="topbar" role="banner">
       <div class="brand">
         <div class="brandDot" aria-hidden="true"></div>
@@ -94,7 +81,6 @@
         </div>
       </div>
 
-      <!-- Mini-stats -->
       <div class="miniStats" aria-label="Estado">
         <span class="pill mini" id="pillScore" title="Score">
           <span class="ms" aria-hidden="true">flag</span>
@@ -133,12 +119,10 @@
           <span class="pv">Update</span>
         </span>
 
-        <!-- opcionales -->
         <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
         <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
       </div>
 
-      <!-- Acciones -->
       <div class="actions" aria-label="Acciones">
         <button class="iconBtn small" id="btnPause" type="button" title="Pausa">
           <span class="ms" aria-hidden="true">pause</span>
@@ -150,11 +134,9 @@
       </div>
     </header>
 
-    <!-- Stage -->
     <main class="stage" id="stage" role="main">
       <div class="canvasWrap" id="canvasWrap">
 
-        <!-- HUD -->
         <div class="hud" id="hud" aria-hidden="true">
           <div class="combo">
             <div class="comboTop">
@@ -170,11 +152,7 @@
               Completa la secuencia para subir el multiplicador.
             </div>
 
-            <!-- ✅ LEVEL + HP + BUFFS -->
-            <!-- Importante: class .levelProgress para que ensureHudStatusUI pueda anclar si lo necesita -->
             <div class="levelProg levelProgress" id="levelProg">
-              <!-- ✅ HUD Status (COMPAT con app.js) -->
-              <!-- app.js actualiza #hudHearts (innerHTML) y #hudBuffs (badges) -->
               <div class="statusBar" id="hudStatus">
                 <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
                 <div class="buffBar" id="hudBuffs" aria-label="Mejoras activas"></div>
@@ -197,7 +175,6 @@
           <div class="toast" id="toast" hidden aria-live="polite"></div>
         </div>
 
-        <!-- Área de juego -->
         <div class="gameArea" id="gameArea">
           <div class="railFrame" id="railFrame" aria-hidden="true">
             <canvas
@@ -211,7 +188,6 @@
             ></canvas>
           </div>
 
-          <!-- Dpad -->
           <div class="dpad" id="dpad" hidden>
             <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
               <span class="ms" aria-hidden="true">keyboard_arrow_up</span>
@@ -230,7 +206,6 @@
           </div>
         </div>
 
-        <!-- LOADING -->
         <section class="overlay" id="overlayLoading">
           <div class="panel">
             <div class="splash">
@@ -267,7 +242,6 @@
           </div>
         </section>
 
-        <!-- START -->
         <section class="overlay" id="overlayStart" hidden>
           <div class="panel">
             <div class="splash splashCompact">
@@ -320,7 +294,6 @@
           </div>
         </section>
 
-        <!-- PAUSED -->
         <section class="overlay" id="overlayPaused" hidden>
           <div class="panel">
             <div class="panelHead">
@@ -334,7 +307,6 @@
           </div>
         </section>
 
-        <!-- UPGRADES -->
         <section class="overlay" id="overlayUpgrades" hidden>
           <div class="panel wide upgradesPanel">
             <div class="panelHead">
@@ -356,7 +328,6 @@
           </div>
         </section>
 
-        <!-- GAME OVER -->
         <section class="overlay" id="overlayGameOver" hidden>
           <div class="panel">
             <div class="panelHead">
@@ -383,7 +354,6 @@
           </div>
         </section>
 
-        <!-- OPTIONS -->
         <section class="overlay" id="overlayOptions" hidden>
           <div class="panel wide">
             <div class="panelHead">
@@ -394,7 +364,6 @@
             </div>
 
             <div class="options" id="optionsBody">
-              <!-- AUDIO -->
               <div class="optGroupTitle">
                 <span class="ms" aria-hidden="true">volume_up</span>
                 <span>Audio</span>
@@ -432,7 +401,6 @@
                 <span class="tiny muted">Desbloquea audio si el móvil lo bloquea</span>
               </div>
 
-              <!-- GAME -->
               <div class="optGroupTitle optGroupSpacer">
                 <span class="ms" aria-hidden="true">tune</span>
                 <span>Juego</span>
@@ -459,7 +427,6 @@
                 <span class="mono" id="optFxValue">1.00</span>
               </div>
 
-              <!-- ✅ I18N (evita inyección/duplicidad en app.js) -->
               <div class="optGroupTitle optGroupSpacer">
                 <span class="ms" aria-hidden="true">translate</span>
                 <span>Idioma</span>
@@ -470,7 +437,6 @@
                 <select id="optLang" class="select"></select>
               </div>
 
-              <!-- PWA -->
               <div class="optGroupTitle optGroupSpacer">
                 <span class="ms" aria-hidden="true">phone_iphone</span>
                 <span>PWA</span>
@@ -494,7 +460,6 @@
           </div>
         </section>
 
-        <!-- ERROR -->
         <section class="overlay" id="overlayError" hidden>
           <div class="panel">
             <div class="panelHead">
@@ -512,7 +477,6 @@
     </main>
   </div>
 
-  <!-- ✅ Failsafe inline (NO depende de app.js) -->
   <script>
     (function(){
       const $ = (id)=>document.getElementById(id);
@@ -556,12 +520,15 @@
     })();
   </script>
 
-  <!-- ORDEN DE CARGA (v0.1.9) -->
   <script src="./utils.js?v=0.1.9" defer></script>
   <script src="./localization.js?v=0.1.9" defer></script>
   <script src="./auth.js?v=0.1.9" defer></script>
   <script src="./audio_sys.js?v=0.1.9" defer></script>
   <script src="./audio.js?v=0.1.9" defer></script>
+
+  <!-- ✅ Si tu archivo se llama rendiment.js, va aquí y ANTES de app.js -->
+  <script src="./rendiment.js?v=0.1.9" defer></script>
+
   <script src="./app.js?v=0.1.9" defer></script>
 </body>
 </html>

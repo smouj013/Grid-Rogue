@@ -1,4 +1,4 @@
-/* app.js — Grid Rogue v0.1.9 STABLE+FULLSCREEN + AUDIO + I18N
+/* app.js — Grid Rogue v0.1.9 (STABLE+FULLSCREEN + AUDIO + I18N)
    v0.1.9:
    - Player con VIDA: empieza con 10 corazones (HP). Trampa (cuadrado rojo) = -1 corazón.
    - UI HP + Buff Badges junto a la barra de nivel (se crea si no existe en el HTML).
@@ -11,9 +11,8 @@
    - La lógica de TRAMPA se centraliza en applyTrapHit()/applyCollect() (sin doble lógica vieja).
    - applyCollect() acepta coords opcionales y delega en applyTrapHit si el tipo es Trap.
 
-   CSS CLEANUP:
-   - Eliminado CSS inline de UI (HUD hearts/badges, options lang row, upgrade fx canvas, etc.).
-   - Todo el estilo visual de esos elementos está en styles.css mediante clases/ids.
+   SPRITES (compat):
+   - Precarga robusta: intenta .svg y .png (según lo que exista en /assets/sprites).
 */
 
 (() => {
@@ -318,7 +317,7 @@
     } catch {}
   }
 
-  // ───────────────────────── Sprites optional ─────────────────────────
+  // ───────────────────────── Sprites optional (robusto .svg/.png) ─────────────────────────
   const sprites = { ready: false, map: new Map() };
   function spriteUrl(name) { return new URL(`./assets/sprites/${name}`, location.href).toString(); }
   function loadImage(url) {
@@ -330,23 +329,32 @@
       img.src = url;
     });
   }
+
+  async function tryLoadFirst(key, files) {
+    for (const file of files) {
+      try {
+        const img = await loadImage(spriteUrl(file));
+        sprites.map.set(key, img);
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+
   async function preloadSpritesWithTimeout(timeoutMs = 900) {
-    const keys = [
-      ["coin", "tile_coin.png"],
-      ["gem", "tile_gem.png"],
-      ["bonus", "tile_bonus.png"],
-      ["trap", "tile_trap.png"],
-      ["block", "tile_block.png"],
-      ["player", "tile_player.svg"], // si no existe, fallback a cuadrado
+    const candidates = [
+      ["coin",  ["tile_coin.svg",  "tile_coin.png"]],
+      ["gem",   ["tile_gem.svg",   "tile_gem.png"]],
+      ["bonus", ["tile_bonus.svg", "tile_bonus.png"]],
+      ["trap",  ["tile_trap.svg",  "tile_trap.png"]],
+      ["block", ["tile_block.svg", "tile_block.png"]],
+      // player es opcional: si no existe, fallback a cuadrado
+      ["player", ["tile_player.svg", "tile_player.png", "tile_hero.svg", "tile_hero.png"]],
     ];
+
     const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
     try {
-      const tasks = keys.map(async ([k, file]) => {
-        try {
-          const img = await loadImage(spriteUrl(file));
-          sprites.map.set(k, img);
-        } catch {}
-      });
+      const tasks = candidates.map(([k, list]) => tryLoadFirst(k, list));
       await Promise.race([Promise.all(tasks), timeout]);
       sprites.ready = sprites.map.size > 0;
     } catch {

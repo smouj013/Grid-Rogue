@@ -5,6 +5,9 @@
    - Rarity helpers para duraciones (útil para Imán con tiempo por rareza)
    - overlay fadeIn/fadeOut compatible con styles.css (animaciones)
    - Exporta canLS + alias window.Utils para compat con builds anteriores
+   ✅ Patch compat UI:
+   - Prioriza IDs NUEVOS: #hudStatus / #hudHearts / #hudBuffs
+   - Mantiene fallback a IDs viejos: #hpHearts / #hpText / #buffBadges
 */
 (() => {
   "use strict";
@@ -263,77 +266,77 @@
 
   // ───────────────────────── HUD helpers (v0.1.9) ─────────────────────────
   function ensureHudNodes() {
-    // Si alguien usa un index viejo, intentamos montar los nodos en #levelProg.
+    // ✅ Prioridad: IDs nuevos (index.html v0.1.9)
     const levelProg = $("levelProg");
     if (!levelProg) return;
 
-    let hpHearts = $("hpHearts");
-    let hpText = $("hpText");
-    let buffBadges = $("buffBadges");
+    let hudStatus = $("hudStatus");
+    let hudHearts = $("hudHearts");
+    let hudBuffs = $("hudBuffs");
 
-    if (hpHearts && hpText && buffBadges) return;
+    if (hudStatus && hudHearts && hudBuffs) return;
 
-    // crea bloque compatible con styles.css v0.1.9
-    let extras = $("levelExtras");
-    if (!extras) {
-      extras = createEl("div", { id: "levelExtras", class: "levelExtras" });
-      const progBar = levelProg.querySelector?.(".progBar");
-      if (progBar && progBar.parentNode === levelProg) levelProg.insertBefore(extras, progBar);
-      else levelProg.appendChild(extras);
+    // Si existen los viejos, no forzamos duplicados: los usaremos como fallback.
+    const legacyHearts = $("hpHearts");
+    const legacyBuffs = $("buffBadges");
+    if ((!hudHearts && legacyHearts) || (!hudBuffs && legacyBuffs)) {
+      return;
     }
 
-    let hpWrap = $("hpWrap");
-    if (!hpWrap) {
-      hpWrap = createEl("div", { id: "hpWrap", class: "hpWrap", title: "Vida" });
-      extras.appendChild(hpWrap);
+    // Crea el bloque NUEVO dentro de #levelProg (sin tocar el resto del layout)
+    if (!hudStatus) {
+      hudStatus = createEl("div", { id: "hudStatus", class: "statusBar" });
+      // Insertar arriba del todo para no romper el layout del progreso
+      levelProg.insertBefore(hudStatus, levelProg.firstChild);
     }
 
-    if (!hpHearts) {
-      hpHearts = createEl("div", { id: "hpHearts", class: "hearts", "aria-label": "Corazones" });
-      hpWrap.appendChild(hpHearts);
-    }
-    if (!hpText) {
-      hpText = createEl("div", { id: "hpText", class: "hpText tiny muted", text: "10/10" });
-      hpWrap.appendChild(hpText);
+    if (!hudHearts) {
+      hudHearts = createEl("div", { id: "hudHearts", class: "hpWrap", "aria-label": "Vida" });
+      hudStatus.appendChild(hudHearts);
     }
 
-    let buffsWrap = $("buffsWrap");
-    if (!buffsWrap) {
-      buffsWrap = createEl("div", { id: "buffsWrap", class: "buffsWrap", title: "Mejoras activas" });
-      extras.appendChild(buffsWrap);
+    if (!hudBuffs) {
+      hudBuffs = createEl("div", { id: "hudBuffs", class: "buffBar", "aria-label": "Mejoras activas" });
+      hudStatus.appendChild(hudBuffs);
     }
+  }
 
-    if (!buffBadges) {
-      buffBadges = createEl("div", { id: "buffBadges", class: "buffBadges", "aria-label": "Badges de mejoras" });
-      buffsWrap.appendChild(buffBadges);
-    }
+  function getHeartsEl() {
+    return $("hudHearts") || $("hpHearts") || null;
+  }
+  function getBuffsEl() {
+    return $("hudBuffs") || $("buffBadges") || null;
   }
 
   function setHP(current, max = 10) {
     ensureHudNodes();
-    const hpHearts = $("hpHearts");
-    const hpText = $("hpText");
-    if (!hpHearts || !hpText) return;
+    const heartsEl = getHeartsEl();
+    if (!heartsEl) return;
 
     const cur = clampInt(current, 0, 999);
     const mx = clampInt(max, 1, 999);
 
-    clearEl(hpHearts);
+    clearEl(heartsEl);
+
+    // Render corazones (mismo markup que antes)
     for (let i = 0; i < mx; i++) {
       const full = i < cur;
-      hpHearts.appendChild(
+      heartsEl.appendChild(
         createEl("span", { class: `heart ${full ? "full" : "empty"}`, "aria-hidden": "true" }, [
           createEl("span", { class: "ms", text: "favorite" })
         ])
       );
     }
-    hpText.textContent = `${cur}/${mx}`;
+
+    // Compat: si existe texto legacy, actualiza
+    const hpText = $("hpText");
+    if (hpText) hpText.textContent = `${cur}/${mx}`;
   }
 
   // buffs: [{ key, icon, rarity, count, timeLeft, duration, title/name }]
   function setBuffs(buffs) {
     ensureHudNodes();
-    const wrap = $("buffBadges");
+    const wrap = getBuffsEl();
     if (!wrap) return;
 
     const arr = Array.isArray(buffs) ? buffs : [];
