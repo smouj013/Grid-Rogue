@@ -33,13 +33,10 @@
 
   --overlayBack: rgba(0,0,0,0.50);
 
-  /* HUD: bloque estable, y el float (HP+BUFFS) NO empuja la barra */
-  --hudMax: clamp(120px, 18svh, 200px);
-
   --panelMaxW: 560px;
   --panelWideMaxW: 980px;
 
-  /* Rail: el “panel” del juego se expande si hay espacio */
+  /* Panel del juego se expande si hay pantalla */
   --railMaxW: 1600px;
   --railPad: 10px;
   --railPadDesktop: 18px;
@@ -53,9 +50,11 @@
   --hpFull: rgba(255,80,110,0.92);
   --hpEmpty: rgba(255,255,255,0.18);
 
-  /* Aspect ratio de tu grid (ajústalo si cambias cols/rows) */
+  /* Ajusta si cambias cols/rows */
   --gameAR: 8 / 16;
 }
+
+/* ───────────────────────── Base ───────────────────────── */
 
 *{ box-sizing:border-box; }
 html, body{ height:100%; }
@@ -144,6 +143,11 @@ input[type="range"]{ accent-color: var(--accent); }
 
 [hidden]{ display:none !important; }
 
+/* Evita zoom móvil en inputs */
+@media (max-width: 520px){
+  input, select, textarea{ font-size:16px; }
+}
+
 #app{
   height:100vh;
   height:calc(var(--vh) * 100);
@@ -152,11 +156,6 @@ input[type="range"]{ accent-color: var(--accent); }
   display:flex;
   flex-direction:column;
   min-height:0;
-}
-
-/* Evita zoom iOS/Android al focusear inputs en overlays */
-@media (max-width: 520px){
-  input, select, textarea{ font-size:16px; }
 }
 
 /* ───────────────────────── Topbar ───────────────────────── */
@@ -240,6 +239,7 @@ input[type="range"]{ accent-color: var(--accent); }
   box-shadow: 0 10px 22px rgba(0,0,0,0.22);
 }
 .pillBtn:active{ transform: translateY(1px); }
+
 .pill.mini{ padding:6px 9px; font-size:12px; }
 .pill.mini .ms{ font-size:16px; }
 
@@ -339,50 +339,34 @@ input[type="range"]{ accent-color: var(--accent); }
   flex-direction:column;
   align-items:center;
   justify-content:flex-start;
-  gap:10px;
-  padding: 0;
+  gap:12px;
 }
 
-/* Orden estable, sin “HUD encima de HUD” */
-.gameArea > .hud{ order: 0; }
-.gameArea > .railFrame{ order: 1; }
-.gameArea > .dpad{ order: 2; }
-
-/* ───────────────────────── HUD ───────────────────────── */
+/* ───────────────────────── HUD (equilibrado) ───────────────────────── */
 
 .hud{
   position:relative;
   z-index:12;
-  width:100%;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:flex-start;
-  gap:10px;
-
-  max-height: var(--hudMax);
+  width: min(100%, var(--panelWideMaxW));
   pointer-events:none;
 }
 
-.combo{
+.hudCard{
   width:100%;
-  max-width: var(--panelWideMaxW);
-  padding: 14px 14px;
+  padding: 12px 12px;
   border-radius: var(--r2);
   background: var(--glass);
   border:1px solid rgba(255,255,255,0.10);
   backdrop-filter: blur(12px);
   box-shadow: 0 12px 26px rgba(0,0,0,0.30);
-  overflow: visible;
-
   display:flex;
   flex-direction:column;
   gap:10px;
 }
 
-.comboTop{
+.hudTop{
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   justify-content:space-between;
   gap:10px;
 }
@@ -393,23 +377,7 @@ input[type="range"]{ accent-color: var(--accent); }
   gap:8px;
   align-items:center;
   min-width:0;
-}
-
-.chip{
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding:6px 10px;
-  border-radius:999px;
-  border:1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.04);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.18);
-  white-space:nowrap;
-  font-size:12px;
-}
-.chip .ms{ font-size:16px; }
-.chip{
-  border-color: color-mix(in srgb, var(--chipc, rgba(255,255,255,0.18)) 55%, rgba(255,255,255,0.10));
+  flex:1 1 auto;
 }
 
 .comboTimer{
@@ -422,6 +390,7 @@ input[type="range"]{ accent-color: var(--accent); }
   border:1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.04);
   font-size:12px;
+  white-space:nowrap;
 }
 
 .comboHint{
@@ -429,15 +398,13 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.72);
 }
 
-/* HP + BUFFS fuera del “combo”, no tocan la barra */
-.hudFloat{
-  width:100%;
-  max-width: var(--panelWideMaxW);
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
+/* corazones | nivel | buffs */
+.hudStatus{
+  display:grid;
+  grid-template-columns: auto minmax(240px, 1fr) auto;
+  align-items:center;
   gap:10px;
-  pointer-events:none;
+  min-width:0;
 }
 
 /* HP */
@@ -453,6 +420,7 @@ input[type="range"]{ accent-color: var(--accent); }
   backdrop-filter: blur(10px);
   flex:0 0 auto;
 }
+
 .hpWrap::before{
   content:"favorite";
   font-family:"Material Symbols Rounded";
@@ -473,10 +441,7 @@ input[type="range"]{ accent-color: var(--accent); }
   font-variation-settings:"FILL" 1, "wght" 700, "GRAD" 0, "opsz" 28;
 }
 .heart.full{ color: var(--hpFull); }
-.heart.empty{
-  color: var(--hpEmpty);
-  opacity: 0.9;
-}
+.heart.empty{ color: var(--hpEmpty); opacity: 0.9; }
 
 .hpMore{
   font-size:12px;
@@ -487,83 +452,15 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.78);
 }
 
-/* BUFFS: sin wrap, scroll horizontal suave; nunca “empuja” alturas */
-.buffDock{
-  display:flex;
-  justify-content:flex-end;
-  min-width:0;
-  flex:1;
-}
-.buffBar{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  justify-content:flex-end;
-  flex-wrap:nowrap;
-  min-width:0;
-
-  max-width: min(62vw, 640px);
-  overflow-x:auto;
-  overflow-y:hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  padding-bottom: 2px;
-  mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
-}
-.buffBar::-webkit-scrollbar{ display:none; }
-
-.buffBadge{
-  position:relative;
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  padding:7px 9px;
-  border-radius:999px;
-  border:1px solid rgba(255,255,255,0.10);
-  background: rgba(0,0,0,0.18);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.18);
-  flex:0 0 auto;
-}
-.buffBadge .bIcon{ font-size:16px; }
-.buffBadge .bTime{
-  font-size:12px;
-  color: rgba(255,255,255,0.78);
-}
-.buffBadge .bCount{
-  position:absolute;
-  right:-6px;
-  top:-6px;
-  min-width:18px;
-  height:18px;
-  padding:0 5px;
-  border-radius:999px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  font-size:11px;
-  font-weight:900;
-  border:1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.10);
-  color: rgba(255,255,255,0.92);
-}
-
-.buffBadge[data-kind="magnet"]{ border-color: rgba(106,176,255,0.28); }
-.buffBadge[data-kind="shield"]{ border-color: rgba(106,176,255,0.28); }
-.buffBadge[data-kind="boost"]{ border-color: rgba(255,211,90,0.28); }
-.buffBadge[data-kind="resist"]{ border-color: rgba(46,242,160,0.28); }
-.buffBadge[data-kind="zone"]{ border-color: rgba(214,133,255,0.28); }
-.buffBadge[data-kind="reroll"]{ border-color: rgba(255,211,90,0.28); }
-.buffBadge[data-kind="hp"]{ border-color: rgba(255,120,160,0.28); }
-
-/* Progreso (barra nivel) */
+/* Nivel (centro) */
 .levelProg,
 .levelProgress{
   border-radius: 14px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(255,255,255,0.03);
-  padding: 12px;
+  padding: 10px 10px;
   overflow: visible;
+  min-width:0;
 }
 
 .levelRow{
@@ -587,19 +484,119 @@ input[type="range"]{ accent-color: var(--accent); }
 #levelProgPct{ white-space:nowrap; }
 
 .progBar{
-  margin-top:10px;
+  margin-top:8px;
   height:10px;
   border-radius:999px;
   overflow:hidden;
   background: rgba(255,255,255,0.06);
   border:1px solid rgba(255,255,255,0.08);
 }
+
 .progFill{
   height:100%;
   width:0%;
   border-radius:999px;
   background: linear-gradient(90deg, var(--accent), var(--accent2));
   box-shadow: 0 10px 22px rgba(0,0,0,0.22);
+}
+
+/* Buffs derecha (scroll horizontal, NO wrap) */
+.buffDock{
+  display:flex;
+  justify-content:flex-end;
+  min-width:0;
+}
+
+.buffBar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  justify-content:flex-end;
+  flex-wrap:nowrap;
+  min-width:0;
+
+  max-width: clamp(220px, 34vw, 620px);
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+}
+.buffBar::-webkit-scrollbar{ display:none; }
+
+.buffBadge{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:7px 9px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.18);
+  flex:0 0 auto;
+}
+.buffBadge .bIcon{ font-size:16px; }
+.buffBadge .bTime{ font-size:12px; color: rgba(255,255,255,0.78); }
+.buffBadge .bCount{
+  position:absolute;
+  right:-6px;
+  top:-6px;
+  min-width:18px;
+  height:18px;
+  padding:0 5px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:900;
+  border:1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.92);
+}
+.buffBadge[data-kind="magnet"]{ border-color: rgba(106,176,255,0.28); }
+.buffBadge[data-kind="shield"]{ border-color: rgba(106,176,255,0.28); }
+.buffBadge[data-kind="boost"]{ border-color: rgba(255,211,90,0.28); }
+.buffBadge[data-kind="resist"]{ border-color: rgba(46,242,160,0.28); }
+.buffBadge[data-kind="zone"]{ border-color: rgba(214,133,255,0.28); }
+.buffBadge[data-kind="reroll"]{ border-color: rgba(255,211,90,0.28); }
+.buffBadge[data-kind="hp"]{ border-color: rgba(255,120,160,0.28); }
+
+/* Chips */
+.chip{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.18);
+  white-space:nowrap;
+  font-size:12px;
+}
+.chip .ms{ font-size:16px; }
+.chip{
+  border-color: color-mix(in srgb, var(--chipc, rgba(255,255,255,0.18)) 55%, rgba(255,255,255,0.10));
+}
+
+/* Mobile HUD: hp + buffs arriba, level abajo full */
+@media (max-width:560px){
+  .hudCard{ padding: 12px; }
+  .hudStatus{
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "hp buffs"
+      "level level";
+    align-items:start;
+  }
+  .hpWrap{ grid-area: hp; }
+  #levelProg{ grid-area: level; }
+  .buffDock{ grid-area: buffs; }
+  .buffBar{ max-width: 100%; }
 }
 
 /* Toast */
@@ -648,7 +645,6 @@ input[type="range"]{ accent-color: var(--accent); }
   .railFrame{ padding: var(--railPad); border-radius: 16px; }
 }
 
-/* Canvas “contain” real: mantiene proporción y escala con el panel */
 #gameCanvas{
   display:block;
   border-radius: 14px;
@@ -663,7 +659,6 @@ input[type="range"]{ accent-color: var(--accent); }
   aspect-ratio: var(--gameAR);
 }
 
-/* Si tu JS ya controla tamaño exacto, esto evita que se “estire” raro */
 @supports not (aspect-ratio: 1 / 1){
   #gameCanvas{ width:auto; height:100%; }
 }
@@ -913,8 +908,7 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.78);
 }
 
-/* ───────────────────────── Upgrades (padding + nada tapado) ───────────────────────── */
-
+/* Upgrades */
 .upgradesPanel{
   max-height: min(86vh, 780px);
   display:flex;
@@ -1031,8 +1025,7 @@ input[type="range"]{ accent-color: var(--accent); }
   height:100%;
 }
 
-/* ───────────────────────── Game Over / Stats ───────────────────────── */
-
+/* Game Over */
 .goBig{
   display:flex;
   align-items:flex-end;
@@ -1074,8 +1067,29 @@ input[type="range"]{ accent-color: var(--accent); }
   line-height:1.35;
 }
 
-/* ───────────────────────── Transiciones overlay ───────────────────────── */
+/* Loading bar */
+.loadingBar{
+  height:10px;
+  margin: 12px 14px 0 14px;
+  border-radius:999px;
+  background: rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.08);
+  overflow:hidden;
+}
+.loadingBarFill{
+  height:100%;
+  width:35%;
+  border-radius:999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  animation: loadingMove 1.2s infinite ease-in-out;
+}
+@keyframes loadingMove{
+  0%{ transform: translateX(-40%); }
+  50%{ transform: translateX(160%); }
+  100%{ transform: translateX(-40%); }
+}
 
+/* Transiciones overlays */
 .overlay.fadeIn{ animation: overlayIn .16s ease-out both; }
 .overlay.fadeOut{ animation: overlayOut .16s ease-in both; }
 
@@ -1086,16 +1100,6 @@ input[type="range"]{ accent-color: var(--accent); }
 @keyframes overlayOut{
   from{ opacity:1; transform: translateY(0); }
   to{ opacity:0; transform: translateY(6px); }
-}
-
-@media (max-width:520px){
-  .combo{ padding: 14px 12px; gap:10px; }
-  .buffBar{ max-width: min(72vw, 520px); }
-  .railFrame{ border-radius: 16px; }
-}
-
-@media (max-width:380px){
-  #levelProgText{ max-width: 40ch; }
 }
 
 @media (prefers-reduced-motion: reduce){

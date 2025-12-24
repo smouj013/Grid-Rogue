@@ -17,6 +17,7 @@
     window.APP_VERSION = "0.2.0";
   </script>
 
+  <!-- Repair mode SW/caches: ?repair -->
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
@@ -49,6 +50,7 @@
     })();
   </script>
 
+  <!-- Fix VH móvil -->
   <script>
     (function () {
       const setVH = () => {
@@ -78,9 +80,7 @@
 
 <body>
   <noscript>
-    <div class="noscriptBar">
-      Necesitas activar JavaScript para jugar.
-    </div>
+    <div class="noscriptBar">Necesitas activar JavaScript para jugar.</div>
   </noscript>
 
   <div id="app">
@@ -148,23 +148,12 @@
 
     <main class="stage" id="stage" role="main">
       <div class="canvasWrap" id="canvasWrap">
-
         <div class="gameArea" id="gameArea">
-          <div class="railFrame" id="railFrame" aria-hidden="true">
-            <canvas
-              id="gameCanvas"
-              width="640"
-              height="960"
-              data-rail="1"
-              data-basew="640"
-              data-baseh="960"
-              aria-label="Juego"
-            ></canvas>
-          </div>
 
-          <div class="hud" id="hud">
-            <div class="combo">
-              <div class="comboTop">
+          <!-- HUD (equilibrado + estable) -->
+          <div class="hud" id="hud" aria-label="HUD">
+            <div class="hudCard">
+              <div class="hudTop">
                 <div class="comboSeq" id="comboSeq"></div>
 
                 <div class="comboTimer" id="comboTimer" aria-label="Tiempo de combo">
@@ -177,31 +166,46 @@
                 Completa la secuencia para subir el multiplicador.
               </div>
 
-              <div class="levelProg levelProgress" id="levelProg">
-                <div class="levelRow">
-                  <div class="left">
-                    <span class="ms" aria-hidden="true">bolt</span>
-                    <span id="levelProgText">Lv 1 • 0/220</span>
+              <div class="hudStatus" id="hudFloat" aria-label="Estado del jugador">
+                <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
+
+                <div class="levelProg levelProgress" id="levelProg">
+                  <div class="levelRow">
+                    <div class="left">
+                      <span class="ms" aria-hidden="true">bolt</span>
+                      <span id="levelProgText">Lv 1 • 0/220</span>
+                    </div>
+                    <span class="tiny muted" id="levelProgPct">0%</span>
                   </div>
-                  <span class="tiny muted" id="levelProgPct">0%</span>
+
+                  <div class="progBar" aria-hidden="true">
+                    <div class="progFill" id="levelProgFill"></div>
+                  </div>
                 </div>
 
-                <div class="progBar" aria-hidden="true">
-                  <div class="progFill" id="levelProgFill"></div>
+                <div class="buffDock" aria-label="Mejoras activas">
+                  <div class="buffBar" id="hudBuffs"></div>
                 </div>
-              </div>
-            </div>
-
-            <div class="hudFloat" id="hudFloat" aria-label="Estado del jugador">
-              <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
-              <div class="buffDock" aria-label="Mejoras activas">
-                <div class="buffBar" id="hudBuffs"></div>
               </div>
             </div>
 
             <div class="toast" id="toast" hidden aria-live="polite"></div>
           </div>
 
+          <!-- Panel del juego (se expande) -->
+          <div class="railFrame" id="railFrame">
+            <canvas
+              id="gameCanvas"
+              width="640"
+              height="960"
+              data-rail="1"
+              data-basew="640"
+              data-baseh="960"
+              aria-label="Juego"
+            ></canvas>
+          </div>
+
+          <!-- D-Pad -->
           <div class="dpad" id="dpad" hidden>
             <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
               <span class="ms" aria-hidden="true">keyboard_arrow_up</span>
@@ -218,7 +222,10 @@
               </button>
             </div>
           </div>
+
         </div>
+
+        <!-- OVERLAYS -->
 
         <section class="overlay" id="overlayLoading">
           <div class="panel">
@@ -491,6 +498,7 @@
     </main>
   </div>
 
+  <!-- Boot failsafe -->
   <script>
     (function () {
       const $ = (id) => document.getElementById(id);
