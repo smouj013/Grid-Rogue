@@ -5,11 +5,6 @@
    - Layout estable + overlays sólidos
    - Opciones con scroll interno (sin scroll fantasma en juego)
    - Dpad móvil en bordes
-
-   CSS CLEANUP:
-   - Añadido soporte para HUD dinámico (#hudStatus/#hudHearts/#hudBuffs) SIN inline styles.
-   - Añadido soporte para fila idioma (#optLangRow) sin inline.
-   - Añadido soporte para canvas FX de upgrades (.upFxCanvas) sin inline.
 */
 
 :root{
@@ -342,9 +337,8 @@ input[type="range"]{ accent-color: var(--accent); }
   line-height:1.25;
 }
 
-/* ✅ Status bar (HP + Buffs) — usado por #hudStatus */
-.statusBar,
-#hudStatus{
+/* ✅ Status bar (HP + Buffs) */
+.statusBar{
   margin-top:10px;
   display:flex;
   align-items:center;
@@ -354,9 +348,7 @@ input[type="range"]{ accent-color: var(--accent); }
   pointer-events:none;
 }
 
-/* HP wrap — usado por #hudHearts */
-.hpWrap,
-#hudHearts{
+.hpWrap{
   display:flex;
   align-items:center;
   gap:8px;
@@ -373,7 +365,6 @@ input[type="range"]{ accent-color: var(--accent); }
   align-items:center;
   gap:2px;
 }
-
 .heart{
   font-size:18px;
   line-height:1;
@@ -398,9 +389,7 @@ input[type="range"]{ accent-color: var(--accent); }
   font-size:12px;
 }
 
-/* Buff bar — usado por #hudBuffs */
-.buffBar,
-#hudBuffs{
+.buffBar{
   display:flex;
   align-items:center;
   justify-content:flex-end;
@@ -666,9 +655,6 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 .input::placeholder{ color: rgba(255,255,255,0.45); }
 
-/* opt label helper */
-.optLabel{ opacity:0.9; }
-
 /* Splash */
 .splash{
   display:flex;
@@ -728,23 +714,6 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 
 /* ───────────────── Upgrades ───────────────── */
-.upgradesPanel{ position:relative; }
-.upFxCanvas{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  pointer-events:none;
-  z-index:0;
-}
-
-.upgradesPanel .panelHead,
-.upgradesPanel .panelBody,
-.upgradesPanel .panelActions{
-  position:relative;
-  z-index:1;
-}
-
 .upgradesPanel .panelBody{
   max-height: min(60vh, 520px);
   overflow:auto;

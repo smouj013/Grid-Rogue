@@ -1,27 +1,16 @@
-/* sw.js — Grid Rogue (v0.1.7)
-   ✅ Core: cache-first + refresh en background (normaliza ?v=)
-   ✅ Navegación (SPA/PWA): network-first + fallback index.html (APP_SHELL)
-   ✅ Runtime: stale-while-revalidate (assets)
-   ✅ Update: SKIP_WAITING por mensaje + clients.claim + navigationPreload
-   ✅ GH Pages/subcarpetas: usa registration.scope (claves absolutas)
-   ✅ Audio/Sprites: best-effort (no rompe si falta)
-   ✅ v0.1.7:
-      - CACHE_PREFIX "gridrogue-" (evita mezclar con builds viejos)
-      - CORE_ASSETS actualizado (incluye utils.js / localization.js / audio_sys.js / audio.js)
-      - Normalización consistente (sin search/hash)
-      - Limpieza agresiva de caches antiguos (gridrunner-* también)
-      - Soporte Range requests para audio desde cache (evita fallos en móviles)
+/* sw.js — Grid Rogue (v0.1.9)
+   ✅ Igual que v0.1.8 pero con bump de VERSION.
 */
-
-const VERSION = "v0.1.7";
+const VERSION = "v0.1.9";
 
 const CACHE_PREFIX = "gridrogue-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
 
+// Borra builds antiguos (incluye el proyecto viejo gridrunner- si existía)
 const OLD_PREFIXES = ["gridrunner-", "gridrogue-"];
 
-// GH Pages / subcarpetas: scope absoluto
+// GH Pages / subcarpetas: scope absoluto (clave estable)
 const SCOPE = self.registration.scope;
 const APP_SHELL = new URL("index.html", SCOPE).toString();
 
@@ -31,7 +20,7 @@ const CORE_ASSETS = [
   APP_SHELL,
   new URL("styles.css", SCOPE).toString(),
 
-  // ✅ App dividido (3 scripts + app.js + auth.js)
+  // App dividido
   new URL("utils.js", SCOPE).toString(),
   new URL("localization.js", SCOPE).toString(),
   new URL("audio_sys.js", SCOPE).toString(),
@@ -39,6 +28,7 @@ const CORE_ASSETS = [
   new URL("auth.js", SCOPE).toString(),
   new URL("app.js", SCOPE).toString(),
 
+  // Manifest
   new URL("manifest.webmanifest", SCOPE).toString(),
 
   // Icons
@@ -51,7 +41,7 @@ const CORE_ASSETS = [
   new URL("assets/icons/apple-touch-icon-180.png", SCOPE).toString(),
   new URL("assets/icons/favicon-32.png", SCOPE).toString(),
 
-  // ✅ Audio (best-effort)
+  // Audio (best-effort)
   new URL("assets/audio/bgm_loop.mp3", SCOPE).toString(),
   new URL("assets/audio/music_loop.mp3", SCOPE).toString(),
   new URL("assets/audio/sfx_coin.wav", SCOPE).toString(),
@@ -68,7 +58,7 @@ const CORE_ASSETS = [
   new URL("assets/audio/sfx_block.wav", SCOPE).toString(),
   new URL("assets/audio/sfx_upgrade.wav", SCOPE).toString(),
 
-  // ✅ Sprites (best-effort)
+  // Sprites (best-effort)
   new URL("assets/sprites/tile_block.svg", SCOPE).toString(),
   new URL("assets/sprites/tile_bonus.svg", SCOPE).toString(),
   new URL("assets/sprites/tile_coin.svg", SCOPE).toString(),
@@ -111,8 +101,8 @@ function isAudioPath(urlObj) {
   return p.endsWith(".mp3") || p.endsWith(".wav") || p.endsWith(".ogg");
 }
 
+// ───────────────────────── Range support (audio) ─────────────────────────
 function parseRange(rangeHeader, size) {
-  // "bytes=start-end"
   const m = String(rangeHeader || "").match(/bytes=(\d*)-(\d*)/i);
   if (!m) return null;
 
@@ -132,8 +122,9 @@ function parseRange(rangeHeader, size) {
 async function makeRangedResponse(fullResponse, rangeHeader) {
   const buf = await fullResponse.arrayBuffer();
   const size = buf.byteLength;
+
   const r = parseRange(rangeHeader, size);
-  if (!r) return fullResponse; // fallback a respuesta completa
+  if (!r) return fullResponse;
 
   const { start, end } = r;
   const sliced = buf.slice(start, end + 1);
@@ -143,7 +134,6 @@ async function makeRangedResponse(fullResponse, rangeHeader) {
   headers.set("Accept-Ranges", "bytes");
   headers.set("Content-Length", String(sliced.byteLength));
 
-  // Asegura content-type si falta
   if (!headers.get("Content-Type")) {
     headers.set("Content-Type", "application/octet-stream");
   }
@@ -151,17 +141,16 @@ async function makeRangedResponse(fullResponse, rangeHeader) {
   return new Response(sliced, { status: 206, statusText: "Partial Content", headers });
 }
 
+// ───────────────────────── Core precache ─────────────────────────
 async function precacheCore() {
   const cache = await caches.open(CORE_CACHE);
 
-  // 1) APP_SHELL (obligatorio)
   const shellRes = await fetch(new Request(APP_SHELL, { cache: "reload" }));
   if (!shellRes || !shellRes.ok) {
     throw new Error(`No se pudo precachear index.html (APP_SHELL). (${shellRes?.status || "?"})`);
   }
   await cache.put(stripSearch(APP_SHELL), shellRes);
 
-  // 2) resto best-effort
   await Promise.allSettled(
     CORE_ASSETS
       .filter((u) => stripSearch(u) !== stripSearch(APP_SHELL))
@@ -187,6 +176,7 @@ async function cleanupOldCaches() {
   );
 }
 
+// ───────────────────────── Lifecycle ─────────────────────────
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
@@ -217,6 +207,7 @@ self.addEventListener("message", (event) => {
   }
 });
 
+// ───────────────────────── Fetch strategy ─────────────────────────
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -225,23 +216,18 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url, self.location.href);
   const isNav = isHtmlNavigation(req);
 
-  // Normaliza clave cuando hay cache-bust ?v=
   const normalizedKey = shouldIgnoreSearch(url) ? stripSearch(req.url) : req.url;
-
-  // ¿Es core asset? (comparando normalizado)
   const looksCore = CORE_SET.has(stripSearch(req.url));
 
-  // ───────────── Audio RANGE: sirve 206 desde cache cuando haga falta ─────────────
+  // Audio RANGE
   if (isAudioPath(url) && req.headers.has("range")) {
     event.respondWith(
       (async () => {
         const key = stripSearch(req.url);
 
-        // intentamos core primero (audio suele estar precacheado)
         const core = await caches.open(CORE_CACHE);
         let cached = await core.match(key);
 
-        // si no está en core, probamos runtime
         if (!cached) {
           const runtime = await caches.open(RUNTIME_CACHE);
           cached = await runtime.match(key);
@@ -251,19 +237,17 @@ self.addEventListener("fetch", (event) => {
           try {
             return await makeRangedResponse(cached.clone(), req.headers.get("range"));
           } catch (_) {
-            // si falla, devolvemos cached entero
             return cached;
           }
         }
 
-        // Si no está cacheado, dejamos que la red gestione el Range (no cacheamos 206)
         return fetch(req);
       })()
     );
     return;
   }
 
-  // ───────────── Navegación: network-first + fallback shell ─────────────
+  // Navegación
   if (isNav) {
     event.respondWith(
       (async () => {
@@ -298,7 +282,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ───────────── Core: cache-first + refresh en background ─────────────
+  // Core
   if (looksCore) {
     event.respondWith(
       (async () => {
@@ -320,7 +304,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ───────────── Runtime: stale-while-revalidate ─────────────
+  // Runtime
   event.respondWith(
     (async () => {
       const runtime = await caches.open(RUNTIME_CACHE);
