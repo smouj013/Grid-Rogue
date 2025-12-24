@@ -88,6 +88,16 @@ Incluye modo “Repair” si alguna vez una caché antigua se queda pegada tras 
 
 ---
 
+## Licencia
+
+© 2025 Grid Rogue. Todos los derechos reservados.
+
+Queda prohibida la reproducción, distribución, modificación, descompilación, ingeniería inversa o cualquier uso del código, recursos, gráficos, audio y demás contenidos de este proyecto sin autorización expresa y por escrito del autor.
+
+Este proyecto no se licencia para uso público. El acceso al repositorio/archivos no otorga ningún derecho de uso, copia o redistribución.
+
+---
+
 ## 🔖 Versión
 
 ```
