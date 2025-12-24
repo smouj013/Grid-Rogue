@@ -4,6 +4,7 @@
    - HUD helpers: setHP (corazones) + setBuffs (badges con stack + timer)
    - Rarity helpers para duraciones (útil para Imán con tiempo por rareza)
    - overlay fadeIn/fadeOut compatible con styles.css (animaciones)
+   - Exporta canLS + alias window.Utils para compat con builds anteriores
 */
 (() => {
   "use strict";
@@ -52,6 +53,17 @@
   // ───────────────────────── JSON / Storage ─────────────────────────
   const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
   const safeStringify = (obj, fallback = "") => { try { return JSON.stringify(obj); } catch { return fallback; } };
+
+  function canLS() {
+    try {
+      const k = "__ls_test__";
+      localStorage.setItem(k, "1");
+      localStorage.removeItem(k);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   function lsGet(key, fallback) {
     try {
@@ -131,7 +143,7 @@
       if (!el || el.hidden) return res();
       el.classList.remove("fadeIn");
       el.classList.add("fadeOut");
-      setTimeout(() => { overlayHide(el); res(); }, ms);
+      setTimeout(() => { overlayHide(el); res(); }, Math.max(0, ms | 0));
     });
   }
 
@@ -184,8 +196,10 @@
       document.documentElement.style.setProperty("--vh", `${h * 0.01}px`);
       document.documentElement.style.setProperty("--vw", `${w * 0.01}px`);
 
-      document.body?.dataset && (document.body.dataset.mobile = isMobileLike() ? "1" : "0");
-      document.body?.dataset && (document.body.dataset.standalone = isStandalone() ? "1" : "0");
+      if (document.body?.dataset) {
+        document.body.dataset.mobile = isMobileLike() ? "1" : "0";
+        document.body.dataset.standalone = isStandalone() ? "1" : "0";
+      }
     } catch {}
   }
 
@@ -263,7 +277,6 @@
     let extras = $("levelExtras");
     if (!extras) {
       extras = createEl("div", { id: "levelExtras", class: "levelExtras" });
-      // lo insertamos antes de la progBar si existe
       const progBar = levelProg.querySelector?.(".progBar");
       if (progBar && progBar.parentNode === levelProg) levelProg.insertBefore(extras, progBar);
       else levelProg.appendChild(extras);
@@ -305,7 +318,6 @@
     const cur = clampInt(current, 0, 999);
     const mx = clampInt(max, 1, 999);
 
-    // render corazones (visual = mx, típico 10)
     clearEl(hpHearts);
     for (let i = 0; i < mx; i++) {
       const full = i < cur;
@@ -318,7 +330,7 @@
     hpText.textContent = `${cur}/${mx}`;
   }
 
-  // buffs: [{ key, icon, rarity, count, timeLeft, duration, showTime }]
+  // buffs: [{ key, icon, rarity, count, timeLeft, duration, title/name }]
   function setBuffs(buffs) {
     ensureHudNodes();
     const wrap = $("buffBadges");
@@ -329,6 +341,7 @@
 
     for (const b of arr) {
       if (!b) continue;
+
       const key = String(b.key || "");
       if (!key) continue;
 
@@ -349,7 +362,6 @@
       });
 
       badge.style.setProperty("--pct", String(pct));
-
       badge.appendChild(createEl("span", { class: "ms", text: icon, "aria-hidden": "true" }));
 
       const countEl = createEl("span", { class: "buffCount", text: String(count) });
@@ -368,18 +380,18 @@
   onViewportChange(() => applyViewportVars(), { immediate: true });
 
   // ───────────────────────── Export ─────────────────────────
-  window.GRUtils = Object.freeze({
+  const api = Object.freeze({
     VERSION,
 
     // Math
     clamp, clampInt, lerp, invLerp, randi, chance,
 
     // Rarity/time
-    rarityMult, scaleByRarity, fmtSeconds, now,
+    rarityMult, scaleByRarity, fmtSeconds, now, pad2,
 
     // JSON/Storage
     safeParse, safeStringify,
-    lsGet, lsSet, lsDel,
+    canLS, lsGet, lsSet, lsDel,
 
     // DOM
     $, qs, qsa,
@@ -401,11 +413,16 @@
     // Scroll lock
     lockScroll, unlockScroll,
 
-    // HUD (v0.1.9)
+    // HUD
     hud: Object.freeze({
       ensureHudNodes,
       setHP,
       setBuffs,
     }),
   });
+
+  window.GRUtils = api;
+
+  // Compat builds anteriores que usaban window.Utils
+  if (!window.Utils) window.Utils = api;
 })();

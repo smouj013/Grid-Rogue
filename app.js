@@ -6,7 +6,16 @@
    - Imán ahora es TEMPORAL: duración según rareza + contador en badge.
    - Panel de mejoras: markup mejorado (icono, duración, metadatos) para que se vea más pro con CSS.
    - Mantiene migración gridrunner_* -> gridrogue_* y compat flags.
+
+   FIX (sin duplicidades):
+   - La lógica de TRAMPA se centraliza en applyTrapHit()/applyCollect() (sin doble lógica vieja).
+   - applyCollect() acepta coords opcionales y delega en applyTrapHit si el tipo es Trap.
+
+   CSS CLEANUP:
+   - Eliminado CSS inline de UI (HUD hearts/badges, options lang row, upgrade fx canvas, etc.).
+   - Todo el estilo visual de esos elementos está en styles.css mediante clases/ids.
 */
+
 (() => {
   "use strict";
 
@@ -36,7 +45,7 @@
   const overlayHide = U.overlayHide || ((el) => { if (!el) return; el.hidden = true; });
   const overlayFadeOut = U.overlayFadeOut || ((el, _ms = 0) => Promise.resolve(overlayHide(el)));
 
-  // ⛑️ Importante: NO romper pills con iconos. Si existe .pv, solo actualiza eso.
+  // ⛑️ NO romper pills con iconos. Si existe .pv, solo actualiza eso.
   const setPill = U.setPill || ((el, v) => {
     if (!el) return;
     const pv = el.querySelector?.(".pv");
@@ -54,7 +63,7 @@
     applyDataAttrs() {},
   };
 
-  // Traducción con fallback (para nuevas keys de v0.1.9 si tu i18n aún no las tiene)
+  // Traducción con fallback (para keys nuevas si tu i18n aún no las tiene)
   function T(key, fallback = null, arg = null) {
     try {
       const s = I18n.t(key, arg);
@@ -118,7 +127,7 @@
     return /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
   }
 
-  // ✅ MÁS FIABLE: si es móvil/coarse y está en portrait => layout móvil (8x16)
+  // ✅ Más fiable: si es móvil/coarse y está en portrait => layout móvil (8x16)
   function isMobileLayout() {
     const coarse = isCoarsePointer();
     const portrait = isPortrait();
@@ -235,18 +244,15 @@
     const preventIfNeeded = (e) => {
       if (!e.cancelable) return;
       if (allowScrollInOptions(e.target)) return;
-      // bloquea wheel/touchmove en el resto para evitar “scroll fantasma”
       e.preventDefault();
     };
 
-    // Wheel (PC trackpad) + Touch (mobile)
     document.addEventListener("wheel", preventIfNeeded, { passive: false });
     document.addEventListener("touchmove", preventIfNeeded, { passive: false });
   }
 
   // ───────────────────────── Auth ─────────────────────────
   const Auth = window.Auth || null;
-
   let activeProfileId = null;
 
   // migra nombre/best
@@ -274,7 +280,6 @@
       // Prefs por perfil (si existen) -> aplicarlas al settings local (sin romper)
       const prefs = Auth.getPrefsForActive?.();
       if (prefs && typeof prefs === "object") {
-        // Sólo lo que nuestro settings entiende
         if ("useSprites" in prefs) settings.useSprites = !!prefs.useSprites;
         if ("vibration" in prefs) settings.vibration = !!prefs.vibration;
         if ("showDpad" in prefs) settings.showDpad = !!prefs.showDpad;
@@ -296,7 +301,6 @@
   function pushPrefsToAuth() {
     try {
       if (!Auth) return;
-      // Guardamos settings como prefs del perfil activo (si hay perfil activo)
       Auth.setPrefsForActive?.({
         useSprites: !!settings.useSprites,
         vibration: !!settings.vibration,
@@ -372,11 +376,9 @@
     if (want === ROWS) return false;
     ROWS = want;
 
-    // Si cambia layout (portrait/size), reconstruimos de forma segura
     if (forceReset) {
       resetRun(true);
     } else {
-      // Si estás jugando, mejor no “romper” arrays a mitad -> manda a menú
       if (running && !gameOver) resetRun(true);
       else {
         recomputeZone();
@@ -531,7 +533,7 @@
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
 
-  // ✅ HUD extras (v0.1.9): HP + badges junto a nivel
+  // ✅ HUD extras: HP + badges junto a nivel
   let hudStatus = null;
   let hudHearts = null;
   let hudBuffs = null;
@@ -590,11 +592,19 @@
     return `${Math.ceil(sec)}s`;
   }
 
-  // ✅ Asegura HUD status cerca del nivel (se crea dinámicamente)
+  function escapeAttr(s) {
+    const v = String(s ?? "");
+    return v
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  // ✅ HUD status cerca del nivel (se crea dinámicamente) — SIN inline styles
   function ensureHudStatusUI() {
     if (hudStatus && hudStatus.parentElement) return;
 
-    // Intentar colgarlo del contenedor del progreso de nivel
     const host =
       levelProgText?.closest?.("#levelProgress") ||
       levelProgText?.closest?.(".levelProgress") ||
@@ -616,34 +626,19 @@
     try {
       const wrap = document.createElement("div");
       wrap.id = "hudStatus";
-      wrap.style.display = "flex";
-      wrap.style.alignItems = "center";
-      wrap.style.justifyContent = "space-between";
-      wrap.style.gap = "10px";
-      wrap.style.marginTop = "6px";
-      wrap.style.flexWrap = "wrap";
+      wrap.className = "statusBar";
 
       const hearts = document.createElement("div");
       hearts.id = "hudHearts";
-      hearts.style.display = "flex";
-      hearts.style.alignItems = "center";
-      hearts.style.gap = "2px";
-      hearts.style.flexWrap = "wrap";
-      hearts.style.userSelect = "none";
-      hearts.style.webkitUserSelect = "none";
+      hearts.className = "hpWrap";
 
       const buffs = document.createElement("div");
       buffs.id = "hudBuffs";
-      buffs.style.display = "flex";
-      buffs.style.alignItems = "center";
-      buffs.style.gap = "8px";
-      buffs.style.flexWrap = "wrap";
-      buffs.style.justifyContent = "flex-end";
+      buffs.className = "buffBar";
 
       wrap.appendChild(hearts);
       wrap.appendChild(buffs);
 
-      // Insertar justo después del bloque de progreso si se puede
       const anchor = levelProgText?.parentElement || host;
       if (anchor && anchor.parentElement) anchor.parentElement.appendChild(wrap);
       else host.appendChild(wrap);
@@ -661,77 +656,33 @@
     const showN = Math.min(hpMax, maxShow);
     const extra = Math.max(0, hpMax - showN);
 
-    const parts = [];
+    const hearts = [];
     for (let i = 0; i < showN; i++) {
       const full = i < hp;
-      parts.push(
-        `<span style="
-          display:inline-block;
-          font-weight:900;
-          line-height:1;
-          font-size: ${Math.max(12, Math.floor(cellPx * 0.34))}px;
-          color: ${full ? "rgba(255,120,160,0.95)" : "rgba(255,255,255,0.22)"};
-          text-shadow: 0 1px 0 rgba(0,0,0,0.55);
-          margin-right:1px;
-        ">${full ? "♥" : "♡"}</span>`
-      );
+      hearts.push(`<span class="ms heart ${full ? "full" : "empty"}">favorite</span>`);
     }
 
-    if (extra > 0) {
-      parts.push(`<span style="opacity:0.75;font-size:${Math.max(11, Math.floor(cellPx * 0.30))}px">+${extra}</span>`);
-    }
+    hudHearts.innerHTML = `
+      <span class="ms hpIcon">favorite</span>
+      <span class="hpHearts">${hearts.join("")}</span>
+      ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
+      <span class="hpText mono">(${hp}/${hpMax})</span>
+    `.trim();
 
-    // Texto compacto HP
-    parts.push(`<span style="opacity:0.85;margin-left:6px;font-size:${Math.max(11, Math.floor(cellPx * 0.30))}px">(${hp}/${hpMax})</span>`);
-
-    hudHearts.innerHTML = parts.join("");
     hudHearts.title = T("hud_hp_title", "Vida: {0}", `${hp}/${hpMax}`);
   }
 
-  function makeBuffBadge({ icon, count = 0, time = 0, title = "", accent = "rgba(255,255,255,0.18)" }) {
+  function makeBuffBadge({ kind, icon, count = 0, time = 0, title = "" }) {
     const showCount = Number(count) > 1;
     const showTime = Number(time) > 0;
 
-    const countHtml = showCount
-      ? `<span style="
-          position:absolute;right:-6px;top:-6px;
-          min-width:18px;height:18px;padding:0 4px;
-          display:flex;align-items:center;justify-content:center;
-          border-radius:999px;
-          background:rgba(0,0,0,0.55);
-          border:1px solid rgba(255,255,255,0.18);
-          font-size:11px;font-weight:900;
-        ">${count | 0}</span>`
-      : "";
-
-    const timeHtml = showTime
-      ? `<span style="opacity:0.82;font-size:11px;margin-left:6px">${fmtTimeShort(time)}</span>`
-      : "";
-
     return `
-      <div title="${title || ""}" style="
-        position:relative;
-        display:inline-flex;
-        align-items:center;
-        gap:6px;
-        padding:6px 9px;
-        border-radius:999px;
-        border:1px solid rgba(255,255,255,0.14);
-        background:rgba(255,255,255,0.06);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-        user-select:none;
-      ">
-        <span class="ms" style="
-          font-size:18px;
-          line-height:1;
-          padding:4px;
-          border-radius:999px;
-          background:${accent};
-        ">${icon}</span>
-        ${timeHtml}
-        ${countHtml}
+      <div class="buffBadge" data-kind="${escapeAttr(kind)}" title="${escapeAttr(title)}">
+        <span class="ms bIcon">${escapeAttr(icon)}</span>
+        ${showTime ? `<span class="bTime mono">${escapeAttr(fmtTimeShort(time))}</span>` : ``}
+        ${showCount ? `<span class="bCount mono">${count | 0}</span>` : ``}
       </div>
-    `;
+    `.trim();
   }
 
   function updateBuffsUI() {
@@ -739,75 +690,70 @@
 
     const items = [];
 
-    // Shield
     if (shields > 0) {
       items.push(makeBuffBadge({
+        kind: "shield",
         icon: "shield",
         count: shields,
         title: T("buff_shield", "Escudo"),
-        accent: "rgba(106,176,255,0.22)"
       }));
     }
 
-    // Magnet (radius + timer)
     if (magnet > 0 && magnetTime > 0.01) {
       items.push(makeBuffBadge({
+        kind: "magnet",
         icon: "magnet_on",
-        count: magnet, // si magnet=1 no muestra número, si 2/3 sí
+        count: magnet,
         time: magnetTime,
         title: T("buff_magnet", "Imán"),
-        accent: "rgba(106,176,255,0.18)"
       }));
     }
 
-    // Score boost (stack)
     const boostCount = pickedCount.get("boost") || 0;
     if (boostCount > 0) {
       items.push(makeBuffBadge({
+        kind: "boost",
         icon: "bolt",
         count: boostCount,
         title: T("buff_boost", "Puntos +"),
-        accent: "rgba(255,211,90,0.20)"
       }));
     }
 
-    // Trap resist
     if (trapResist > 0) {
       items.push(makeBuffBadge({
+        kind: "resist",
         icon: "verified_user",
         count: trapResist,
         title: T("buff_trap_resist", "Resistencia a trampas"),
-        accent: "rgba(46,242,160,0.16)"
       }));
     }
 
-    // Zone
     if (zoneExtra > 0) {
       items.push(makeBuffBadge({
+        kind: "zone",
         icon: "open_with",
         count: zoneExtra,
         title: T("buff_zone", "Zona +"),
-        accent: "rgba(214,133,255,0.18)"
       }));
     }
 
-    // Rerolls
     if (rerolls > 0) {
       items.push(makeBuffBadge({
+        kind: "reroll",
         icon: "casino",
         count: rerolls,
         title: T("buff_rerolls", "Rerolls"),
-        accent: "rgba(255,255,255,0.12)"
       }));
     }
 
-    // HP extra (si aumentaste max)
-    if (hpMax > HP_START) {
+    // HP extra (solo si aumentaste el máximo)
+    const hpExtra = Math.max(0, hpMax - HP_START);
+    if (hpExtra > 0) {
       items.push(makeBuffBadge({
+        kind: "hp",
         icon: "favorite",
-        count: (hpMax - HP_START) + 1, // para que si solo subiste +0 no salga; aquí siempre >=2 si hpMax>10
+        count: hpExtra + 1,
         title: T("buff_hp", "Vida máxima"),
-        accent: "rgba(255,120,160,0.18)"
       }));
     }
 
@@ -853,20 +799,15 @@
       const row = document.createElement("div");
       row.id = "optLangRow";
       row.className = "optRow";
-      row.style.display = "flex";
-      row.style.alignItems = "center";
-      row.style.justifyContent = "space-between";
-      row.style.gap = "10px";
-      row.style.marginTop = "10px";
 
       const lab = document.createElement("label");
       lab.htmlFor = "optLang";
+      lab.className = "optLabel";
       lab.textContent = I18n.t("opt_language");
-      lab.style.opacity = "0.9";
 
       const sel = document.createElement("select");
       sel.id = "optLang";
-      sel.style.minWidth = "140px";
+      sel.className = "select";
 
       row.appendChild(lab);
       row.appendChild(sel);
@@ -908,7 +849,6 @@
       optLang.value = String(settings.lang || "auto");
     }
 
-    // ✅ Dpad sólo en móvil/coarse
     const coarse = isCoarsePointer() || isMobileUA();
     if (dpad) dpad.hidden = !(coarse && settings.showDpad);
 
@@ -1108,22 +1048,19 @@
     }
     updateStatusHUD();
     if (hp <= 0 && prev > 0) {
-      // muerte por HP
       AudioSys.sfx("gameover");
       gameOverNow(T("reason_no_hp", "Sin vida"));
     }
   }
 
-  function applyTrapHit(x, y) {
+  function applyTrapHit(x = null, y = null) {
     playerPulse = 1;
     zonePulse = 1;
 
-    // puntos negativos por trampa (mantiene mecánica)
     const v = scoreFor(CellType.Trap);
     const add = Math.round(v * mult * (1 + scoreBoost));
     score = Math.max(0, score + add);
 
-    // ✅ HP -1
     loseHp(1, x, y);
     if (gameOver) return;
 
@@ -1139,23 +1076,10 @@
     AudioSys.sfx("trap");
   }
 
-  function applyCollect(t, checkCombo = true) {
-    // Trampa se gestiona con coordenadas desde stepAdvance (para FX + -1♥)
+  // ✅ Centralizado (sin duplicidad): si t es Trap, delega a applyTrapHit()
+  function applyCollect(t, checkCombo = true, x = null, y = null) {
     if (t === CellType.Trap) {
-      playerPulse = 1;
-      zonePulse = 1;
-      const v = scoreFor(t);
-      const add = Math.round(v * mult * (1 + scoreBoost));
-      score = Math.max(0, score + add);
-
-      streak = 0;
-      mult = clamp(mult * 0.92, 1.0, 4.0);
-      vibrate(18);
-      failCombo();
-      showToast(I18n.t("toast_trap"), 650);
-      flash("#ff6b3d", 220);
-      shake(220, 7);
-      AudioSys.sfx("trap");
+      applyTrapHit(x, y);
       return;
     }
 
@@ -1212,7 +1136,7 @@
           spawnEatFX(t, x, y);
 
           const before = score;
-          applyCollect(t, false);
+          applyCollect(t, false, x, y);
           const delta = score - before;
           if (delta !== 0) spawnFloatText(
             x, y,
@@ -1267,11 +1191,10 @@
         return;
       }
 
-      // ✅ TRAMPA = -1♥
       if (t === CellType.Trap) {
         spawnPop(x, y, CELL_COLORS[t], 0.95);
         spawnSparks(x, y, "rgba(255,160,180,0.95)", 0.65);
-        applyTrapHit(x, y);
+        applyCollect(CellType.Trap, true, x, y); // centralizado
         return;
       }
 
@@ -1279,7 +1202,7 @@
       else spawnPop(x, y, CELL_COLORS[t], 0.85);
 
       const before = score;
-      applyCollect(t, true);
+      applyCollect(t, true, x, y);
       const delta = score - before;
       if (delta !== 0) spawnFloatText(
         x, y,
@@ -1346,12 +1269,7 @@
   }
 
   // ───────────────────────── Upgrades ─────────────────────────
-  // Duraciones de imán por rareza (v0.1.9)
-  const MAGNET_DUR = {
-    rare: 12,
-    epic: 18,
-    legendary: 26
-  };
+  const MAGNET_DUR = { rare: 12, epic: 18, legendary: 26 };
 
   function upgradeIcon(u) {
     const id = u?.id || "";
@@ -1373,17 +1291,13 @@
     { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 12, rarity: "common", weight: 10,
       apply() { shields++; updateStatusHUD(); } },
 
-    // ✅ NUEVA: Vida / Corazones (v0.1.9)
     { id: "heart", nameKey: "up_heart_name", descKey: "up_heart_desc", tagKey: "tag_survival", max: 10, rarity: "common", weight: 9,
       apply() {
-        const beforeMax = hpMax;
         hpMax = clampInt(hpMax + 1, HP_START, HP_CAP);
-        // Cura 1 (y si sube max, mejor)
-        hp = clampInt(hp + 1 + (hpMax > beforeMax ? 0 : 0), 0, hpMax);
+        hp = clampInt(hp + 1, 0, hpMax);
         updateStatusHUD();
       } },
 
-    // ✅ Imán temporal (v0.1.9) — rare/epic/legendary => más duración
     { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, rarity: "rare", weight: 7,
       apply() { magnet = Math.max(magnet, 1); magnetTime += MAGNET_DUR.rare; updateStatusHUD(); } },
     { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, rarity: "epic", weight: 4,
@@ -1465,22 +1379,23 @@
   const upConfetti = [];
   let upFxW = 0, upFxH = 0;
 
+  function getUpgradesPanelHost() {
+    if (!overlayUpgrades) return null;
+    return overlayUpgrades.querySelector?.(".upgradesPanel") ||
+           overlayUpgrades.querySelector?.(".panel") ||
+           overlayUpgrades;
+  }
+
   function ensureUpgradeFxCanvas() {
-    if (!overlayUpgrades) return;
+    const host = getUpgradesPanelHost();
+    if (!host) return;
     if (upFxCanvas && upFxCanvas.parentElement) return;
 
     try {
       const c = document.createElement("canvas");
       c.id = "upFxCanvas";
-      c.style.position = "absolute";
-      c.style.left = "0";
-      c.style.top = "0";
-      c.style.width = "100%";
-      c.style.height = "100%";
-      c.style.pointerEvents = "none";
-      c.style.zIndex = "0";
-      overlayUpgrades.style.position = overlayUpgrades.style.position || "relative";
-      overlayUpgrades.appendChild(c);
+      c.className = "upFxCanvas";
+      host.appendChild(c);
 
       upFxCanvas = c;
       upFxCtx = c.getContext("2d", { alpha: true });
@@ -1490,8 +1405,9 @@
   }
 
   function resizeUpgradeFxCanvas() {
-    if (!upFxCanvas || !overlayUpgrades) return;
-    const r = overlayUpgrades.getBoundingClientRect();
+    const host = getUpgradesPanelHost();
+    if (!upFxCanvas || !host) return;
+    const r = host.getBoundingClientRect();
     const d = Math.max(1, Math.min(2.0, window.devicePixelRatio || 1));
     upFxW = Math.max(1, Math.floor(r.width));
     upFxH = Math.max(1, Math.floor(r.height));
@@ -1647,7 +1563,6 @@
         else desc = "—";
       }
 
-      // Añadir duración visible para imán
       let extraMeta = "";
       if (u.id === "mag1") extraMeta = `⏱ ${MAGNET_DUR.rare}s`;
       if (u.id === "mag2") extraMeta = `⏱ ${MAGNET_DUR.epic}s`;
@@ -1663,8 +1578,6 @@
       card.dataset.upid = u.id;
       card.setAttribute("role", "button");
       card.tabIndex = 0;
-      card.style.position = "relative";
-      card.style.zIndex = "1";
 
       const nextLv = (pickedCount.get(u.id) || 0) + 1;
       const maxLv = u.max ?? 999;
@@ -1831,7 +1744,6 @@
     ctx.restore();
   }
 
-  // Aura de escudo
   function drawShieldAura(cx, cy) {
     if (shields <= 0) return;
 
@@ -2068,8 +1980,6 @@
     if (!gameArea || !canvas || !ctx) return;
 
     updateVhUnit();
-
-    // si cambia mobile layout (rows) por orientación/tamaño -> reajusta
     applyRowsIfNeeded({ forceReset: false });
 
     const r = gameArea.getBoundingClientRect();
@@ -2091,7 +2001,6 @@
     canvas.width = Math.floor(cssCanvasW * dpr);
     canvas.height = Math.floor(cssCanvasH * dpr);
 
-    // ✅ móvil: permite celdas más grandes
     const maxCell = isMobileLayout() ? 88 : 72;
     const minCell = isMobileLayout() ? 16 : 14;
 
@@ -2150,7 +2059,6 @@
 
     if (!canvas || !gameArea) return;
 
-    // Evita gestos/scroll dentro del área de juego
     const blockIfGame = (e) => { if (e.cancelable) e.preventDefault(); };
     gameArea.addEventListener("wheel", blockIfGame, { passive: false });
     gameArea.addEventListener("touchmove", blockIfGame, { passive: false });
@@ -2231,7 +2139,6 @@
     score = 0; streak = 0; mult = 1.0; level = 1;
     levelStartScore = 0; nextLevelAt = 220;
 
-    // ✅ reset HP
     hpMax = HP_START;
     hp = HP_START;
 
@@ -2323,7 +2230,6 @@
       try { Auth?.setBestForActive?.(best); } catch {}
     }
 
-    // Guardar runs (nuevo + legacy)
     try {
       const raw = migrateKeyIfNeeded(RUNS_KEY, RUNS_KEY_OLD);
       const arr = raw ? safeParse(raw, []) : [];
@@ -2369,7 +2275,6 @@
   let lastT = 0;
 
   function tickTimedUpgrades(dtMs) {
-    // ✅ magnet timer (v0.1.9)
     if (magnetTime > 0 && running && !paused && !gameOver && !inLevelUp) {
       const prev = magnetTime;
       magnetTime = Math.max(0, magnetTime - dtMs / 1000);
@@ -2379,9 +2284,6 @@
         updateStatusHUD();
         showToast(T("toast_magnet_end", "Imán terminado"), 700);
         AudioSys.sfx("ui");
-      } else {
-        // refresca badge de vez en cuando
-        // (ya se actualiza por updatePillsNow a 10Hz)
       }
     }
   }
@@ -2752,7 +2654,6 @@
 
       cacheDOM();
 
-      // flags para failsafe
       window.__GRIDRUNNER_BOOTED = true;
       window.__GRIDROGUE_BOOTED = true;
 
@@ -2772,7 +2673,6 @@
       syncFromAuth();
       applyAudioSettingsNow();
 
-      // decide rows al boot
       ROWS = desiredRows();
 
       recomputeZone();
