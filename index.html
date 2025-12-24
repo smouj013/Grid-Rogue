@@ -1,10 +1,4 @@
-<!-- index.html — Grid Rogue v0.1.9 (COMPAT con app.js + styles.css)
-  ✅ Claves de compatibilidad:
-  - IDs EXACTOS que app.js usa para HUD de vida/buffs: #hudStatus / #hudHearts / #hudBuffs (evita duplicidades).
-  - Mantiene todos los IDs que cachea app.js (pills, overlays, botones, inputs, etc.).
-  - Incluye selector de idioma (#optLang) para que app.js NO lo inyecte y no duplique filas.
-  - Sin markup “extra” de corazones pre-render (app.js rellena #hudHearts).
--->
+<!-- index.html — Grid Rogue v0.1.9 -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -16,11 +10,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Grid Rogue" />
-  <meta name="description" content="Grid Rogue — arcade roguelite en cuadrícula con combos, upgrades y runs rápidas." />
 
   <title>Grid Rogue</title>
 
-  <!-- ✅ Version global (app.js la lee) -->
+  <!-- ✅ Version global -->
   <script>
     window.APP_VERSION = "0.1.9";
   </script>
@@ -30,7 +23,7 @@
     (function () {
       const qs = new URLSearchParams(location.search);
 
-      // Compat interna
+      // Compat interna: si ya lo usabas en app.js/sw
       window.__GRIDRUNNER_NOSW = qs.has("nosw");
 
       async function nukeSWAndCaches() {
@@ -78,7 +71,7 @@
 
 <body>
   <noscript>
-    <div class="noscriptBar">
+    <div style="padding:16px;color:white;font-family:system-ui;background:#111;border-bottom:1px solid rgba(255,255,255,.12)">
       Necesitas activar JavaScript para jugar.
     </div>
   </noscript>
@@ -159,27 +152,43 @@
           <div class="combo">
             <div class="comboTop">
               <div class="comboSeq" id="comboSeq"></div>
-
-              <div class="comboTimer" id="comboTimer" aria-label="Tiempo de combo">
+              <div class="comboTimer" id="comboTimer">
                 <span class="ms" aria-hidden="true">timer</span>
                 <span id="comboTimerVal">0.0</span>
               </div>
             </div>
 
-            <div class="comboHint" id="comboHint">
-              Completa la secuencia para subir el multiplicador.
-            </div>
+            <div class="comboHint" id="comboHint">Completa la secuencia para subir multiplicador.</div>
 
             <!-- ✅ LEVEL + HP + BUFFS -->
-            <!-- Importante: class .levelProgress para que ensureHudStatusUI pueda anclar si lo necesita -->
-            <div class="levelProg levelProgress" id="levelProg">
-              <!-- ✅ HUD Status (COMPAT con app.js) -->
-              <!-- app.js actualiza #hudHearts (innerHTML) y #hudBuffs (badges) -->
-              <div class="statusBar" id="hudStatus">
-                <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
-                <div class="buffBar" id="hudBuffs" aria-label="Mejoras activas"></div>
+            <div class="levelProg" id="levelProg">
+              <!-- Vida + buffs (nuevo) -->
+              <div class="statusBar" id="statusBar">
+                <div class="hpWrap" id="hpWrap" aria-label="Vida">
+                  <span class="ms hpIcon" aria-hidden="true">favorite</span>
+
+                  <!-- 10 corazones (JS puede marcar como empty / actualizar) -->
+                  <div class="hpHearts" id="hpHearts" aria-hidden="true">
+                    <span class="ms heart full" data-heart="1">favorite</span>
+                    <span class="ms heart full" data-heart="2">favorite</span>
+                    <span class="ms heart full" data-heart="3">favorite</span>
+                    <span class="ms heart full" data-heart="4">favorite</span>
+                    <span class="ms heart full" data-heart="5">favorite</span>
+                    <span class="ms heart full" data-heart="6">favorite</span>
+                    <span class="ms heart full" data-heart="7">favorite</span>
+                    <span class="ms heart full" data-heart="8">favorite</span>
+                    <span class="ms heart full" data-heart="9">favorite</span>
+                    <span class="ms heart full" data-heart="10">favorite</span>
+                  </div>
+
+                  <span class="hpText mono" id="hpText" title="Vida">10/10</span>
+                </div>
+
+                <!-- Buffs activos (nuevo). app.js inyecta badges dentro -->
+                <div class="buffBar" id="buffBar" aria-label="Mejoras activas"></div>
               </div>
 
+              <!-- Nivel (se mantiene IDs para compat) -->
               <div class="levelRow">
                 <div class="left">
                   <span class="ms" aria-hidden="true">bolt</span>
@@ -192,6 +201,7 @@
                 <div class="progFill" id="levelProgFill"></div>
               </div>
             </div>
+
           </div>
 
           <div class="toast" id="toast" hidden aria-live="polite"></div>
@@ -200,15 +210,13 @@
         <!-- Área de juego -->
         <div class="gameArea" id="gameArea">
           <div class="railFrame" id="railFrame" aria-hidden="true">
-            <canvas
-              id="gameCanvas"
-              width="640"
-              height="960"
-              data-rail="1"
-              data-basew="640"
-              data-baseh="960"
-              aria-label="Juego"
-            ></canvas>
+            <canvas id="gameCanvas"
+                    width="640"
+                    height="960"
+                    data-rail="1"
+                    data-basew="640"
+                    data-baseh="960"
+                    aria-label="Juego"></canvas>
           </div>
 
           <!-- Dpad -->
@@ -248,11 +256,11 @@
               </div>
             </div>
 
-            <div class="panelHead">
+            <div class="panelHead" style="margin-bottom:6px;">
               <div class="muted tiny" id="loadingSub">Iniciando…</div>
             </div>
 
-            <div class="loadingBar" aria-hidden="true">
+            <div class="loadingBar">
               <div class="loadingBarFill"></div>
             </div>
 
@@ -260,7 +268,7 @@
               Si tarda, se desbloquea solo (failsafe).
             </div>
 
-            <div class="panelActions panelActionsLeft">
+            <div class="panelActions" style="justify-content:flex-start; margin-top:10px;">
               <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
               <button class="btn danger" id="btnEmergencyRepair" type="button" hidden>Reparar PWA</button>
             </div>
@@ -270,7 +278,7 @@
         <!-- START -->
         <section class="overlay" id="overlayStart" hidden>
           <div class="panel">
-            <div class="splash splashCompact">
+            <div class="splash" style="margin-bottom:12px;">
               <div class="splashLogo" aria-hidden="true">
                 <span class="ms">grid_view</span>
               </div>
@@ -280,7 +288,7 @@
               </div>
             </div>
 
-            <div class="panelHead">
+            <div class="panelHead" style="margin-bottom:10px;">
               <div>
                 <div class="h2" id="startTitle">Nuevo run</div>
                 <div class="muted tiny" id="startSub">Elige tu perfil y lánzate a por combos.</div>
@@ -289,30 +297,22 @@
 
             <div class="form">
               <label class="label" for="profileSelect">Perfil</label>
-              <div class="row rowGap">
+              <div class="row" style="gap:12px;">
                 <select id="profileSelect" class="select"></select>
                 <button class="btn" id="btnNewProfile" type="button">Nuevo</button>
               </div>
 
-              <div id="newProfileWrap" hidden>
+              <div id="newProfileWrap" hidden style="margin-top:2px;">
                 <label class="label" for="startName">Nombre</label>
-                <input
-                  id="startName"
-                  class="input"
-                  type="text"
-                  inputmode="text"
-                  maxlength="16"
-                  placeholder="Tu nombre (mín. 2)"
-                  autocomplete="nickname"
-                />
-                <div class="tiny muted" id="profileHint">Tus datos se guardan en este dispositivo.</div>
+                <input id="startName" class="input" type="text" inputmode="text" maxlength="16" placeholder="Tu nombre (mín. 2)" />
+                <div class="tiny muted" id="profileHint" style="margin-top:6px;">Tus datos se guardan en este dispositivo.</div>
               </div>
 
-              <div class="panelActions panelActionsStretch">
-                <button class="btn primary btnBlock" id="btnStart" type="button">Empezar</button>
+              <div class="panelActions" style="justify-content:stretch; margin-top:14px;">
+                <button class="btn primary" id="btnStart" type="button" style="width:100%;">Empezar</button>
               </div>
 
-              <div class="tiny muted helpText">
+              <div class="tiny muted" style="margin-top:10px; line-height:1.35;">
                 Controles: WASD / Flechas / Swipe (móvil).<br />
                 Consejo: completa secuencias para subir el multiplicador.
               </div>
@@ -344,6 +344,7 @@
               </div>
             </div>
 
+            <!-- ✅ body scrolleable (mejor UX) -->
             <div class="panelBody">
               <div class="upgradeChoices" id="upgradeChoices"></div>
               <div class="tiny muted" id="upgradeHint">El juego se pausa aquí.</div>
@@ -369,7 +370,8 @@
                 <div class="goScore" id="goScoreBig">0</div>
               </div>
               <div class="goBest">
-                Mejor <span class="v" id="goBestBig">0</span>
+                Mejor
+                <span class="v" id="goBestBig">0</span>
               </div>
             </div>
 
@@ -433,7 +435,7 @@
               </div>
 
               <!-- GAME -->
-              <div class="optGroupTitle optGroupSpacer">
+              <div class="optGroupTitle" style="margin-top:10px;">
                 <span class="ms" aria-hidden="true">tune</span>
                 <span>Juego</span>
               </div>
@@ -459,19 +461,8 @@
                 <span class="mono" id="optFxValue">1.00</span>
               </div>
 
-              <!-- ✅ I18N (evita inyección/duplicidad en app.js) -->
-              <div class="optGroupTitle optGroupSpacer">
-                <span class="ms" aria-hidden="true">translate</span>
-                <span>Idioma</span>
-              </div>
-
-              <div class="optRow" id="optLangRow">
-                <label class="optLabel" for="optLang">Idioma</label>
-                <select id="optLang" class="select"></select>
-              </div>
-
               <!-- PWA -->
-              <div class="optGroupTitle optGroupSpacer">
+              <div class="optGroupTitle" style="margin-top:10px;">
                 <span class="ms" aria-hidden="true">phone_iphone</span>
                 <span>PWA</span>
               </div>
