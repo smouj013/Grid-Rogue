@@ -3,8 +3,7 @@
    ✅ v0.1.9:
    - HUD helpers: setHP (corazones) + setBuffs (badges con stack + timer)
    - Rarity helpers para duraciones (útil para Imán con tiempo por rareza)
-   - overlays show/hide + fadeOut (compatible aunque no haya animaciones CSS)
-   - Scroll-lock robusto sin depender de CSS (y compatible con .noScroll si existe)
+   - overlay fadeIn/fadeOut compatible con styles.css (animaciones)
 */
 (() => {
   "use strict";
@@ -53,17 +52,6 @@
   // ───────────────────────── JSON / Storage ─────────────────────────
   const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
   const safeStringify = (obj, fallback = "") => { try { return JSON.stringify(obj); } catch { return fallback; } };
-
-  function canLS() {
-    try {
-      const k = "__gr_ls_test__";
-      localStorage.setItem(k, "1");
-      localStorage.removeItem(k);
-      return true;
-    } catch {
-      return false;
-    }
-  }
 
   function lsGet(key, fallback) {
     try {
@@ -196,10 +184,8 @@
       document.documentElement.style.setProperty("--vh", `${h * 0.01}px`);
       document.documentElement.style.setProperty("--vw", `${w * 0.01}px`);
 
-      if (document.body?.dataset) {
-        document.body.dataset.mobile = isMobileLike() ? "1" : "0";
-        document.body.dataset.standalone = isStandalone() ? "1" : "0";
-      }
+      document.body?.dataset && (document.body.dataset.mobile = isMobileLike() ? "1" : "0");
+      document.body?.dataset && (document.body.dataset.standalone = isStandalone() ? "1" : "0");
     } catch {}
   }
 
@@ -235,7 +221,6 @@
   // ───────────────────────── Scroll lock ─────────────────────────
   let __scrollLockCount = 0;
   let __scrollY = 0;
-  let __prev = null;
 
   function lockScroll() {
     __scrollLockCount++;
@@ -243,25 +228,9 @@
 
     try {
       __scrollY = window.scrollY || 0;
-
       document.documentElement.classList.add("noScroll");
       document.body.classList.add("noScroll");
-
-      __prev = {
-        position: document.body.style.position,
-        top: document.body.style.top,
-        left: document.body.style.left,
-        right: document.body.style.right,
-        width: document.body.style.width,
-        overflowY: document.body.style.overflowY,
-      };
-
-      document.body.style.position = "fixed";
       document.body.style.top = `-${__scrollY}px`;
-      document.body.style.left = "0";
-      document.body.style.right = "0";
-      document.body.style.width = "100%";
-      document.body.style.overflowY = "hidden";
     } catch {}
   }
 
@@ -272,72 +241,71 @@
     try {
       document.documentElement.classList.remove("noScroll");
       document.body.classList.remove("noScroll");
-
-      if (__prev) {
-        document.body.style.position = __prev.position;
-        document.body.style.top = __prev.top;
-        document.body.style.left = __prev.left;
-        document.body.style.right = __prev.right;
-        document.body.style.width = __prev.width;
-        document.body.style.overflowY = __prev.overflowY;
-        __prev = null;
-      } else {
-        document.body.style.position = "";
-        document.body.style.top = "";
-        document.body.style.left = "";
-        document.body.style.right = "";
-        document.body.style.width = "";
-        document.body.style.overflowY = "";
-      }
-
       const y = __scrollY | 0;
+      document.body.style.top = "";
       window.scrollTo(0, y);
     } catch {}
   }
 
   // ───────────────────────── HUD helpers (v0.1.9) ─────────────────────────
   function ensureHudNodes() {
-    const hudStatus = $("hudStatus") || $("levelProg");
-    if (!hudStatus) return;
+    // Si alguien usa un index viejo, intentamos montar los nodos en #levelProg.
+    const levelProg = $("levelProg");
+    if (!levelProg) return;
 
-    // HP
-    const hpWrap = $("hudHearts") || $("hpWrap") || qs(".hpWrap", hudStatus);
-    if (hpWrap) {
-      let hearts = qs(".hearts", hpWrap);
-      if (!hearts) {
-        hearts = createEl("div", { class: "hearts" });
-        hpWrap.appendChild(hearts);
-      }
-      if (!hearts.id) hearts.id = "hpHearts";
+    let hpHearts = $("hpHearts");
+    let hpText = $("hpText");
+    let buffBadges = $("buffBadges");
 
-      let hpText = qs(".hpText", hpWrap);
-      if (!hpText) {
-        hpText = createEl("div", { class: "hpText tiny muted", text: "0/0" });
-        hpText.id = "hpText";
-        hpWrap.appendChild(hpText);
-      } else if (!hpText.id) {
-        hpText.id = "hpText";
-      }
+    if (hpHearts && hpText && buffBadges) return;
+
+    // crea bloque compatible con styles.css v0.1.9
+    let extras = $("levelExtras");
+    if (!extras) {
+      extras = createEl("div", { id: "levelExtras", class: "levelExtras" });
+      // lo insertamos antes de la progBar si existe
+      const progBar = levelProg.querySelector?.(".progBar");
+      if (progBar && progBar.parentNode === levelProg) levelProg.insertBefore(extras, progBar);
+      else levelProg.appendChild(extras);
     }
 
-    // Buffs
-    const buffsWrap = $("hudBuffs") || $("buffBadges") || qs(".buffsWrap", hudStatus);
-    if (buffsWrap) {
-      if (!buffsWrap.id) buffsWrap.id = "hudBuffs";
+    let hpWrap = $("hpWrap");
+    if (!hpWrap) {
+      hpWrap = createEl("div", { id: "hpWrap", class: "hpWrap", title: "Vida" });
+      extras.appendChild(hpWrap);
+    }
+
+    if (!hpHearts) {
+      hpHearts = createEl("div", { id: "hpHearts", class: "hearts", "aria-label": "Corazones" });
+      hpWrap.appendChild(hpHearts);
+    }
+    if (!hpText) {
+      hpText = createEl("div", { id: "hpText", class: "hpText tiny muted", text: "10/10" });
+      hpWrap.appendChild(hpText);
+    }
+
+    let buffsWrap = $("buffsWrap");
+    if (!buffsWrap) {
+      buffsWrap = createEl("div", { id: "buffsWrap", class: "buffsWrap", title: "Mejoras activas" });
+      extras.appendChild(buffsWrap);
+    }
+
+    if (!buffBadges) {
+      buffBadges = createEl("div", { id: "buffBadges", class: "buffBadges", "aria-label": "Badges de mejoras" });
+      buffsWrap.appendChild(buffBadges);
     }
   }
 
   function setHP(current, max = 10) {
     ensureHudNodes();
-    const hpWrap = $("hudHearts") || $("hpWrap") || null;
-    const hpHearts = $("hpHearts") || (hpWrap ? qs(".hearts", hpWrap) : null);
-    const hpText = $("hpText") || (hpWrap ? qs(".hpText", hpWrap) : null);
-
-    if (!hpHearts) return;
+    const hpHearts = $("hpHearts");
+    const hpText = $("hpText");
+    if (!hpHearts || !hpText) return;
 
     const cur = clampInt(current, 0, 999);
     const mx = clampInt(max, 1, 999);
 
+    // render corazones (visual = mx, típico 10)
     clearEl(hpHearts);
     for (let i = 0; i < mx; i++) {
       const full = i < cur;
@@ -347,13 +315,13 @@
         ])
       );
     }
-
-    if (hpText) hpText.textContent = `${cur}/${mx}`;
+    hpText.textContent = `${cur}/${mx}`;
   }
 
+  // buffs: [{ key, icon, rarity, count, timeLeft, duration, showTime }]
   function setBuffs(buffs) {
     ensureHudNodes();
-    const wrap = $("hudBuffs") || $("buffBadges");
+    const wrap = $("buffBadges");
     if (!wrap) return;
 
     const arr = Array.isArray(buffs) ? buffs : [];
@@ -371,7 +339,6 @@
       const duration = Number(b.duration);
       const timeLeft = Number(b.timeLeft);
       const hasTimer = Number.isFinite(duration) && duration > 0 && Number.isFinite(timeLeft) && timeLeft >= 0;
-      const showTime = (b.showTime !== false);
 
       const pct = hasTimer ? clamp(timeLeft / duration, 0, 1) : 1;
 
@@ -383,14 +350,14 @@
 
       badge.style.setProperty("--pct", String(pct));
 
-      badge.appendChild(createEl("span", { class: "bIcon ms", text: icon, "aria-hidden": "true" }));
+      badge.appendChild(createEl("span", { class: "ms", text: icon, "aria-hidden": "true" }));
 
-      const countEl = createEl("span", { class: "bCount", text: String(count) });
+      const countEl = createEl("span", { class: "buffCount", text: String(count) });
       if (count <= 1) countEl.hidden = true;
       badge.appendChild(countEl);
 
-      const timeEl = createEl("span", { class: "bTime", text: (hasTimer && showTime) ? fmtSeconds(timeLeft) : "" });
-      if (!(hasTimer && showTime)) timeEl.hidden = true;
+      const timeEl = createEl("span", { class: "buffTime", text: hasTimer ? fmtSeconds(timeLeft) : "" });
+      if (!hasTimer) timeEl.hidden = true;
       badge.appendChild(timeEl);
 
       wrap.appendChild(badge);
@@ -401,38 +368,44 @@
   onViewportChange(() => applyViewportVars(), { immediate: true });
 
   // ───────────────────────── Export ─────────────────────────
-  const api = Object.freeze({
+  window.GRUtils = Object.freeze({
     VERSION,
 
+    // Math
     clamp, clampInt, lerp, invLerp, randi, chance,
-    rarityMult, scaleByRarity, fmtSeconds, now, pad2,
 
-    safeParse, safeStringify, canLS,
+    // Rarity/time
+    rarityMult, scaleByRarity, fmtSeconds, now,
+
+    // JSON/Storage
+    safeParse, safeStringify,
     lsGet, lsSet, lsDel,
 
+    // DOM
     $, qs, qsa,
     on, off,
     setAttrs, createEl, clearEl,
     addClass, removeClass, toggleClass,
 
+    // Overlays/UI
     overlayShow, overlayHide, overlayFadeOut,
     pulse,
     setPill, setState,
 
+    // Device/Viewport
     isMobileLike, isStandalone,
     applyViewportVars,
     onViewportChange,
     rafThrottle,
 
+    // Scroll lock
     lockScroll, unlockScroll,
 
+    // HUD (v0.1.9)
     hud: Object.freeze({
       ensureHudNodes,
       setHP,
       setBuffs,
     }),
   });
-
-  window.GRUtils = api;
-  if (!window.Utils) window.Utils = api;
 })();
