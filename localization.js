@@ -1,13 +1,23 @@
-/* localization.js — Grid Rogue v0.1.9
+/* localization.js — Grid Rogue v0.2.0
    I18N separado (window.I18n)
    ✅ Normalización robusta (zh-hans/zh-hant, regiones, _ vs -)
    ✅ Soporte RTL (ar): ajusta document.documentElement.dir
-   ✅ Nuevas keys v0.1.9 (vida/corazones, badges de mejoras activas, duraciones, upgrade de vida)
+   ✅ Keys v0.1.9 incluidas (vida/corazones, badges de mejoras activas, duraciones, upgrade de vida)
+   ✅ v0.2.0:
+   - Guard anti-doble carga (SW/duplicados)
+   - applyDataAttrs más robusto (acepta root Element/Document y no rompe si falta DOM)
+   - languageOptions estable + auto label siempre disponible
+   - detectBrowser más seguro (navigator opcional)
 */
 (() => {
   "use strict";
 
-  const VERSION = "0.1.9";
+  const VERSION = "0.2.0";
+
+  // ✅ Guard: evita crash si se ejecuta dos veces (SW/duplicados)
+  try {
+    if (typeof window !== "undefined" && window.I18n) return;
+  } catch (_) {}
 
   // Idiomas RTL (por ahora solo árabe)
   const RTL_LANGS = new Set(["ar"]);
@@ -33,7 +43,6 @@
       const isSG = s.includes("-sg");
 
       if (hasHant || isTW || isHK || isMO) return "zh-hant";
-      // hans / cn / sg / default => simplified
       if (hasHans || isCN || isSG) return "zh";
       return "zh";
     }
@@ -47,7 +56,7 @@
     return base;
   };
 
-  // Diccionarios
+  // Diccionarios (TODOS los idiomas como en v0.1.9)
   const dict = {
     es: {
       langName: "Español",
@@ -117,7 +126,7 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Sube multiplicador base (+0.10).",
 
-      // ── v0.1.9 (vida/corazones + badges + duraciones + nueva mejora) ──
+      // v0.1.9
       hud_hp: "Vida",
       toast_damage: "Daño",
       toast_heal: "Vida +1",
@@ -1383,15 +1392,15 @@
   let current = "es";
 
   function detectBrowser() {
-    const langs = (navigator.languages && navigator.languages.length)
-      ? navigator.languages
-      : [navigator.language || "es"];
+    const nav = (typeof navigator !== "undefined" ? navigator : null);
+    const langs = (nav && nav.languages && nav.languages.length)
+      ? nav.languages
+      : [(nav && nav.language) || "es"];
 
     for (const raw of langs) {
       const n = normalize(raw);
       if (dict[n]) return n;
     }
-    // fallback
     return dict.en ? "en" : (dict.es ? "es" : Object.keys(dict)[0]);
   }
 
@@ -1400,13 +1409,44 @@
     try { document.documentElement.dir = RTL_LANGS.has(code) ? "rtl" : "ltr"; } catch {}
   }
 
+  function applyDataAttrs(root = document) {
+    try {
+      const r = root && (root.nodeType ? root : document);
+      const qsa = (node, sel) => (node && node.querySelectorAll ? node.querySelectorAll(sel) : []);
+      qsa(r, "[data-i18n]").forEach((el) => {
+        const k = el.getAttribute("data-i18n");
+        if (k) el.textContent = t(k);
+      });
+      qsa(r, "[data-i18n-title]").forEach((el) => {
+        const k = el.getAttribute("data-i18n-title");
+        if (k) el.title = t(k);
+      });
+      qsa(r, "[data-i18n-ph]").forEach((el) => {
+        const k = el.getAttribute("data-i18n-ph");
+        if (k) el.placeholder = t(k);
+      });
+      qsa(r, "[data-i18n-aria]").forEach((el) => {
+        const k = el.getAttribute("data-i18n-aria");
+        if (k) el.setAttribute("aria-label", t(k));
+      });
+      qsa(r, "[data-i18n-alt]").forEach((el) => {
+        const k = el.getAttribute("data-i18n-alt");
+        if (k) el.setAttribute("alt", t(k));
+      });
+      qsa(r, "[data-i18n-value]").forEach((el) => {
+        const k = el.getAttribute("data-i18n-value");
+        if (k) el.value = t(k);
+      });
+    } catch {}
+  }
+
   function setLang(raw) {
     const n = normalize(raw);
     if (n === "auto") current = detectBrowser();
     else current = dict[n] ? n : (dict.en ? "en" : "es");
     setDocLangAndDir(current);
 
-    // Opcional y seguro: refresca textos ya presentes
+    // Refresca textos ya presentes (seguro)
     try { applyDataAttrs(document); } catch {}
   }
 
@@ -1454,41 +1494,12 @@
 
     // append any non-listed supported (future-proof)
     for (const code of supported) {
-      if (order.includes(code) || code === "auto") continue;
+      if (code === "auto") continue;
+      if (order.includes(code)) continue;
       out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
     }
+
     return out;
-  }
-
-  function applyDataAttrs(root = document) {
-    try {
-      root.querySelectorAll?.("[data-i18n]")?.forEach((el) => {
-        const k = el.getAttribute("data-i18n");
-        if (k) el.textContent = t(k);
-      });
-      root.querySelectorAll?.("[data-i18n-title]")?.forEach((el) => {
-        const k = el.getAttribute("data-i18n-title");
-        if (k) el.title = t(k);
-      });
-      root.querySelectorAll?.("[data-i18n-ph]")?.forEach((el) => {
-        const k = el.getAttribute("data-i18n-ph");
-        if (k) el.placeholder = t(k);
-      });
-
-      // Extras seguros (no rompen nada si no existen):
-      root.querySelectorAll?.("[data-i18n-aria]")?.forEach((el) => {
-        const k = el.getAttribute("data-i18n-aria");
-        if (k) el.setAttribute("aria-label", t(k));
-      });
-      root.querySelectorAll?.("[data-i18n-alt]")?.forEach((el) => {
-        const k = el.getAttribute("data-i18n-alt");
-        if (k) el.setAttribute("alt", t(k));
-      });
-      root.querySelectorAll?.("[data-i18n-value]")?.forEach((el) => {
-        const k = el.getAttribute("data-i18n-value");
-        if (k) el.value = t(k);
-      });
-    } catch {}
   }
 
   // init doc lang/dir with default

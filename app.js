@@ -1,24 +1,16 @@
-/* app.js — Grid Rogue v0.1.9 (STABLE+FULLSCREEN + AUDIO + I18N)
-   v0.1.9:
-   - Player con VIDA: empieza con 10 corazones (HP). Trampa (cuadrado rojo) = -1 corazón.
-   - UI HP + Buff Badges junto a la barra de nivel (se crea si no existe en el HTML).
-   - Nueva mejora: Corazón (más vida / curación).
-   - Imán ahora es TEMPORAL: duración según rareza + contador en badge.
-   - Panel de mejoras: markup mejorado (icono, duración, metadatos) para que se vea más pro con CSS.
+/* app.js — Grid Rogue v0.2.0 (STABLE+FULLSCREEN + AUDIO + I18N)
+   v0.2.0:
+   - HUD HP + Buff Badges en capa flotante (NO afecta barra de nivel / NO empuja layouts).
+   - Posicionado robusto anclado a #levelProgress (o fallback).
+   - Upgrades panel: canvas FX no interfiere (host relative) + mejor padding (CSS).
+   - GameArea puede expandirse más si hay espacio (CSS) manteniendo grid intacto.
    - Mantiene migración gridrunner_* -> gridrogue_* y compat flags.
-
-   FIX (sin duplicidades):
-   - La lógica de TRAMPA se centraliza en applyTrapHit()/applyCollect() (sin doble lógica vieja).
-   - applyCollect() acepta coords opcionales y delega en applyTrapHit si el tipo es Trap.
-
-   SPRITES (compat):
-   - Precarga robusta: intenta .svg y .png (según lo que exista en /assets/sprites).
 */
 
 (() => {
   "use strict";
 
-  const APP_VERSION = String(window.APP_VERSION || "0.1.9");
+  const APP_VERSION = String(window.APP_VERSION || "0.2.0");
 
   // Compat flags (failsafe/index antiguo)
   window.__GRIDRUNNER_BOOTED = false;
@@ -62,7 +54,7 @@
     applyDataAttrs() {},
   };
 
-  // Traducción con fallback (para keys nuevas si tu i18n aún no las tiene)
+  // Traducción con fallback
   function T(key, fallback = null, arg = null) {
     try {
       const s = I18n.t(key, arg);
@@ -86,7 +78,7 @@
     getState: () => ({}),
   };
 
-  // ───────────────────────── Storage keys (Grid Rogue + legacy Grid Runner) ─────────────────────────
+  // ───────────────────────── Storage keys ─────────────────────────
   const BEST_KEY       = "gridrogue_best_v1";
   const NAME_KEY       = "gridrogue_name_v1";
   const SETTINGS_KEY   = "gridrogue_settings_v1";
@@ -125,16 +117,12 @@
     const ua = navigator.userAgent || "";
     return /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
   }
-
-  // ✅ Más fiable: si es móvil/coarse y está en portrait => layout móvil (8x16)
   function isMobileLayout() {
     const coarse = isCoarsePointer();
     const portrait = isPortrait();
     return (coarse || isMobileUA()) && portrait;
   }
-
   function desiredRows() {
-    // ✅ Mobile compacto para que el juego se vea más grande
     return isMobileLayout() ? 16 : 24;
   }
 
@@ -179,7 +167,6 @@
   function saveSettings() {
     try {
       const json = JSON.stringify(settings);
-      // Guardar en nuevo + legacy (por si queda un app.js viejo cacheado)
       writeLS(SETTINGS_KEY, json);
       writeLS(SETTINGS_KEY_OLD, json);
     } catch {}
@@ -191,7 +178,6 @@
     try { navigator.vibrate(ms); } catch {}
   }
 
-  // aplica idioma ya
   I18n.setLang(settings.lang);
 
   function applyAudioSettingsNow() {
@@ -211,7 +197,6 @@
     } catch {}
   }
 
-  // ✅ Scroll lock más duro (evita “scroll fantasma” en iOS/Android)
   function lockPageScroll() {
     try {
       document.documentElement.style.overscrollBehavior = "none";
@@ -224,7 +209,6 @@
       document.body.style.left = "0";
       document.body.style.right = "0";
       document.body.style.width = "100%";
-      // NO "none": así permitimos gestos dentro de overlays con scroll propio
       document.body.style.touchAction = "manipulation";
     } catch {}
   }
@@ -232,7 +216,6 @@
   function installAntiScrollGuards() {
     const allowScrollInOptions = (target) => {
       if (!overlayOptions || overlayOptions.hidden) return false;
-      // permitir scroll SOLO dentro del cuerpo de opciones (o elementos internos)
       const body =
         overlayOptions.querySelector?.("#optionsBody") ||
         overlayOptions.querySelector?.(".options") ||
@@ -254,7 +237,6 @@
   const Auth = window.Auth || null;
   let activeProfileId = null;
 
-  // migra nombre/best
   let playerName = (migrateKeyIfNeeded(NAME_KEY, NAME_KEY_OLD) || "").trim().slice(0, 16);
   let best = parseInt(migrateKeyIfNeeded(BEST_KEY, BEST_KEY_OLD) || "0", 10) || 0;
 
@@ -270,13 +252,11 @@
       playerName = (p.name || I18n.t("defaultPlayer")).trim().slice(0, 16) || I18n.t("defaultPlayer");
       best = (Auth.getBestForActive?.() ?? best) | 0;
 
-      // Persist también en storage local (nuevo + legacy)
       writeLS(NAME_KEY, playerName);
       writeLS(NAME_KEY_OLD, playerName);
       writeLS(BEST_KEY, String(best));
       writeLS(BEST_KEY_OLD, String(best));
 
-      // Prefs por perfil (si existen) -> aplicarlas al settings local (sin romper)
       const prefs = Auth.getPrefsForActive?.();
       if (prefs && typeof prefs === "object") {
         if ("useSprites" in prefs) settings.useSprites = !!prefs.useSprites;
@@ -317,7 +297,7 @@
     } catch {}
   }
 
-  // ───────────────────────── Sprites optional (robusto .svg/.png) ─────────────────────────
+  // ───────────────────────── Sprites optional ─────────────────────────
   const sprites = { ready: false, map: new Map() };
   function spriteUrl(name) { return new URL(`./assets/sprites/${name}`, location.href).toString(); }
   function loadImage(url) {
@@ -348,7 +328,6 @@
       ["bonus", ["tile_bonus.svg", "tile_bonus.png"]],
       ["trap",  ["tile_trap.svg",  "tile_trap.png"]],
       ["block", ["tile_block.svg", "tile_block.png"]],
-      // player es opcional: si no existe, fallback a cuadrado
       ["player", ["tile_player.svg", "tile_player.png", "tile_hero.svg", "tile_hero.png"]],
     ];
 
@@ -362,7 +341,7 @@
     }
   }
 
-  // ───────────────────────── Game constants (dynamic rows) ─────────────────────────
+  // ───────────────────────── Game constants ─────────────────────────
   const COLS = 8;
   let ROWS = desiredRows();
 
@@ -428,7 +407,7 @@
   let colF = 3;
   let rowF = 1;
 
-  // ✅ VIDA (v0.1.9)
+  // ✅ VIDA
   const HP_START = 10;
   const HP_CAP = 24;
   let hpMax = HP_START;
@@ -436,7 +415,7 @@
 
   let shields = 0;
 
-  // ✅ Imán temporal (v0.1.9): radius + tiempo restante (segundos)
+  // ✅ Imán temporal
   let magnet = 0;
   let magnetTime = 0;
 
@@ -541,10 +520,12 @@
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
 
-  // ✅ HUD extras: HP + badges junto a nivel
+  // ✅ HUD extras: HP + badges (capa flotante)
+  let hudFloat = null;
   let hudStatus = null;
   let hudHearts = null;
   let hudBuffs = null;
+  let _hudPosRAF = 0;
 
   // ───────────────────────── Error handling global ─────────────────────────
   function showFatal(err) {
@@ -609,27 +590,106 @@
       .replaceAll(">", "&gt;");
   }
 
-  // ✅ HUD status cerca del nivel (se crea dinámicamente) — SIN inline styles
-  function ensureHudStatusUI() {
-    if (hudStatus && hudStatus.parentElement) return;
+  // ───────────────────────── HUD FLOAT LAYER (v0.2.0) ─────────────────────────
+  function ensureHudFloatLayer() {
+    if (hudFloat && hudFloat.parentElement) return;
+    const existing = $("hudFloat");
+    if (existing) { hudFloat = existing; return; }
 
-    const host =
-      levelProgText?.closest?.("#levelProgress") ||
-      levelProgText?.closest?.(".levelProgress") ||
-      levelProgText?.parentElement ||
-      hud ||
-      stage ||
-      document.body;
-
+    const host = hud || stage || document.body;
     if (!host) return;
 
+    try {
+      const f = document.createElement("div");
+      f.id = "hudFloat";
+      f.className = "hudFloat";
+      host.appendChild(f);
+      hudFloat = f;
+    } catch {}
+  }
+
+  function getLevelProgressAnchor() {
+    return $("levelProgress") ||
+      levelProgText?.closest?.("#levelProgress") ||
+      levelProgFill?.closest?.("#levelProgress") ||
+      levelProgText?.closest?.(".levelProgress") ||
+      levelProgFill?.closest?.(".levelProgress") ||
+      null;
+  }
+
+  function scheduleHudStatusPosition() {
+    if (_hudPosRAF) return;
+    _hudPosRAF = requestAnimationFrame(() => {
+      _hudPosRAF = 0;
+      positionHudStatus();
+    });
+  }
+
+  function positionHudStatus() {
+    if (!hudStatus || !hudFloat) return;
+
+    const ref = hud || stage || document.body;
+    if (!ref) return;
+
+    const refRect = ref.getBoundingClientRect?.();
+    if (!refRect) return;
+
+    const anchor = getLevelProgressAnchor();
+
+    // Fallback: esquina superior derecha del HUD
+    let x = Math.max(0, Math.round(refRect.width - 260));
+    let y = 8;
+    let w = 260;
+
+    if (anchor?.getBoundingClientRect) {
+      const a = anchor.getBoundingClientRect();
+      x = Math.round(a.left - refRect.left);
+      y = Math.round(a.bottom - refRect.top + 6);
+      w = Math.round(a.width);
+
+      // Si se sale por abajo, lo colocamos arriba del anchor
+      if ((y + 52) > refRect.height) {
+        y = Math.round(a.top - refRect.top - 52 - 6);
+      }
+      x = clampInt(x, 6, Math.max(6, Math.round(refRect.width - 6 - w)));
+      y = clampInt(y, 6, Math.max(6, Math.round(refRect.height - 6 - 52)));
+    }
+
+    hudStatus.style.left = "0px";
+    hudStatus.style.top = "0px";
+    hudStatus.style.width = `${Math.max(220, w)}px`;
+    hudStatus.style.transform = `translate(${x}px, ${y}px)`;
+  }
+
+  function shouldShowHudStatus() {
+    // Visible sólo cuando tiene sentido y no molesta overlays “grandes”
+    if (!running) return false;
+    if (overlayUpgrades && !overlayUpgrades.hidden) return false;
+    if (overlayOptions && !overlayOptions.hidden) return false;
+    if (overlayGameOver && !overlayGameOver.hidden) return false;
+    if (overlayLoading && !overlayLoading.hidden) return false;
+    if (overlayError && !overlayError.hidden) return false;
+    // Pausa: lo dejamos visible (se ve útil), pero si lo prefieres oculto:
+    // if (overlayPaused && !overlayPaused.hidden) return false;
+    return true;
+  }
+
+  // ✅ HUD status (HP + Buffs) — en capa flotante
+  function ensureHudStatusUI() {
+    ensureHudFloatLayer();
+    if (!hudFloat) return;
+
+    // Si ya existe en DOM (por HTML), reusarlo
     const existing = $("hudStatus");
     if (existing) {
       hudStatus = existing;
       hudHearts = $("hudHearts");
       hudBuffs = $("hudBuffs");
+      if (!hudStatus.parentElement) hudFloat.appendChild(hudStatus);
       return;
     }
+
+    if (hudStatus && hudStatus.parentElement) return;
 
     try {
       const wrap = document.createElement("div");
@@ -647,9 +707,7 @@
       wrap.appendChild(hearts);
       wrap.appendChild(buffs);
 
-      const anchor = levelProgText?.parentElement || host;
-      if (anchor && anchor.parentElement) anchor.parentElement.appendChild(wrap);
-      else host.appendChild(wrap);
+      hudFloat.appendChild(wrap);
 
       hudStatus = wrap;
       hudHearts = hearts;
@@ -692,6 +750,8 @@
       </div>
     `.trim();
   }
+
+  const pickedCount = new Map();
 
   function updateBuffsUI() {
     if (!hudBuffs) return;
@@ -754,7 +814,6 @@
       }));
     }
 
-    // HP extra (solo si aumentaste el máximo)
     const hpExtra = Math.max(0, hpMax - HP_START);
     if (hpExtra > 0) {
       items.push(makeBuffBadge({
@@ -770,8 +829,13 @@
 
   function updateStatusHUD() {
     ensureHudStatusUI();
+    if (hudStatus) {
+      hudStatus.hidden = !shouldShowHudStatus();
+      hudStatus.classList.toggle("compact", isMobileLayout());
+    }
     updateHeartsUI();
     updateBuffsUI();
+    scheduleHudStatusPosition();
   }
 
   // Pills a 10Hz
@@ -866,7 +930,7 @@
     resize();
   }
 
-  // ───────────────────────── Grid (robusto) ─────────────────────────
+  // ───────────────────────── Grid ─────────────────────────
   function recomputeZone() {
     zoneH = clampInt(zoneBase + zoneExtra, 3, 9);
     zoneY0 = (ROWS - zoneH) - 2;
@@ -1084,7 +1148,6 @@
     AudioSys.sfx("trap");
   }
 
-  // ✅ Centralizado (sin duplicidad): si t es Trap, delega a applyTrapHit()
   function applyCollect(t, checkCombo = true, x = null, y = null) {
     if (t === CellType.Trap) {
       applyTrapHit(x, y);
@@ -1202,7 +1265,7 @@
       if (t === CellType.Trap) {
         spawnPop(x, y, CELL_COLORS[t], 0.95);
         spawnSparks(x, y, "rgba(255,160,180,0.95)", 0.65);
-        applyCollect(CellType.Trap, true, x, y); // centralizado
+        applyCollect(CellType.Trap, true, x, y);
         return;
       }
 
@@ -1336,8 +1399,6 @@
       apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
   ];
 
-  const pickedCount = new Map();
-
   function isUpgradeAllowed(u) {
     if ((pickedCount.get(u.id) || 0) >= (u.max ?? 999)) return false;
     if (u.id === "mag1") return magnet < 1;
@@ -1400,6 +1461,9 @@
     if (upFxCanvas && upFxCanvas.parentElement) return;
 
     try {
+      // ✅ IMPORTANT: asegurar host en relative para que el canvas absolute no rompa layout
+      host.style.position = host.style.position || "relative";
+
       const c = document.createElement("canvas");
       c.id = "upFxCanvas";
       c.className = "upFxCanvas";
@@ -1985,12 +2049,14 @@
 
   // ───────────────────────── Resize ─────────────────────────
   function resize() {
-    if (!gameArea || !canvas || !ctx) return;
+    if ((!gameArea && !canvasWrap) || !canvas || !ctx) return;
 
     updateVhUnit();
     applyRowsIfNeeded({ forceReset: false });
 
-    const r = gameArea.getBoundingClientRect();
+    // ✅ v0.2.0: usar canvasWrap si existe (mejor control de “panel”)
+    const host = canvasWrap || gameArea;
+    const r = host.getBoundingClientRect();
     const availW = Math.max(240, Math.floor(r.width));
     const availH = Math.max(240, Math.floor(r.height));
 
@@ -2113,6 +2179,7 @@
     if (paused) { overlayShow(overlayPaused); AudioSys.duckMusic(true); }
     else { overlayHide(overlayPaused); AudioSys.duckMusic(false); }
     AudioSys.sfx("ui");
+    updateStatusHUD();
   }
 
   function showOptions() {
@@ -2128,11 +2195,13 @@
       });
     } catch {}
     AudioSys.sfx("ui");
+    updateStatusHUD();
   }
   function hideOptions() {
     overlayHide(overlayOptions);
     if (!inLevelUp && !gameOver && running) pauseForOverlay(false);
     AudioSys.sfx("ui");
+    updateStatusHUD();
   }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
@@ -2272,6 +2341,7 @@
     }
 
     overlayShow(overlayGameOver);
+    updateStatusHUD();
 
     if (pendingReload) {
       pendingReload = false;
@@ -2559,7 +2629,7 @@
     canvas = $("gameCanvas");
 
     if (!stage) throw new Error("Falta #stage");
-    if (!gameArea) throw new Error("Falta #gameArea");
+    if (!gameArea && !canvasWrap) throw new Error("Falta #gameArea (o #canvasWrap)");
     if (!canvas) throw new Error("Falta #gameCanvas");
 
     ctx = canvas.getContext("2d", { alpha: false, desynchronized: true }) ||
@@ -2654,6 +2724,8 @@
     btnDown = $("btnDown");
     btnLeft = $("btnLeft");
     btnRight = $("btnRight");
+
+    hudFloat = $("hudFloat");
   }
 
   async function boot() {
@@ -2701,7 +2773,7 @@
       btnPause?.addEventListener("click", togglePause);
       btnOptions?.addEventListener("click", showOptions);
 
-      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); });
+      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); updateStatusHUD(); });
       btnQuitToStart?.addEventListener("click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused, 120); resetRun(true); });
 
       btnPausedRestart?.addEventListener("click", () => { AudioSys.sfx("ui"); resetRun(false); startRun(); });
@@ -2868,6 +2940,7 @@
         if (document.hidden && running && !gameOver && !inLevelUp) {
           pauseForOverlay(true);
           overlayShow(overlayPaused);
+          updateStatusHUD();
         }
       });
 

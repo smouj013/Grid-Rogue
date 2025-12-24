@@ -1,14 +1,16 @@
-/* sw.js — Grid Rogue (v0.1.9)
-   ✅ Igual que v0.1.8 pero con bump de VERSION + compat con rendiment.js
-   - GH Pages/subcarpetas: usa self.registration.scope y URLs absolutas
+/* sw.js — Grid Rogue (v0.2.0)
+   ✅ v0.2.0:
+   - VERSION bump + claves de cache nuevas
+   - GH Pages/subcarpetas: usa self.registration.scope y URLs absolutas (clave estable)
    - Precache core robusto (index obligatorio, resto best-effort)
    - Offline navegación: devuelve index.html
    - Runtime cache: stale-while-revalidate
    - Audio: soporte Range (206) para iOS/Android
+   - Ignora query en assets estáticos (cache-key estable) pero respeta query en otros
 */
 "use strict";
 
-const VERSION = "v0.1.9";
+const VERSION = "v0.2.0";
 
 const CACHE_PREFIX = "gridrogue-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
@@ -34,7 +36,7 @@ const CORE_ASSETS = [
   new URL("audio.js", SCOPE).toString(),
   new URL("auth.js", SCOPE).toString(),
 
-  // ✅ Rendimiento / perf (debe ir antes de app.js en index.html)
+  // Perf (antes de app.js en index.html)
   new URL("rendiment.js", SCOPE).toString(),
 
   // Main
@@ -276,6 +278,7 @@ self.addEventListener("fetch", (event) => {
 
           const fresh = await fetch(req);
           if (fresh && fresh.ok) {
+            // mantenemos el shell actualizado
             core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
             return fresh;
           }

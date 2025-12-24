@@ -14,7 +14,7 @@
   <title>Grid Rogue</title>
 
   <script>
-    window.APP_VERSION = "0.1.9";
+    window.APP_VERSION = "0.2.0";
   </script>
 
   <script>
@@ -56,12 +56,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.1.9" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.2.0" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.1.9" />
+  <link rel="stylesheet" href="./styles.css?v=0.2.0" />
 </head>
 
 <body>
@@ -107,7 +107,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.1.9</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.2.0</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -139,6 +139,7 @@
 
         <div class="hud" id="hud" aria-hidden="true">
           <div class="combo">
+
             <div class="comboTop">
               <div class="comboSeq" id="comboSeq"></div>
 
@@ -152,12 +153,14 @@
               Completa la secuencia para subir el multiplicador.
             </div>
 
-            <div class="levelProg levelProgress" id="levelProg">
-              <div class="statusBar" id="hudStatus">
-                <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
-                <div class="buffBar" id="hudBuffs" aria-label="Mejoras activas"></div>
+            <div class="hudFloat" id="hudFloat">
+              <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
+              <div class="buffDock" aria-label="Mejoras activas">
+                <div class="buffBar" id="hudBuffs"></div>
               </div>
+            </div>
 
+            <div class="levelProg levelProgress" id="levelProg">
               <div class="levelRow">
                 <div class="left">
                   <span class="ms" aria-hidden="true">bolt</span>
@@ -170,6 +173,7 @@
                 <div class="progFill" id="levelProgFill"></div>
               </div>
             </div>
+
           </div>
 
           <div class="toast" id="toast" hidden aria-live="polite"></div>
@@ -520,15 +524,12 @@
     })();
   </script>
 
-  <script src="./utils.js?v=0.1.9" defer></script>
-  <script src="./localization.js?v=0.1.9" defer></script>
-  <script src="./auth.js?v=0.1.9" defer></script>
-  <script src="./audio_sys.js?v=0.1.9" defer></script>
-  <script src="./audio.js?v=0.1.9" defer></script>
-
-  <!-- ✅ Si tu archivo se llama rendiment.js, va aquí y ANTES de app.js -->
-  <script src="./rendiment.js?v=0.1.9" defer></script>
-
-  <script src="./app.js?v=0.1.9" defer></script>
+  <script src="./utils.js?v=0.2.0" defer></script>
+  <script src="./localization.js?v=0.2.0" defer></script>
+  <script src="./auth.js?v=0.2.0" defer></script>
+  <script src="./audio_sys.js?v=0.2.0" defer></script>
+  <script src="./audio.js?v=0.2.0" defer></script>
+  <script src="./rendiment.js?v=0.2.0" defer></script>
+  <script src="./app.js?v=0.2.0" defer></script>
 </body>
 </html>

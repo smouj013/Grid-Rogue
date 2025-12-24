@@ -1,12 +1,3 @@
-/* styles.css — Grid Rogue v0.1.9
-   - Layout estable (topbar + HUD + canvas grande)
-   - HP (corazones) + buffs (badges) sin romper la barra de nivel
-   - Overlays sólidos + paneles con scroll interno
-   - Upgrades panel pro + spacing correcto
-   - Anti “scroll fantasma” (con lock JS) + opciones scrolleables
-   - Dpad móvil en bordes
-*/
-
 :root{
   --hue: 220;
 
@@ -34,7 +25,6 @@
 
   --pad: 10px;
   --btnH: 40px;
-  --tap: 44px;
 
   --focus: 0 0 0 3px rgba(105,168,255,0.25);
 
@@ -43,16 +33,14 @@
 
   --overlayBack: rgba(0,0,0,0.50);
 
-  /* HUD un poco más alto para HP + buffs */
-  --hudH: 148px;
+  --hudH: 168px;
 
   --panelMaxW: 560px;
   --panelWideMaxW: 980px;
 
-  --canvasMaxW: 1120px;
-
+  --railMaxW: 1600px;
   --railPad: 10px;
-  --railPadDesktop: 16px;
+  --railPadDesktop: 18px;
 
   --vh: 1vh;
 
@@ -152,7 +140,6 @@ input[type="range"]{ accent-color: var(--accent); }
 
 [hidden]{ display:none !important; }
 
-/* ───────────────── App layout ───────────────── */
 #app{
   height:100vh;
   height:calc(var(--vh) * 100);
@@ -163,7 +150,6 @@ input[type="range"]{ accent-color: var(--accent); }
   min-height:0;
 }
 
-/* ───────────────── Noscript ───────────────── */
 .noscriptBar{
   padding:10px 12px;
   background: rgba(255,59,89,0.14);
@@ -172,7 +158,6 @@ input[type="range"]{ accent-color: var(--accent); }
   font-weight:700;
 }
 
-/* ───────────────── Topbar ───────────────── */
 .topbar{
   position:relative;
   z-index:80;
@@ -310,7 +295,6 @@ input[type="range"]{ accent-color: var(--accent); }
   .pill.mini{ padding:6px 8px; }
 }
 
-/* ───────────────── Stage ───────────────── */
 .stage{
   position:relative;
   z-index:1;
@@ -326,7 +310,7 @@ input[type="range"]{ accent-color: var(--accent); }
   display:flex;
   flex-direction:column;
   min-height:0;
-  gap:10px;
+  gap:12px;
   padding:
     10px
     10px
@@ -334,7 +318,6 @@ input[type="range"]{ accent-color: var(--accent); }
     10px;
 }
 
-/* ───────────────── HUD ───────────────── */
 .hud{
   position:relative;
   z-index:12;
@@ -342,16 +325,15 @@ input[type="range"]{ accent-color: var(--accent); }
   height: var(--hudH);
   min-height: var(--hudH);
   max-height: var(--hudH);
-  overflow: visible; /* importante: badges no deben recortar */
+  overflow: visible;
   display:flex;
   justify-content:center;
-  gap:10px;
 }
 
 .combo{
   width:100%;
-  max-width: 940px;
-  padding: 12px 12px;
+  max-width: 980px;
+  padding: 14px 14px;
   border-radius: var(--r2);
   background: var(--glass);
   border:1px solid rgba(255,255,255,0.10);
@@ -406,71 +388,22 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 
 .comboHint{
-  margin-top:8px;
+  margin-top:10px;
   font-size:12.5px;
   color: rgba(255,255,255,0.72);
 }
 
-/* ───────────────── Level progress ───────────────── */
-.levelProg,
-.levelProgress{
-  position:relative;
-  margin-top:10px;
-  border-radius: 14px;
-  border:1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.03);
-  padding: 42px 10px 10px 10px; /* reserva para statusBar sin empujar raremente */
-  overflow: visible;
-}
-
-.levelRow{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-}
-.levelRow .left{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  min-width:0;
-}
-#levelProgText{
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  max-width: 60ch;
-}
-#levelProgPct{ white-space:nowrap; }
-
-.progBar{
-  margin-top:8px;
-  height:10px;
-  border-radius:999px;
-  overflow:hidden;
-  background: rgba(255,255,255,0.06);
-  border:1px solid rgba(255,255,255,0.08);
-}
-.progFill{
-  height:100%;
-  width:0%;
-  border-radius:999px;
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
-  box-shadow: 0 10px 22px rgba(0,0,0,0.22);
-}
-
-/* ───────────────── StatusBar (HP + Buffs) ─────────────────
-   Clave: NO debe cambiar la barra de nivel -> está fuera del flujo */
-.statusBar{
+.hudFloat{
   position:absolute;
-  left:10px;
-  right:10px;
-  top:8px;
+  left:12px;
+  right:12px;
+  top:60px;
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   justify-content:space-between;
   gap:10px;
   pointer-events:none;
+  z-index: 5;
 }
 
 .hpWrap{
@@ -478,7 +411,7 @@ input[type="range"]{ accent-color: var(--accent); }
   align-items:center;
   gap:8px;
   min-width:0;
-  padding:6px 8px;
+  padding:8px 10px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(0,0,0,0.18);
@@ -522,6 +455,12 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.70);
 }
 
+.buffDock{
+  display:flex;
+  justify-content:flex-end;
+  min-width:0;
+}
+
 .buffBar{
   display:flex;
   align-items:center;
@@ -529,6 +468,7 @@ input[type="range"]{ accent-color: var(--accent); }
   justify-content:flex-end;
   flex-wrap:wrap;
   min-width:0;
+  max-width: 62%;
 }
 
 .buffBadge{
@@ -536,7 +476,7 @@ input[type="range"]{ accent-color: var(--accent); }
   display:inline-flex;
   align-items:center;
   gap:6px;
-  padding:6px 8px;
+  padding:7px 9px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(0,0,0,0.18);
@@ -544,10 +484,7 @@ input[type="range"]{ accent-color: var(--accent); }
   box-shadow: 0 10px 18px rgba(0,0,0,0.18);
 }
 
-.buffBadge .bIcon{
-  font-size:16px;
-}
-
+.buffBadge .bIcon{ font-size:16px; }
 .buffBadge .bTime{
   font-size:12px;
   color: rgba(255,255,255,0.78);
@@ -579,7 +516,6 @@ input[type="range"]{ accent-color: var(--accent); }
 .buffBadge[data-kind="reroll"]{ border-color: rgba(255,211,90,0.28); }
 .buffBadge[data-kind="hp"]{ border-color: rgba(255,120,160,0.28); }
 
-/* Compat legacy HUD nodes */
 #hpHearts, #buffBadges{
   display:flex;
   align-items:center;
@@ -588,12 +524,58 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 #hpText{ color: rgba(255,255,255,0.70); font-size:12px; }
 
-/* ───────────────── Toast ───────────────── */
+.levelProg,
+.levelProgress{
+  position:relative;
+  margin-top:56px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  padding: 12px 12px 12px 12px;
+  overflow: visible;
+}
+
+.levelRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.levelRow .left{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+#levelProgText{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width: 60ch;
+}
+#levelProgPct{ white-space:nowrap; }
+
+.progBar{
+  margin-top:10px;
+  height:10px;
+  border-radius:999px;
+  overflow:hidden;
+  background: rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.progFill{
+  height:100%;
+  width:0%;
+  border-radius:999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  box-shadow: 0 10px 22px rgba(0,0,0,0.22);
+}
+
 .toast{
   position:absolute;
   left:50%;
   transform: translateX(-50%);
-  bottom:-8px;
+  bottom:-10px;
   padding:10px 12px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,0.12);
@@ -613,7 +595,6 @@ input[type="range"]{ accent-color: var(--accent); }
   transform: translateX(-50%) translateY(-8px);
 }
 
-/* ───────────────── Game area / rail ───────────────── */
 .gameArea{
   position:relative;
   flex:1;
@@ -627,9 +608,9 @@ input[type="range"]{ accent-color: var(--accent); }
 
 .railFrame{
   position:relative;
-  width: min(100%, var(--canvasMaxW));
+  width: min(100%, var(--railMaxW));
   height: 100%;
-  min-height: 240px;
+  min-height: 260px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -644,7 +625,6 @@ input[type="range"]{ accent-color: var(--accent); }
   .railFrame{ padding: var(--railPad); border-radius: 16px; }
 }
 
-/* El canvas lo dimensiona JS; aquí solo evitamos glitches */
 #gameCanvas{
   display:block;
   border-radius: 14px;
@@ -653,7 +633,6 @@ input[type="range"]{ accent-color: var(--accent); }
   touch-action: none;
 }
 
-/* ───────────────── Dpad (móvil) ───────────────── */
 .dpad{
   position:absolute;
   left:0;
@@ -695,12 +674,10 @@ input[type="range"]{ accent-color: var(--accent); }
   border-color: rgba(255,255,255,0.18);
 }
 
-/* En pantallas grandes, que no moleste */
 @media (min-width:900px){
   .dpad{ bottom: calc(18px + env(safe-area-inset-bottom)); }
 }
 
-/* ───────────────── Overlays / Panels ───────────────── */
 .overlay{
   position:absolute;
   inset:0;
@@ -742,9 +719,7 @@ input[type="range"]{ accent-color: var(--accent); }
   letter-spacing:.2px;
 }
 
-.panelBody{
-  padding: 14px;
-}
+.panelBody{ padding: 14px; }
 
 .panelActions{
   display:flex;
@@ -787,7 +762,6 @@ input[type="range"]{ accent-color: var(--accent); }
 
 .btnBlock{ width:100%; }
 
-/* ───────────────── Splash ───────────────── */
 .splash{
   display:flex;
   align-items:center;
@@ -809,7 +783,6 @@ input[type="range"]{ accent-color: var(--accent); }
 .splashText .title{ font-weight:950; font-size:18px; }
 .splashText .sub{ color: rgba(255,255,255,0.70); font-size:12.5px; }
 
-/* dots */
 .dots{ display:inline-flex; gap:5px; margin-left:6px; }
 .dot{
   width:6px; height:6px;
@@ -825,7 +798,6 @@ input[type="range"]{ accent-color: var(--accent); }
   45%{ transform: translateY(-3px); opacity:.70; }
 }
 
-/* ───────────────── Form inputs ───────────────── */
 .form{ padding: 12px 14px 2px 14px; }
 .label{
   display:block;
@@ -851,11 +823,8 @@ input[type="range"]{ accent-color: var(--accent); }
 .input::placeholder{ color: rgba(255,255,255,0.40); }
 .select{ appearance:none; }
 
-.helpText{
-  padding: 8px 14px 14px 14px;
-}
+.helpText{ padding: 8px 14px 14px 14px; }
 
-/* ───────────────── Options overlay ───────────────── */
 .options{
   padding: 12px 14px;
   max-height: min(70vh, 520px);
@@ -901,9 +870,8 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.78);
 }
 
-/* ───────────────── Upgrades overlay ───────────────── */
 .upgradesPanel{
-  max-height: min(86vh, 720px);
+  max-height: min(86vh, 740px);
   display:flex;
   flex-direction:column;
   min-height:0;
@@ -916,13 +884,14 @@ input[type="range"]{ accent-color: var(--accent); }
   overflow:auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: 14px;
+  padding: 16px;
 }
 
 .upgradeChoices{
   display:grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 14px;
+  padding-bottom: 10px;
 }
 
 @media (min-width:840px){
@@ -933,7 +902,7 @@ input[type="range"]{ accent-color: var(--accent); }
   border-radius: 16px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(0,0,0,0.18);
-  padding: 12px 12px;
+  padding: 14px 14px;
   box-shadow: 0 14px 28px rgba(0,0,0,0.28);
   transition: transform .10s ease, border-color .12s ease, background .12s ease;
   cursor:pointer;
@@ -950,8 +919,9 @@ input[type="range"]{ accent-color: var(--accent); }
   align-items:flex-start;
   gap:12px;
 }
+
 .upIcon{
-  width:44px; height:44px;
+  width:46px; height:46px;
   border-radius: 14px;
   display:flex;
   align-items:center;
@@ -972,14 +942,14 @@ input[type="range"]{ accent-color: var(--accent); }
   display:flex;
   flex-wrap:wrap;
   gap:8px;
-  margin-top:6px;
+  margin-top:8px;
 }
 
 .badge, .upRarityBadge{
   display:inline-flex;
   align-items:center;
   gap:6px;
-  padding:4px 8px;
+  padding:5px 9px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(255,255,255,0.04);
@@ -993,23 +963,19 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 
 .upDesc{
-  margin-top:10px;
-  color: rgba(255,255,255,0.72);
+  margin-top:12px;
+  color: rgba(255,255,255,0.74);
   font-size:13px;
-  line-height:1.35;
+  line-height:1.45;
 }
 
-/* Rarity accents */
 .upCard[data-rarity="common"]{ border-color: rgba(255,255,255,0.10); }
 .upCard[data-rarity="rare"]{ border-color: rgba(106,176,255,0.26); }
 .upCard[data-rarity="epic"]{ border-color: rgba(214,133,255,0.28); }
 .upCard[data-rarity="legendary"]{ border-color: rgba(255,211,90,0.28); }
 
-.upgradesActions{
-  justify-content:space-between;
-}
+.upgradesActions{ justify-content:space-between; }
 
-/* Confetti canvas */
 .upFxCanvas{
   position:absolute;
   inset:0;
@@ -1018,7 +984,6 @@ input[type="range"]{ accent-color: var(--accent); }
   height:100%;
 }
 
-/* ───────────────── GameOver ───────────────── */
 .goBig{
   display:flex;
   align-items:flex-end;
@@ -1054,20 +1019,14 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 .stats .line span:first-child{ color: rgba(255,255,255,0.72); }
 
-/* ───────────────── Error overlay ───────────────── */
 .errMsg{
   padding: 12px 14px;
   color: rgba(255,255,255,0.86);
   line-height:1.35;
 }
 
-/* ───────────────── Overlay fade helpers (compat utils) ───────────────── */
-.overlay.fadeIn{
-  animation: overlayIn .16s ease-out both;
-}
-.overlay.fadeOut{
-  animation: overlayOut .16s ease-in both;
-}
+.overlay.fadeIn{ animation: overlayIn .16s ease-out both; }
+.overlay.fadeOut{ animation: overlayOut .16s ease-in both; }
 
 @keyframes overlayIn{
   from{ opacity:0; transform: translateY(6px); }
@@ -1078,24 +1037,20 @@ input[type="range"]{ accent-color: var(--accent); }
   to{ opacity:0; transform: translateY(6px); }
 }
 
-/* ───────────────── Small screens polish ───────────────── */
 @media (max-width:520px){
-  :root{ --hudH: 156px; }
-  .combo{ padding: 12px 10px; }
-  .levelProg, .levelProgress{ padding: 46px 10px 10px 10px; }
-  .statusBar{ left:10px; right:10px; top:10px; gap:8px; }
-  .hpWrap{ padding:6px 8px; }
-  .buffBar{ gap:6px; }
-  .buffBadge{ padding:6px 8px; }
+  :root{ --hudH: 178px; }
+  .combo{ padding: 14px 12px; }
+  .hudFloat{ top:62px; left:10px; right:10px; }
+  .buffBar{ max-width: 70%; }
   .railFrame{ border-radius: 16px; }
+  .levelProg, .levelProgress{ margin-top: 62px; padding: 12px 10px; }
 }
 
-@media (max-width:360px){
+@media (max-width:380px){
   .hpText{ display:none; }
   #levelProgText{ max-width: 40ch; }
 }
 
-/* Reduce motion */
 @media (prefers-reduced-motion: reduce){
   *{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
 }

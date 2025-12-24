@@ -1,24 +1,17 @@
-/* rendiment.js — Grid Rogue v0.1.9
+/* rendiment.js — Grid Rogue v0.2.0
    Performance/“rendiment” helpers (NO rompe nada existente).
    - No modifica app.js automáticamente.
    - Expone window.GRPerf con métricas, medidores y utilidades opcionales.
    - Diseñado para funcionar aunque el navegador no soporte APIs modernas.
-
-   Uso típico (opcional) en index.html:
-   <script src="./rendiment.js?v=0.1.9" defer></script>
-   (cárgalo ANTES de app.js)
-
-   Uso típico (opcional) en app.js:
-   const Perf = window.GRPerf;
-   Perf?.start();
-   Perf?.mark("boot");
-   const end = Perf?.measure("draw"); end(); // o Perf.time("draw", fn)
+   ✅ v0.2.0:
+   - Guard extra contra doble carga
+   - Pausa/reanuda sampling cuando la pestaña está oculta (opcional y seguro)
+   - Snapshots estables + helpers extra (reset, setConfig)
 */
-
 (() => {
   "use strict";
 
-  const VERSION = "0.1.9";
+  const VERSION = "0.2.0";
   const NS = "GRPerf";
 
   // ✅ Guard: evita crash si se ejecuta dos veces (SW/duplicados)
@@ -58,9 +51,10 @@
 
   // ───────────────────────── Device heuristics (suave) ─────────────────────────
   function getDeviceHints() {
-    const hc = clampInt((navigator && navigator.hardwareConcurrency) || 0, 0, 64);
-    const dm = clampInt((navigator && navigator.deviceMemory) || 0, 0, 64); // Chrome only
-    const ua = (navigator && navigator.userAgent) || "";
+    const nav = (typeof navigator !== "undefined" ? navigator : null);
+    const hc = clampInt((nav && nav.hardwareConcurrency) || 0, 0, 64);
+    const dm = clampInt((nav && nav.deviceMemory) || 0, 0, 64); // Chrome only
+    const ua = (nav && nav.userAgent) || "";
     const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
     const coarse = (() => { try { return matchMedia("(pointer:coarse)").matches; } catch { return false; } })();
     const reducedMotion = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
@@ -139,6 +133,9 @@
     watchdogId: 0,
     watchdogLast: 0,
     watchdogThresholdMs: 1500,
+
+    autoPauseOnHidden: true,
+    _wasRunningBeforeHidden: false,
   };
 
   function budgetMs() {
@@ -192,10 +189,7 @@
     rafId = raf(tick);
   }
 
-  function start() {
-    if (state.running) return;
-    state.running = true;
-
+  function resetCounters() {
     state.t0 = now();
     state.lastT = 0;
     state.lastFpsT = 0;
@@ -205,6 +199,19 @@
     state.longFrames = 0;
     state.stutters = 0;
 
+    state.fps = 0;
+    state.dtAvgMs = 0;
+    state.dtMaxMs = 0;
+    state.lastDtMs = 16.7;
+
+    state.dtRing = makeRing(120);
+    state.fpsRing = makeRing(60);
+  }
+
+  function start() {
+    if (state.running) return;
+    state.running = true;
+    resetCounters();
     rafId = raf(tick);
   }
 
@@ -287,6 +294,18 @@
     return () => document.removeEventListener("visibilitychange", handler);
   }
 
+  // Auto-pause sampling on hidden (no toca el juego; solo sus métricas)
+  onVisibilityChange((hidden) => {
+    if (!state.autoPauseOnHidden) return;
+    if (hidden) {
+      state._wasRunningBeforeHidden = state.running;
+      if (state.running) stop();
+    } else {
+      if (state._wasRunningBeforeHidden) start();
+      state._wasRunningBeforeHidden = false;
+    }
+  });
+
   // ───────────────────────── Optional: simple limiter wrapper ─────────────────────────
   function createLoop(step, draw, { targetFps = 60, maxDtMs = 50 } = {}) {
     const target = clampInt(targetFps, 20, 240);
@@ -325,11 +344,29 @@
     version: VERSION,
 
     getDeviceHints,
+
     setTargetFps(fps) { state.targetFps = clampInt(fps, 20, 240); return state.targetFps; },
     setLongFrameMs(ms) { state.longFrameMs = clampInt(ms, 16, 200); return state.longFrameMs; },
 
+    setConfig(cfg = {}) {
+      const o = cfg && typeof cfg === "object" ? cfg : {};
+      if ("targetFps" in o) api.setTargetFps(o.targetFps);
+      if ("longFrameMs" in o) api.setLongFrameMs(o.longFrameMs);
+      if ("autoPauseOnHidden" in o) state.autoPauseOnHidden = !!o.autoPauseOnHidden;
+      return api.getConfig();
+    },
+
+    getConfig() {
+      return {
+        targetFps: state.targetFps,
+        longFrameMs: state.longFrameMs,
+        autoPauseOnHidden: !!state.autoPauseOnHidden,
+      };
+    },
+
     start,
     stop,
+    reset() { resetCounters(); },
     isRunning() { return !!state.running; },
 
     getMetrics() {

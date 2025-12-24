@@ -1,4 +1,4 @@
-# Grid Rogue — Arcade Roguelite (v0.1.9)
+# Grid Rogue — Arcade Roguelite (v0.2.0)
 
 **Grid Rogue** es un **arcade roguelite en cuadrícula**: runs cortas, decisiones rápidas, **upgrades** al subir de nivel, **combos** por secuencias y un gameplay que se vuelve más “peligroso” cuanto mejor juegas.  
 Diseñado para sentirse **fluido, directo y adictivo**, con **feedback juicy** (SFX, animaciones, resaltados) y controles cómodos tanto en **móvil (portrait)** como en escritorio.
@@ -91,44 +91,70 @@ Incluye modo “Repair” si alguna vez una caché antigua se queda pegada tras 
 ## 🔖 Versión
 
 ```
-## ✅ Update v0.1.9 (nuevo)
+✅ Update v0.2.0
 
-### ❤️ Sistema de Vida (Corazones)
-- El jugador ahora tiene **vida**: empieza con **10 corazones**.
-- Cada vez que pisa/recibe el efecto de una **trampa (tile rojo)**, pierde **1 corazón**.
-- La vida se muestra **en la barra superior**, junto a la zona donde ves el nivel / progreso (HUD).
-- Feedback claro de daño/estado para que se note al instante cuando estás en peligro.
+🧭 HUD sin “layout shift” (HP + Badges fuera del container)
 
-### ➕ Nueva mejora: “Vida +”
-- Se añade una **nueva mejora** que permite **ganar corazones** (curación / vida extra).
-- Entra dentro del sistema de rarezas (cuanto más rara, mejor impacto).
+La vida (corazones) y los badges de mejoras activas ahora se renderizan en un dock/overlay propio del HUD.
 
-### 🧲 Imán con duración (según rareza)
-- La mejora de **Imán** deja de ser permanente y pasa a ser **temporal**:
-  - **Común**: duración corta
-  - **Rara**: duración media
-  - **Épica**: duración alta
-  - **Legendaria**: duración máxima
-- Cuando el imán está activo, el jugador atrae premios cercanos durante ese tiempo.
+Resultado: no empujan ni deforman la barra de nivel/progreso, y no cambian el layout cuando aparecen/desaparecen badges.
 
-### 🏷️ Badges de mejoras activas en HUD
-- En la zona del HUD (junto al nivel), ahora aparecen **iconos/badges** de las **mejoras activas**.
-- Si tienes varias copias del mismo upgrade:
-  - Se muestra un **contador** encima del badge (ej. “2”, “3”…).
-  - Si solo hay 1, **no aparece número**.
-- Si la mejora es temporal (como Imán), el badge se mantiene visible mientras dure.
+Mejor soporte de safe-area (móvil) y z-index para que nunca queden tapados.
 
-### 🧱 Panel de mejoras mejorado (más “pro”)
-- El panel de Upgrades se ve **más claro y más bonito**:
-  - Jerarquía visual más marcada (rareza → nombre → descripción).
-  - Mejor espaciado y lectura.
-  - Presentación más limpia al elegir.
-- En general, el panel “aparece” mejor y se percibe más premium.
+📐 Layout responsive “pro” (más espacio al juego sin romper el grid)
 
-### 🔊 Audio v0.1.9 (compat + nuevos SFX)
-- `audio.js` y `audio_sys.js` actualizados a **v0.1.9**.
-- Alias SFX extra listos para usarse desde el gameplay/UI:
-  - `hurt`, `heal`, `heart`, `magnet_on`, `magnet_off`, `upgrade_open`, `upgrade_pick`, etc.
-- Se refuerza el criterio de **no música procedural** (silencio si no se puede reproducir el loop).
+El panel/fondo del juego (container del grid) ahora se expande si hay espacio en pantalla.
+
+El grid mantiene intacto el número correcto de celdas visibles (sin estirar ni deformar).
+
+Se eliminan efectos raros de padding: más aire, mejor centrado y lectura.
+
+Objetivo: cero scroll en gameplay y una UI más limpia.
+
+❤️ Sistema de Vida (Corazones) refinado
+
+HP sigue siendo 10 corazones iniciales.
+
+Trampa (tile rojo) = -1 corazón con feedback más inmediato.
+
+Mejor feedback visual: “flash/impacto” al recibir daño y mejor claridad del estado.
+
+➕ Mejora “Vida +” mejor integrada (rareza y feedback)
+
+La mejora Vida + se integra mejor en UI/UX:
+
+Mejor mensaje/feedback al curarte.
+
+Preparada para escalar por rareza sin romper el balance ni el sistema.
+
+🧲 Imán temporal pulido (tiempo + badge claro)
+
+El Imán sigue siendo temporal según rareza.
+
+El badge de Imán muestra la duración restante de forma más legible y estable (sin afectar el layout).
+
+Mejor consistencia en stacking/contador cuando hay varias copias.
+
+🧱 Panel de Upgrades “más premium” (espaciado y jerarquía)
+
+Más padding, separación entre elementos y lectura.
+
+Rareza/nombre/descripción se ven más claros y sin solaparse.
+
+Mejor comportamiento en pantallas pequeñas y grandes.
+
+🔊 Audio (v0.2.0) y robustez
+
+Mejoras de estabilidad para evitar dobles inicializaciones.
+
+Mantiene aliases SFX (hurt/heal/magnet_on/off/upgrade_open/pick, etc.) y refuerza el comportamiento de fallback.
+
+🧠 Rendimiento / Estabilidad general
+
+Helpers de rendimiento (“rendiment”) listos para medir FPS/stutters sin romper nada.
+
+Mejor comportamiento al cambiar de pestaña/volver (sin cuelgues ni estados raros).
+
+Ajustes de compatibilidad y limpieza para que todo siga funcionando aunque falte algún nodo del HUD en HTML.
 
 ```

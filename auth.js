@@ -1,12 +1,13 @@
-/* auth.js — Grid Rogue v0.1.9
+/* auth.js — Grid Rogue v0.2.0
    Perfiles locales + best score + prefs opcionales por perfil.
-   - Misma API y migración que v0.1.8/v0.1.9.
-   - Compat: migra desde gridrunner_* sin perder datos.
+   ✅ v0.2.0:
+   - Mantiene API y migración desde gridrunner_* (sin perder datos)
+   - Sanitización reforzada y compat con Utils/GRUtils
 */
 (() => {
   "use strict";
 
-  const VERSION = "0.1.9";
+  const VERSION = "0.2.0";
 
   const U = window.GRUtils || window.Utils || null;
 

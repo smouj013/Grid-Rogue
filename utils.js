@@ -1,22 +1,23 @@
-/* utils.js — Grid Rogue v0.1.9
+/* utils.js — Grid Rogue v0.2.0
    Helpers compartidos (clamps, DOM, overlays, viewport-fix móvil, scroll-lock, etc.)
-   ✅ v0.1.9:
-   - HUD helpers: setHP (corazones) + setBuffs (badges con stack + timer)
-   - Rarity helpers para duraciones (útil para Imán con tiempo por rareza)
-   - overlay fadeIn/fadeOut compatible con styles.css (animaciones)
+   ✅ v0.2.0:
+   - HUD helpers actualizados al layout nuevo:
+     - Prioriza #hudHearts y #hudBuffs (dentro de #hudFloat)
+     - Mantiene fallback a IDs legacy (#hpHearts / #buffBadges / #hpText)
+     - Si falta el layout nuevo, lo crea en #combo dentro del HUD sin romper nada
+   - Buff badges: dataset kind + soporte para timer y contador
+   - overlay fadeIn/fadeOut compatible con styles.css
    - Exporta canLS + alias window.Utils para compat con builds anteriores
-   ✅ Patch compat UI:
-   - Prioriza IDs NUEVOS: #hudStatus / #hudHearts / #hudBuffs
-   - Mantiene fallback a IDs viejos: #hpHearts / #hpText / #buffBadges
 */
 (() => {
   "use strict";
 
-  const VERSION = "0.1.9";
+  const VERSION = "0.2.0";
 
   // ───────────────────────── Math / Random ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const clampInt = (v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : (a | 0));
+  const clampInt = (v, a, b) =>
+    (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : (a | 0));
   const lerp = (a, b, t) => a + (b - a) * t;
   const invLerp = (a, b, v) => (a === b ? 0 : (v - a) / (b - a));
   const randi = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
@@ -264,40 +265,46 @@
     } catch {}
   }
 
-  // ───────────────────────── HUD helpers (v0.1.9) ─────────────────────────
+  // ───────────────────────── HUD helpers (v0.2.0) ─────────────────────────
   function ensureHudNodes() {
-    // ✅ Prioridad: IDs nuevos (index.html v0.1.9)
-    const levelProg = $("levelProg");
-    if (!levelProg) return;
+    // v0.2.0: el layout nuevo vive dentro de .combo:
+    // .hudFloat  -> #hudHearts + #hudBuffs
+    const hud = $("hud");
+    if (!hud) return;
 
-    let hudStatus = $("hudStatus");
+    const combo = qs(".combo", hud) || $("combo") || null;
+    if (!combo) return;
+
     let hudHearts = $("hudHearts");
     let hudBuffs = $("hudBuffs");
+    if (hudHearts && hudBuffs) return;
 
-    if (hudStatus && hudHearts && hudBuffs) return;
-
-    // Si existen los viejos, no forzamos duplicados: los usaremos como fallback.
+    // Si hay legacy (old builds) no duplicamos, lo usaremos como fallback.
     const legacyHearts = $("hpHearts");
     const legacyBuffs = $("buffBadges");
-    if ((!hudHearts && legacyHearts) || (!hudBuffs && legacyBuffs)) {
-      return;
-    }
+    if ((!hudHearts && legacyHearts) || (!hudBuffs && legacyBuffs)) return;
 
-    // Crea el bloque NUEVO dentro de #levelProg (sin tocar el resto del layout)
-    if (!hudStatus) {
-      hudStatus = createEl("div", { id: "hudStatus", class: "statusBar" });
-      // Insertar arriba del todo para no romper el layout del progreso
-      levelProg.insertBefore(hudStatus, levelProg.firstChild);
+    // Crear dock flotante (no empuja la barra de nivel)
+    let hudFloat = $("hudFloat");
+    if (!hudFloat) {
+      hudFloat = createEl("div", { id: "hudFloat", class: "hudFloat" });
+      // Insertar antes del levelProg si existe, sino al final del combo
+      const levelProg = $("levelProg");
+      if (levelProg && levelProg.parentElement === combo) combo.insertBefore(hudFloat, levelProg);
+      else combo.appendChild(hudFloat);
     }
 
     if (!hudHearts) {
       hudHearts = createEl("div", { id: "hudHearts", class: "hpWrap", "aria-label": "Vida" });
-      hudStatus.appendChild(hudHearts);
+      hudFloat.appendChild(hudHearts);
     }
 
     if (!hudBuffs) {
-      hudBuffs = createEl("div", { id: "hudBuffs", class: "buffBar", "aria-label": "Mejoras activas" });
-      hudStatus.appendChild(hudBuffs);
+      const dock = createEl("div", { class: "buffDock", "aria-label": "Mejoras activas" }, [
+        createEl("div", { id: "hudBuffs", class: "buffBar" })
+      ]);
+      hudFloat.appendChild(dock);
+      hudBuffs = $("hudBuffs");
     }
   }
 
@@ -318,7 +325,6 @@
 
     clearEl(heartsEl);
 
-    // Render corazones (mismo markup que antes)
     for (let i = 0; i < mx; i++) {
       const full = i < cur;
       heartsEl.appendChild(
@@ -328,12 +334,11 @@
       );
     }
 
-    // Compat: si existe texto legacy, actualiza
     const hpText = $("hpText");
     if (hpText) hpText.textContent = `${cur}/${mx}`;
   }
 
-  // buffs: [{ key, icon, rarity, count, timeLeft, duration, title/name }]
+  // buffs: [{ key, kind, icon, rarity, count, timeLeft, duration, title/name }]
   function setBuffs(buffs) {
     ensureHudNodes();
     const wrap = getBuffsEl();
@@ -348,32 +353,35 @@
       const key = String(b.key || "");
       if (!key) continue;
 
+      const kind = String(b.kind || b.key || "").toLowerCase();
       const rarity = String(b.rarity || "common").toLowerCase();
       const icon = String(b.icon || "auto_awesome");
       const count = clampInt(b.count ?? 1, 1, 999);
 
       const duration = Number(b.duration);
       const timeLeft = Number(b.timeLeft);
-      const hasTimer = Number.isFinite(duration) && duration > 0 && Number.isFinite(timeLeft) && timeLeft >= 0;
+      const hasTimer =
+        Number.isFinite(duration) && duration > 0 &&
+        Number.isFinite(timeLeft) && timeLeft >= 0;
 
       const pct = hasTimer ? clamp(timeLeft / duration, 0, 1) : 1;
 
       const badge = createEl("div", {
         class: "buffBadge",
         title: String(b.title || b.name || key),
-        dataset: { key, rarity },
+        dataset: { key, rarity, kind },
       });
 
       badge.style.setProperty("--pct", String(pct));
-      badge.appendChild(createEl("span", { class: "ms", text: icon, "aria-hidden": "true" }));
+      badge.appendChild(createEl("span", { class: "ms bIcon", text: icon, "aria-hidden": "true" }));
 
-      const countEl = createEl("span", { class: "buffCount", text: String(count) });
-      if (count <= 1) countEl.hidden = true;
-      badge.appendChild(countEl);
-
-      const timeEl = createEl("span", { class: "buffTime", text: hasTimer ? fmtSeconds(timeLeft) : "" });
+      const timeEl = createEl("span", { class: "bTime", text: hasTimer ? fmtSeconds(timeLeft) : "" });
       if (!hasTimer) timeEl.hidden = true;
       badge.appendChild(timeEl);
+
+      const countEl = createEl("span", { class: "bCount", text: String(count) });
+      if (count <= 1) countEl.hidden = true;
+      badge.appendChild(countEl);
 
       wrap.appendChild(badge);
     }
@@ -425,7 +433,5 @@
   });
 
   window.GRUtils = api;
-
-  // Compat builds anteriores que usaban window.Utils
   if (!window.Utils) window.Utils = api;
 })();
