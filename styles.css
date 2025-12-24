@@ -33,12 +33,13 @@
 
   --overlayBack: rgba(0,0,0,0.50);
 
-  /* HUD: tamaño elástico (evita desfases en pantallas bajas) */
-  --hudMax: clamp(132px, 18svh, 190px);
+  /* HUD: bloque estable, y el float (HP+BUFFS) NO empuja la barra */
+  --hudMax: clamp(120px, 18svh, 200px);
 
   --panelMaxW: 560px;
   --panelWideMaxW: 980px;
 
+  /* Rail: el “panel” del juego se expande si hay espacio */
   --railMaxW: 1600px;
   --railPad: 10px;
   --railPadDesktop: 18px;
@@ -51,6 +52,9 @@
 
   --hpFull: rgba(255,80,110,0.92);
   --hpEmpty: rgba(255,255,255,0.18);
+
+  /* Aspect ratio de tu grid (ajústalo si cambias cols/rows) */
+  --gameAR: 8 / 16;
 }
 
 *{ box-sizing:border-box; }
@@ -150,6 +154,13 @@ input[type="range"]{ accent-color: var(--accent); }
   min-height:0;
 }
 
+/* Evita zoom iOS/Android al focusear inputs en overlays */
+@media (max-width: 520px){
+  input, select, textarea{ font-size:16px; }
+}
+
+/* ───────────────────────── Topbar ───────────────────────── */
+
 .noscriptBar{
   padding:10px 12px;
   background: rgba(255,59,89,0.14);
@@ -159,7 +170,8 @@ input[type="range"]{ accent-color: var(--accent); }
 }
 
 .topbar{
-  position:relative;
+  position:sticky;
+  top:0;
   z-index:80;
   padding:
     calc(8px + env(safe-area-inset-top))
@@ -228,7 +240,6 @@ input[type="range"]{ accent-color: var(--accent); }
   box-shadow: 0 10px 22px rgba(0,0,0,0.22);
 }
 .pillBtn:active{ transform: translateY(1px); }
-
 .pill.mini{ padding:6px 9px; font-size:12px; }
 .pill.mini .ms{ font-size:16px; }
 
@@ -295,6 +306,8 @@ input[type="range"]{ accent-color: var(--accent); }
   .pill.mini{ padding:6px 8px; }
 }
 
+/* ───────────────────────── Stage / Layout ───────────────────────── */
+
 .stage{
   position:relative;
   z-index:1;
@@ -310,7 +323,6 @@ input[type="range"]{ accent-color: var(--accent); }
   display:flex;
   flex-direction:column;
   min-height:0;
-  gap:10px;
   padding:
     10px
     10px
@@ -318,18 +330,43 @@ input[type="range"]{ accent-color: var(--accent); }
     10px;
 }
 
+.gameArea{
+  position:relative;
+  flex:1;
+  min-height:0;
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  gap:10px;
+  padding: 0;
+}
+
+/* Orden estable, sin “HUD encima de HUD” */
+.gameArea > .hud{ order: 0; }
+.gameArea > .railFrame{ order: 1; }
+.gameArea > .dpad{ order: 2; }
+
+/* ───────────────────────── HUD ───────────────────────── */
+
 .hud{
   position:relative;
   z-index:12;
-  pointer-events:none;
+  width:100%;
   display:flex;
-  justify-content:center;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  gap:10px;
+
   max-height: var(--hudMax);
+  pointer-events:none;
 }
 
 .combo{
   width:100%;
-  max-width: 980px;
+  max-width: var(--panelWideMaxW);
   padding: 14px 14px;
   border-radius: var(--r2);
   background: var(--glass);
@@ -392,7 +429,10 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.72);
 }
 
+/* HP + BUFFS fuera del “combo”, no tocan la barra */
 .hudFloat{
+  width:100%;
+  max-width: var(--panelWideMaxW);
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
@@ -400,7 +440,7 @@ input[type="range"]{ accent-color: var(--accent); }
   pointer-events:none;
 }
 
-/* HP: el JS suele “pintar” corazones dentro, así que el icono va en pseudo-elemento */
+/* HP */
 .hpWrap{
   display:flex;
   align-items:center;
@@ -411,6 +451,7 @@ input[type="range"]{ accent-color: var(--accent); }
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(0,0,0,0.18);
   backdrop-filter: blur(10px);
+  flex:0 0 auto;
 }
 .hpWrap::before{
   content:"favorite";
@@ -446,21 +487,30 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.78);
 }
 
+/* BUFFS: sin wrap, scroll horizontal suave; nunca “empuja” alturas */
 .buffDock{
   display:flex;
   justify-content:flex-end;
   min-width:0;
+  flex:1;
 }
-
 .buffBar{
   display:flex;
   align-items:center;
   gap:8px;
   justify-content:flex-end;
-  flex-wrap:wrap;
+  flex-wrap:nowrap;
   min-width:0;
-  max-width: 62%;
+
+  max-width: min(62vw, 640px);
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
+.buffBar::-webkit-scrollbar{ display:none; }
 
 .buffBadge{
   position:relative;
@@ -473,14 +523,13 @@ input[type="range"]{ accent-color: var(--accent); }
   background: rgba(0,0,0,0.18);
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 18px rgba(0,0,0,0.18);
+  flex:0 0 auto;
 }
-
 .buffBadge .bIcon{ font-size:16px; }
 .buffBadge .bTime{
   font-size:12px;
   color: rgba(255,255,255,0.78);
 }
-
 .buffBadge .bCount{
   position:absolute;
   right:-6px;
@@ -507,12 +556,13 @@ input[type="range"]{ accent-color: var(--accent); }
 .buffBadge[data-kind="reroll"]{ border-color: rgba(255,211,90,0.28); }
 .buffBadge[data-kind="hp"]{ border-color: rgba(255,120,160,0.28); }
 
+/* Progreso (barra nivel) */
 .levelProg,
 .levelProgress{
   border-radius: 14px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(255,255,255,0.03);
-  padding: 12px 12px 12px 12px;
+  padding: 12px;
   overflow: visible;
 }
 
@@ -552,6 +602,7 @@ input[type="range"]{ accent-color: var(--accent); }
   box-shadow: 0 10px 22px rgba(0,0,0,0.22);
 }
 
+/* Toast */
 .toast{
   position:absolute;
   left:50%;
@@ -576,36 +627,28 @@ input[type="range"]{ accent-color: var(--accent); }
   transform: translateX(-50%) translateY(-8px);
 }
 
-.gameArea{
-  position:relative;
-  flex:1;
-  min-height:0;
-  width:100%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding: 0;
-}
+/* ───────────────────────── Rail / Game panel ───────────────────────── */
 
 .railFrame{
   position:relative;
   width: min(100%, var(--railMaxW));
-  height: 100%;
-  min-height: 260px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  flex:1 1 auto;
+  min-height:0;
+  display:grid;
+  place-items:center;
   padding: var(--railPadDesktop);
   border-radius: 18px;
   background: rgba(255,255,255,0.03);
   border:1px solid rgba(255,255,255,0.08);
   box-shadow: 0 14px 34px rgba(0,0,0,0.28);
+  contain: layout paint;
 }
 
 @media (max-width:720px){
   .railFrame{ padding: var(--railPad); border-radius: 16px; }
 }
 
+/* Canvas “contain” real: mantiene proporción y escala con el panel */
 #gameCanvas{
   display:block;
   border-radius: 14px;
@@ -613,10 +656,19 @@ input[type="range"]{ accent-color: var(--accent); }
   image-rendering: pixelated;
   touch-action: none;
 
-  /* robusto: evita “estirar” raro si el JS no setea tamaño a tiempo */
+  width: 100%;
+  height: auto;
   max-width: 100%;
   max-height: 100%;
+  aspect-ratio: var(--gameAR);
 }
+
+/* Si tu JS ya controla tamaño exacto, esto evita que se “estire” raro */
+@supports not (aspect-ratio: 1 / 1){
+  #gameCanvas{ width:auto; height:100%; }
+}
+
+/* ───────────────────────── D-Pad ───────────────────────── */
 
 .dpad{
   position:absolute;
@@ -662,6 +714,8 @@ input[type="range"]{ accent-color: var(--accent); }
 @media (min-width:900px){
   .dpad{ bottom: calc(18px + env(safe-area-inset-bottom)); }
 }
+
+/* ───────────────────────── Overlays / Panels ───────────────────────── */
 
 .overlay{
   position:absolute;
@@ -715,7 +769,6 @@ input[type="range"]{ accent-color: var(--accent); }
   border-top: 1px solid rgba(255,255,255,0.06);
   background: rgba(0,0,0,0.12);
 }
-
 .panelActionsLeft{ justify-content:flex-start; }
 .panelActionsStretch{ justify-content:stretch; }
 .panelActionsStretch > *{ flex:1; }
@@ -744,7 +797,6 @@ input[type="range"]{ accent-color: var(--accent); }
   border-color: rgba(255,59,89,0.30);
   background: rgba(255,59,89,0.12);
 }
-
 .btnBlock{ width:100%; }
 
 .splash{
@@ -817,6 +869,12 @@ input[type="range"]{ accent-color: var(--accent); }
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
+.options::-webkit-scrollbar{ width: 10px; }
+.options::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border-radius: 999px;
+  border: 2px solid rgba(0,0,0,0.20);
+}
 
 .optGroupTitle{
   display:flex;
@@ -855,8 +913,10 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.78);
 }
 
+/* ───────────────────────── Upgrades (padding + nada tapado) ───────────────────────── */
+
 .upgradesPanel{
-  max-height: min(86vh, 740px);
+  max-height: min(86vh, 780px);
   display:flex;
   flex-direction:column;
   min-height:0;
@@ -868,14 +928,20 @@ input[type="range"]{ accent-color: var(--accent); }
   overflow:auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: 16px;
+  padding: 20px;
+}
+.upgradesPanel .panelBody::-webkit-scrollbar{ width: 10px; }
+.upgradesPanel .panelBody::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border-radius: 999px;
+  border: 2px solid rgba(0,0,0,0.20);
 }
 
 .upgradeChoices{
   display:grid;
   grid-template-columns: 1fr;
   gap: 14px;
-  padding-bottom: 10px;
+  padding-bottom: 12px;
 }
 @media (min-width:840px){
   .upgradeChoices{ grid-template-columns: 1fr 1fr; }
@@ -885,7 +951,7 @@ input[type="range"]{ accent-color: var(--accent); }
   border-radius: 16px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(0,0,0,0.18);
-  padding: 14px 14px;
+  padding: 16px 16px;
   box-shadow: 0 14px 28px rgba(0,0,0,0.28);
   transition: transform .10s ease, border-color .12s ease, background .12s ease;
   cursor:pointer;
@@ -926,6 +992,7 @@ input[type="range"]{ accent-color: var(--accent); }
   gap:8px;
   margin-top:8px;
 }
+
 .badge, .upRarityBadge{
   display:inline-flex;
   align-items:center;
@@ -963,6 +1030,8 @@ input[type="range"]{ accent-color: var(--accent); }
   width:100%;
   height:100%;
 }
+
+/* ───────────────────────── Game Over / Stats ───────────────────────── */
 
 .goBig{
   display:flex;
@@ -1005,6 +1074,8 @@ input[type="range"]{ accent-color: var(--accent); }
   line-height:1.35;
 }
 
+/* ───────────────────────── Transiciones overlay ───────────────────────── */
+
 .overlay.fadeIn{ animation: overlayIn .16s ease-out both; }
 .overlay.fadeOut{ animation: overlayOut .16s ease-in both; }
 
@@ -1019,7 +1090,7 @@ input[type="range"]{ accent-color: var(--accent); }
 
 @media (max-width:520px){
   .combo{ padding: 14px 12px; gap:10px; }
-  .buffBar{ max-width: 70%; }
+  .buffBar{ max-width: min(72vw, 520px); }
   .railFrame{ border-radius: 16px; }
 }
 
