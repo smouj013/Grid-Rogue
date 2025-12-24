@@ -900,7 +900,7 @@
     if (magnet > 0 && magnetTime > 0.01) {
       items.push(makeBuffBadge({
         kind: "magnet",
-        icon: "magnet_on",
+        icon: "compass_calibration",
         count: magnet,
         time: magnetTime,
         title: T("buff_magnet", "Imán"),
@@ -1477,7 +1477,7 @@
     const id = u?.id || "";
     if (id === "shield") return "shield";
     if (id === "heart") return "favorite";
-    if (id.startsWith("mag")) return "magnet_on";
+    if (id.startsWith("mag")) return "compass_calibration";
     if (id === "boost") return "bolt";
     if (id === "trap") return "verified_user";
     if (id === "zone") return "open_with";
