@@ -1,33 +1,29 @@
 /* auth.js — Grid Rogue v0.1.9
-   (misma API, migración y robustez que v0.1.8)
-   - Compat: window.GRUtils o window.Utils
+   Perfiles locales + best score + prefs opcionales por perfil.
+   - Misma API y migración que v0.1.8/v0.1.9.
+   - Compat: migra desde gridrunner_* sin perder datos.
 */
 (() => {
   "use strict";
 
   const VERSION = "0.1.9";
 
-  // ───────────────────────── Utils (best-effort) ─────────────────────────
   const U = window.GRUtils || window.Utils || null;
 
-  const now = U?.now || (() => Date.now());
+  const now = (U && typeof U.now === "function") ? U.now : (() => Date.now());
 
   const safeParse =
-    U?.safeParse ||
-    ((raw, fallback) => {
-      try { return JSON.parse(raw); } catch { return fallback; }
-    });
+    (U && typeof U.safeParse === "function") ? U.safeParse :
+    ((raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } });
 
   const safeStringify =
-    U?.safeStringify ||
-    ((obj, fallback = "") => {
-      try { return JSON.stringify(obj); } catch { return fallback; }
-    });
+    (U && typeof U.safeStringify === "function") ? U.safeStringify :
+    ((obj, fallback = "") => { try { return JSON.stringify(obj); } catch { return fallback; } });
 
   const safeString = (v) => (v == null ? "" : String(v));
 
   const clamp =
-    U?.clamp ||
+    (U && typeof U.clamp === "function") ? U.clamp :
     ((v, a, b) => {
       v = Number(v);
       if (!Number.isFinite(v)) v = a;
@@ -35,7 +31,7 @@
     });
 
   const clampInt =
-    U?.clampInt ||
+    (U && typeof U.clampInt === "function") ? U.clampInt :
     ((v, a, b) => {
       v = Number(v);
       if (!Number.isFinite(v)) v = a;
@@ -44,7 +40,7 @@
     });
 
   const canLS =
-    U?.canLS ||
+    (U && typeof U.canLS === "function") ? U.canLS :
     (() => {
       try {
         const k = "__ls_test__";
@@ -66,15 +62,12 @@
     try { localStorage.removeItem(key); return true; } catch { return false; }
   }
 
-  // ───────────────────────── Keys ─────────────────────────
   const AUTH_KEY = "gridrogue_auth_v1";
 
-  // Compat (Grid Runner)
   const AUTH_KEY_OLD = "gridrunner_auth_v1";
   const LEGACY_NAME_KEY = "gridrunner_name_v1";
   const LEGACY_BEST_KEY = "gridrunner_best_v1";
 
-  // ───────────────────────── UID ─────────────────────────
   const hasCrypto = () => {
     try { return !!(globalThis.crypto && crypto.getRandomValues); } catch { return false; }
   };
@@ -88,7 +81,6 @@
     return "p_" + Math.random().toString(16).slice(2) + "_" + Math.random().toString(16).slice(2);
   };
 
-  // ───────────────────────── Helpers ─────────────────────────
   function normalizeName(name) {
     return safeString(name).trim().slice(0, 16);
   }
@@ -97,39 +89,33 @@
     return (v && typeof v === "object") ? v : null;
   }
 
-  // ───────────────────────── Prefs (opcional por perfil) ─────────────────────────
   function sanitizePrefs(prefs) {
     const o = safeObj(prefs);
     if (!o) return null;
 
     const out = {};
 
-    // Gameplay/UI (existente)
     if ("useSprites" in o) out.useSprites = !!o.useSprites;
     if ("vibration" in o) out.vibration = !!o.vibration;
     if ("showDpad" in o) out.showDpad = !!o.showDpad;
     if ("fx" in o) out.fx = clamp(o.fx, 0.4, 1.25);
 
-    // Audio
     if ("musicOn" in o) out.musicOn = !!o.musicOn;
     if ("sfxOn" in o) out.sfxOn = !!o.sfxOn;
     if ("musicVol" in o) out.musicVol = clamp(o.musicVol, 0, 1);
     if ("sfxVol" in o) out.sfxVol = clamp(o.sfxVol, 0, 1);
     if ("muteAll" in o) out.muteAll = !!o.muteAll;
 
-    // Idioma
     if ("lang" in o) {
       const s = safeString(o.lang).trim().toLowerCase();
       const code = s.includes("-") ? s.split("-")[0] : (s.includes("_") ? s.split("_")[0] : s);
       if (code) out.lang = code.slice(0, 8);
     }
 
-    // v0.1.7
     if ("particles" in o) out.particles = !!o.particles;
     if ("reduceMotion" in o) out.reduceMotion = !!o.reduceMotion;
     if ("uiHue" in o) out.uiHue = clampInt(o.uiHue, 0, 360);
 
-    // v0.1.8 (controles / grid móvil)
     if ("mobileControls" in o) {
       const mc = safeString(o.mobileControls).trim().toLowerCase();
       out.mobileControls = (mc === "on" || mc === "off" || mc === "auto") ? mc : "auto";
@@ -141,7 +127,6 @@
     return Object.keys(out).length ? out : null;
   }
 
-  // ───────────────────────── State sanitize ─────────────────────────
   function sanitizeProfile(p) {
     if (!p || typeof p !== "object") return null;
 
@@ -209,7 +194,7 @@
     if (!json) return false;
 
     const okNew = writeLS(AUTH_KEY, json);
-    writeLS(AUTH_KEY_OLD, json); // compat best-effort
+    writeLS(AUTH_KEY_OLD, json);
     return okNew;
   }
 
@@ -236,11 +221,9 @@
     return st;
   }
 
-  // ───────────────────────── Boot ─────────────────────────
   const loaded = loadState();
   const state = ensureMigration(loaded.st, loaded.loadedFrom);
 
-  // ───────────────────────── Core API ─────────────────────────
   function listProfiles() {
     return state.profiles
       .slice()
@@ -339,7 +322,6 @@
     return false;
   }
 
-  // ───────────────────────── Prefs API (opcional) ─────────────────────────
   function getPrefsForActive() {
     const p = state.profiles.find(p => p.id === state.activeId) || null;
     return p && p.prefs ? { ...p.prefs } : null;
@@ -382,7 +364,6 @@
     return true;
   }
 
-  // ───────────────────────── Export/Import ─────────────────────────
   function exportAuth() {
     const snap = sanitizeState({
       v: state.v || 1,
@@ -452,11 +433,9 @@
     return true;
   }
 
-  // ───────────────────────── Public API ─────────────────────────
   window.Auth = {
     VERSION,
 
-    // perfiles
     listProfiles,
     getActiveProfile,
     setActiveProfile,
@@ -465,17 +444,14 @@
     deleteProfile,
     touchActiveLogin,
 
-    // best
     getBestForActive,
     setBestForActive,
 
-    // export/import
     exportAuth,
     importAuth,
     clearAuth,
     clearLegacyKeys,
 
-    // prefs (opcional)
     getPrefsForActive,
     setPrefsForActive,
     patchPrefsForActive,

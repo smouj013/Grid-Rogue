@@ -1,13 +1,6 @@
 /* sw.js — Grid Rogue (v0.1.9)
    ✅ Igual que v0.1.8 pero con bump de VERSION.
-   - GH Pages/subcarpetas: usa self.registration.scope y URLs absolutas
-   - Precache core robusto (index obligatorio, resto best-effort)
-   - Offline navegación: devuelve index.html
-   - Runtime cache: stale-while-revalidate
-   - Audio: soporte Range (206) para iOS/Android
 */
-"use strict";
-
 const VERSION = "v0.1.9";
 
 const CACHE_PREFIX = "gridrogue-";
@@ -152,14 +145,12 @@ async function makeRangedResponse(fullResponse, rangeHeader) {
 async function precacheCore() {
   const cache = await caches.open(CORE_CACHE);
 
-  // index.html obligatorio
   const shellRes = await fetch(new Request(APP_SHELL, { cache: "reload" }));
   if (!shellRes || !shellRes.ok) {
     throw new Error(`No se pudo precachear index.html (APP_SHELL). (${shellRes?.status || "?"})`);
   }
   await cache.put(stripSearch(APP_SHELL), shellRes);
 
-  // resto best-effort
   await Promise.allSettled(
     CORE_ASSETS
       .filter((u) => stripSearch(u) !== stripSearch(APP_SHELL))
@@ -256,7 +247,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navegación (HTML)
+  // Navegación
   if (isNav) {
     event.respondWith(
       (async () => {
@@ -291,7 +282,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Core assets: stale-while-revalidate (con stripSearch)
+  // Core
   if (looksCore) {
     event.respondWith(
       (async () => {
@@ -313,7 +304,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Runtime: cache-first + update (stale-while-revalidate suave)
+  // Runtime
   event.respondWith(
     (async () => {
       const runtime = await caches.open(RUNTIME_CACHE);
