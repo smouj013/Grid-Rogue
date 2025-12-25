@@ -14,7 +14,7 @@
   <title>Grid Rogue</title>
 
   <script>
-    window.APP_VERSION = "0.2.1";
+    window.APP_VERSION = "0.2.2";
   </script>
 
   <script>
@@ -68,12 +68,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.2.1" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.2.2" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.2.1" />
+  <link rel="stylesheet" href="./styles.css?v=0.2.2" />
 </head>
 
 <body>
@@ -121,7 +121,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.2.1</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.2.2</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -268,8 +268,30 @@
           </div>
         </section>
 
+        <section class="overlay" id="overlayPress" hidden>
+          <div class="panel pressPanel" id="pressPanel" role="button" tabindex="0" aria-label="Pulsa para empezar">
+            <div class="splash">
+              <div class="splashLogo" aria-hidden="true">
+                <span class="ms">grid_view</span>
+              </div>
+              <div class="splashText">
+                <div class="title">Grid Rogue</div>
+                <div class="sub">Pulsa cualquier tecla o toca para empezar</div>
+              </div>
+            </div>
+
+            <div class="panelBody pressBody">
+              <div class="pressHint">
+                <span class="ms" aria-hidden="true">touch_app</span>
+                <span>Start</span>
+              </div>
+              <div class="tiny muted pressMeta" id="pressMeta">—</div>
+            </div>
+          </div>
+        </section>
+
         <section class="overlay" id="overlayStart" hidden>
-          <div class="panel">
+          <div class="panel startPanel">
             <div class="splash splashCompact">
               <div class="splashLogo" aria-hidden="true">
                 <span class="ms">grid_view</span>
@@ -381,7 +403,7 @@
         </section>
 
         <section class="overlay" id="overlayOptions" hidden>
-          <div class="panel wide">
+          <div class="panel wide optionsPanel">
             <div class="panelHead">
               <div class="h2">Opciones</div>
               <button class="iconBtn small" id="btnCloseOptions" type="button" title="Cerrar">
@@ -584,12 +606,12 @@
       }
     })();
   </script>
-  <script src="./utils.js?v=0.2.1" defer></script>
-  <script src="./localization.js?v=0.2.1" defer></script>
-  <script src="./auth.js?v=0.2.1" defer></script>
-  <script src="./audio_sys.js?v=0.2.1" defer></script>
-  <script src="./audio.js?v=0.2.1" defer></script>
-  <script src="./rendiment.js?v=0.2.1" defer></script>
-  <script src="./app.js?v=0.2.1" defer></script>
+  <script src="./utils.js?v=0.2.2" defer></script>
+  <script src="./localization.js?v=0.2.2" defer></script>
+  <script src="./auth.js?v=0.2.2" defer></script>
+  <script src="./audio_sys.js?v=0.2.2" defer></script>
+  <script src="./audio.js?v=0.2.2" defer></script>
+  <script src="./rendiment.js?v=0.2.2" defer></script>
+  <script src="./app.js?v=0.2.2" defer></script>
 </body>
 </html>

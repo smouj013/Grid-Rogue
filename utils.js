@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.2.0";
+  const VERSION = "0.2.2";
 
   // ───────────────────────── Math / Random ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));

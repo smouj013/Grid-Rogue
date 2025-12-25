@@ -75,6 +75,47 @@
     applyDataAttrs() {},
   };
 
+
+  function pressToStartSetup() {
+    if (!overlayPress || !pressPanel) return;
+
+    const env = setEnvDataAttrs();
+    if (pillMode) pillMode.textContent = (env.install === "standalone" ? "APP" : "WEB") + (env.device === "mobile" ? " · MOB" : "");
+    if (pressMeta) pressMeta.textContent = (env.install === "standalone" ? "APP instalada" : "Navegador") + " • " + (env.device === "mobile" ? "Móvil" : "Desktop");
+
+    let armed = true;
+    const enterMenu = () => {
+      if (!armed) return;
+      armed = false;
+
+      // Primer gesto => unlock audio (móvil/iOS)
+      try { if (window.AudioSys && typeof window.AudioSys.unlock === "function") window.AudioSys.unlock(); } catch (e) {}
+
+      overlayFadeOut(overlayPress);
+      overlayShow(overlayStart);
+
+      try { profileSelect && profileSelect.focus({ preventScroll: true }); } catch (e) {}
+      window.removeEventListener("keydown", onKey, true);
+    };
+
+    const onKey = (ev) => {
+      if (!overlayPress || overlayPress.hidden) return;
+      if (ev.key === "Shift" || ev.key === "Control" || ev.key === "Alt" || ev.key === "Meta") return;
+      enterMenu();
+    };
+
+    pressPanel.addEventListener("click", enterMenu);
+    pressPanel.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") {
+        ev.preventDefault();
+        enterMenu();
+      }
+    });
+    window.addEventListener("keydown", onKey, true);
+
+    try { pressPanel.focus({ preventScroll: true }); } catch (e) {}
+  }
+
   function T(key, fallback = null, arg = null) {
     try {
       const s = I18n.t(key, arg);
@@ -129,6 +170,23 @@
   function isMobileUA() { const ua = navigator.userAgent || ""; return /Mobi|Android|iPhone|iPad|iPod/i.test(ua); }
   function isMobileLayout() { return (isCoarsePointer() || isMobileUA()) && isPortrait(); }
   function desiredRows() { return isMobileLayout() ? 16 : 24; }
+
+
+  function isStandalone() {
+    try {
+      return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || (navigator.standalone === true);
+    } catch (e) { return false; }
+  }
+  function setEnvDataAttrs() {
+    const install = isStandalone() ? "standalone" : "browser";
+    const device = (isCoarsePointer() || isMobileUA()) ? "mobile" : "desktop";
+    document.documentElement.dataset.install = install;
+    document.documentElement.dataset.device = device;
+    return { install, device };
+  }
+  function syncCanvasARCss() {
+    try { document.documentElement.style.setProperty("--gameAR", `${COLS} / ${ROWS}`); } catch (e) {}
+  }
 
   // ───────────────────────── Settings ─────────────────────────
   const defaultSettings = () => ({
@@ -385,6 +443,7 @@
     const want = desiredRows();
     if (want === ROWS) return false;
     ROWS = want;
+    syncCanvasARCss();
 
     if (forceReset) {
       resetRun(true);
@@ -508,13 +567,13 @@
   }
 
   // ───────────────────────── DOM refs ─────────────────────────
-  let stage, canvasWrap, gameArea, hud, canvas, ctx;
+  let stage, canvasWrap, railCanvas, canvasSizer, gameArea, hud, canvas, ctx;
   let brandSub;
 
-  let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion;
+  let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion, pillMode;
   let btnOptions, btnPause, btnRestart, btnInstall;
 
-  let overlayLoading, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
+  let overlayLoading, loadingSub, overlayPress, pressPanel, pressMeta, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
 
   let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
   let btnResume, btnQuitToStart, btnPausedRestart;
@@ -2110,7 +2169,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     updateVhUnit();
     applyRowsIfNeeded({ forceReset: false });
 
-    const host = canvasWrap || gameArea;
+    const host = canvasSizer || railCanvas || canvasWrap || gameArea;
     const r = host.getBoundingClientRect();
     const availW = Math.max(240, Math.floor(r.width));
     const availH = Math.max(240, Math.floor(r.height));
@@ -2681,6 +2740,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   function cacheDOM() {
     stage = $("stage");
     canvasWrap = $("canvasWrap");
+    railCanvas = $("railCanvas");
+    canvasSizer = $("canvasSizer");
     gameArea = $("gameArea");
     hud = $("hud");
     canvas = $("gameCanvas");
@@ -2706,6 +2767,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     pillUpdate = $("pillUpdate");
     pillOffline = $("pillOffline");
     pillVersion = $("pillVersion");
+    pillMode = $("pillMode");
 
     btnOptions = $("btnOptions");
     btnPause = $("btnPause");
@@ -2713,6 +2775,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     btnInstall = $("btnInstall");
 
     overlayLoading = $("overlayLoading");
+    overlayPress = $("overlayPress");
+    pressPanel = $("pressPanel");
+    pressMeta = $("pressMeta");
     loadingSub = $("loadingSub");
     overlayStart = $("overlayStart");
     overlayPaused = $("overlayPaused");
@@ -2959,7 +3024,13 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
       setTimeout(async () => {
         await overlayFadeOut(overlayLoading, 180);
-        overlayShow(overlayStart);
+        if (overlayPress) {
+          overlayShow(overlayPress);
+          overlayHide(overlayStart);
+        } else {
+          overlayShow(overlayStart);
+        }
+        pressToStartSetup();
         setState("menu");
         if (brandSub) brandSub.textContent = I18n.t("app_ready");
         updatePillsNow();

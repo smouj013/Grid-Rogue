@@ -355,6 +355,12 @@ html.is-standalone #pillMode{
   gap:12px;
 }
 
+/* Cuando la cruceta está visible, reservamos espacio (evita tapar el player) */
+.gameArea.hasDpad{
+  padding-bottom: calc(var(--dpadBtn) * 2 + var(--dpadGap) * 2 + var(--dpadPad) + env(safe-area-inset-bottom));
+}
+
+
 /* ───────────────────────── RailFrame: HUD + Canvas ───────────────────────── */
 
 .railFrame{
@@ -390,8 +396,11 @@ html.is-standalone #pillMode{
 .railCanvas{
   min-width:0;
   min-height:0;
-  display:grid;
-  place-items:center;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  position:relative;
   border-radius: 16px;
   background: rgba(0,0,0,0.10);
   border:1px solid rgba(255,255,255,0.06);
@@ -733,6 +742,38 @@ html.is-standalone #pillMode{
   .dpad{ bottom: calc(18px + env(safe-area-inset-bottom)); }
 }
 
+
+/* ───────────────────────── Press Any Button ───────────────────────── */
+
+.pressPanel{
+  width: min(100%, 520px);
+  cursor:pointer;
+  user-select:none;
+}
+.pressPanel:active{ transform: translateY(1px); }
+
+.pressBody{
+  padding: 12px 14px 16px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.pressHint{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.28);
+  font-weight:950;
+  letter-spacing:.2px;
+}
+.pressHint .ms{ font-size:20px; }
+.pressMeta{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 40ch; }
+
 /* ───────────────────────── Overlays / Panels ───────────────────────── */
 
 .overlay{
@@ -887,6 +928,98 @@ html.is-standalone #pillMode{
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
+/* ───────────────────────── Opciones (UI) ───────────────────────── */
+
+.optionsPanel{
+  height: min(92svh, 760px);
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+}
+.optionsPanel .options{
+  flex:1;
+  min-height:0;
+  max-height: none;
+}
+
+.optGroupTitle{
+  margin-top: 10px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:950;
+  letter-spacing:.2px;
+  color: rgba(255,255,255,0.90);
+}
+.optGroupTitle .ms{ font-size:18px; }
+.optGroupSpacer{ margin-top: 14px; }
+
+.optRow{
+  margin-top: 10px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.12);
+  display:grid;
+  grid-template-columns: 1fr auto;
+  align-items:center;
+  gap: 10px;
+}
+.optRow > span:first-child{ color: rgba(255,255,255,0.82); font-weight:800; }
+
+.optRow input[type="checkbox"]{
+  width: 22px;
+  height: 22px;
+}
+
+.optRow.sliderRow{
+  grid-template-columns: 120px 1fr auto;
+  gap: 10px;
+}
+.optRow.sliderRow input[type="range"]{
+  width: 100%;
+  min-width: 120px;
+}
+.optRow.sliderRow .mono{
+  min-width: 56px;
+  text-align:right;
+  color: rgba(255,255,255,0.86);
+  font-weight:900;
+}
+
+.optRow .btn{
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+}
+
+.optRow.danger{
+  border-color: rgba(255,59,89,0.22);
+  background: rgba(255,59,89,0.08);
+}
+
+#optLangRow{
+  grid-template-columns: 110px 1fr;
+}
+#optLangRow .select{ width:100%; }
+
+/* En pantallas muy estrechas: sliders en 2 filas */
+@media (max-width:420px){
+  .optRow.sliderRow{
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "label label"
+      "range value";
+  }
+  .optRow.sliderRow > span:first-child{ grid-area: label; }
+  .optRow.sliderRow input[type="range"]{ grid-area: range; }
+  .optRow.sliderRow .mono{ grid-area: value; }
+}
+
 .options::-webkit-scrollbar{ width: 10px; }
 .options::-webkit-scrollbar-thumb{
   background: rgba(255,255,255,0.10);
@@ -978,4 +1111,21 @@ html.is-standalone #pillMode{
 
 @media (prefers-reduced-motion: reduce){
   *{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+}
+
+/* ───────────────────────── Modo (WEB / APP / Móvil) ───────────────────────── */
+
+html[data-install="standalone"] .topbar{
+  background: rgba(8,8,12,0.84);
+  border-bottom-color: rgba(255,255,255,0.10);
+}
+html[data-install="standalone"] #pillMode{
+  border-color: rgba(106,176,255,0.30);
+  background: rgba(106,176,255,0.10);
+  color: rgba(255,255,255,0.92);
+}
+
+html[data-device="mobile"] .topbar{
+  padding-left: 10px;
+  padding-right: 10px;
 }
