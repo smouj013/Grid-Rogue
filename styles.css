@@ -560,19 +560,11 @@ html.is-standalone #pillMode{
   backdrop-filter: blur(10px);
 }
 
-.hpWrap::before{
-  content:"favorite";
-  font-family:"Material Symbols Rounded";
-  font-weight:700;
-  font-size:18px;
-  line-height:1;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
+.hpIcon{
   font-variation-settings:"FILL" 1, "wght" 700, "GRAD" 0, "opsz" 28;
   color: rgba(255,120,150,0.95);
-  margin-right:2px;
 }
+
 
 .heart{
   font-size:16px;

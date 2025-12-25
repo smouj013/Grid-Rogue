@@ -14,7 +14,7 @@
   const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V0200";
   try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
-  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.0");
+  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.1");
 
   // Compat flags (failsafe/index antiguo) — no pisar si ya existen
   try {
@@ -627,7 +627,7 @@
   }
 
   function ensureHudFloatLayer() {
-    ensureCriticalCSS();
+    
 
     if (hudFloat && hudFloat.parentElement) return;
 
@@ -635,7 +635,7 @@
     if (existing) { hudFloat = existing; return; }
 
     // Importante: host = STAGE para que el HUD flotante NO afecte a la maquetación del HUD real.
-    const host = stage || document.body;
+    const host = canvasSizer || railCanvas || stage || document.body;
     if (!host) return;
 
     try {
@@ -719,7 +719,7 @@
   }
 
   function ensureHudStatusUI() {
-    ensureHudFloatLayer();
+    
     if (!hudFloat) return;
 
     const existing = $("hudStatus");
@@ -844,15 +844,72 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   function updateStatusHUD() {
-    ensureHudStatusUI();
-    if (hudStatus) {
-      hudStatus.hidden = !shouldShowHudStatus();
-      hudStatus.classList.toggle("compact", isMobileLayout());
-      hudStatus.style.pointerEvents = "none";
+    // HUD dentro del panel (sin capas flotantes ni duplicar IDs)
+    try {
+      if (window.GRUtils && GRUtils.hud && typeof GRUtils.hud.setHP === "function") {
+        GRUtils.hud.setHP(hp, hpMax);
+
+        const buffs = [];
+        if (shields > 0) buffs.push({ kind: "shield", icon: "shield", count: shields, title: "Escudo" });
+
+        if (magnetTime > 0) {
+          buffs.push({
+            kind: "magnet",
+            icon: "compass_calibration",
+            timeLeft: magnetTime,
+            duration: magnetTime,
+            title: "Imán"
+          });
+        }
+
+        if (trapResist > 0) buffs.push({ kind: "resist", icon: "health_and_safety", count: trapResist, title: "Resistencia" });
+        if (zoneExtra > 0) buffs.push({ kind: "zone", icon: "crop_free", count: zoneExtra, title: "Zona" });
+        if (rerolls > 0) buffs.push({ kind: "reroll", icon: "cached", count: rerolls, title: "Reroll" });
+        if (scoreBoost > 0) buffs.push({ kind: "boost", icon: "trending_up", count: scoreBoost, title: "Boost" });
+
+        const hpExtra = Math.max(0, (hpMax | 0) - (HP_START | 0));
+        if (hpExtra > 0) buffs.push({ kind: "hp", icon: "favorite", count: hpExtra, title: "Vida +" });
+
+        if (typeof GRUtils.hud.setBuffs === "function") GRUtils.hud.setBuffs(buffs);
+        return;
+      }
+    } catch (e) {}
+
+    // Fallback mínimo (si GRUtils no existe por lo que sea)
+    if (hudHearts) {
+      hudHearts.innerHTML = "";
+      const icon = document.createElement("span");
+      icon.className = "ms hpIcon";
+      icon.textContent = "favorite";
+      icon.setAttribute("aria-hidden", "true");
+      hudHearts.appendChild(icon);
+
+      const full = Math.max(0, Math.min(hp | 0, hpMax | 0));
+      const max = Math.max(0, hpMax | 0);
+      for (let i = 0; i < max; i++) {
+        const s = document.createElement("span");
+        s.className = "ms heart " + (i < full ? "full" : "empty");
+        s.textContent = "favorite";
+        s.setAttribute("aria-hidden", "true");
+        hudHearts.appendChild(s);
+      }
     }
-    updateHeartsUI();
-    updateBuffsUI();
-    scheduleHudStatusPosition();
+
+    if (hudBuffs) {
+      hudBuffs.innerHTML = "";
+      if (shields > 0) {
+        const b = document.createElement("span");
+        b.className = "buffBadge";
+        b.innerHTML = '<span class="ms bIcon" aria-hidden="true">shield</span><span class="bTime">x' + (shields | 0) + "</span>";
+        hudBuffs.appendChild(b);
+      }
+      if (magnetTime > 0) {
+        const b = document.createElement("span");
+        b.className = "buffBadge";
+        b.innerHTML = '<span class="ms bIcon" aria-hidden="true">compass_calibration</span><span class="bTime">' + magnetTime.toFixed(1) + "s</span>";
+        hudBuffs.appendChild(b);
+      }
+    }
   }
 
   // Pills a 10Hz
@@ -2742,8 +2799,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       updateVhUnit();
 
       ensureUpgradeFxCanvas();
-      ensureHudStatusUI();
-      installHudObservers();
+      
+      
 
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
