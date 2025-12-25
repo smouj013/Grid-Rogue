@@ -1,29 +1,18 @@
 /* app.js — Grid Rogue v0.2.0 (STABLE+FULLSCREEN + AUDIO + I18N)
-   ✅ Mantiene compatibilidad con:
+   ✅ Compatible con:
    - utils.js (window.GRUtils)
    - audio.js (window.AudioSys)
    - localization.js (window.I18n)
    - auth.js (window.Auth) si existe
-   - rendiment.js (window.GRPerf) si existe (opcional, no rompe nada)
-
-   Mejoras incluidas (sin cambiar “version target” 0.2.0):
-   - Guard robusto anti doble carga (SW/duplicados/script reinyectado)
-   - performance.now() con fallback (navegadores raros)
-   - escapeAttr sin depender de String.prototype.replaceAll
-   - Integración opcional GRPerf: mide boot + sampling seguro (sin tocar UI si no existe)
-   - Fatal-stop del loop en error grave (evita spam de errores)
+   - rendiment.js (window.GRPerf) si existe (opcional)
 */
-
 (() => {
   "use strict";
 
   // ───────────────────────── Guard anti doble carga ─────────────────────────
   const g = (typeof globalThis !== "undefined") ? globalThis : window;
   const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V0200";
-  try {
-    if (g && g[LOAD_GUARD]) return;
-    if (g) g[LOAD_GUARD] = true;
-  } catch (_) {}
+  try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
   const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.0");
 
@@ -35,22 +24,17 @@
 
   // ───────────────────────── Perf helpers (fallback) ─────────────────────────
   const pNow = (() => {
-    try {
-      if (typeof performance !== "undefined" && typeof performance.now === "function") return () => performance.now();
-    } catch {}
+    try { if (typeof performance !== "undefined" && typeof performance.now === "function") return () => performance.now(); } catch {}
     return () => Date.now();
   })();
 
-  // Optional: GRPerf (rendiment.js)
   const GRPerf = (typeof window !== "undefined" && window.GRPerf) ? window.GRPerf : null;
   const perfEndBoot = (() => {
     try {
       if (!GRPerf) return null;
       GRPerf.setConfig?.({ targetFps: 60, autoPauseOnHidden: true, emitIntervalMs: 500 });
       return GRPerf.measure?.("boot_total");
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   })();
 
   // ───────────────────────── Imports (globals) ─────────────────────────
@@ -71,9 +55,9 @@
 
   const overlayShow = U.overlayShow || ((el) => { if (!el) return; el.hidden = false; });
   const overlayHide = U.overlayHide || ((el) => { if (!el) return; el.hidden = true; });
-  const overlayFadeOut = U.overlayFadeOut || ((el, _ms = 0) => Promise.resolve(overlayHide(el)));
+  const overlayFadeOut = U.overlayFadeOut || ((el) => Promise.resolve(overlayHide(el)));
 
-  // ⛑️ NO romper pills con iconos. Si existe .pv, solo actualiza eso.
+  // NO romper pills con iconos: si existe .pv, solo actualiza eso.
   const setPill = U.setPill || ((el, v) => {
     if (!el) return;
     const pv = el.querySelector?.(".pv");
@@ -91,7 +75,6 @@
     applyDataAttrs() {},
   };
 
-  // Traducción con fallback
   function T(key, fallback = null, arg = null) {
     try {
       const s = I18n.t(key, arg);
@@ -136,32 +119,16 @@
     const n = readLS(newKey);
     if (n != null) return n;
     const o = readLS(oldKey);
-    if (o != null) {
-      writeLS(newKey, o);
-      return o;
-    }
+    if (o != null) { writeLS(newKey, o); return o; }
     return null;
   }
 
   // ───────────────────────── Device / Layout ─────────────────────────
-  function isCoarsePointer() {
-    try { return matchMedia("(pointer:coarse)").matches; } catch { return false; }
-  }
-  function isPortrait() {
-    try { return matchMedia("(orientation: portrait)").matches; } catch { return (innerHeight >= innerWidth); }
-  }
-  function isMobileUA() {
-    const ua = navigator.userAgent || "";
-    return /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
-  }
-  function isMobileLayout() {
-    const coarse = isCoarsePointer();
-    const portrait = isPortrait();
-    return (coarse || isMobileUA()) && portrait;
-  }
-  function desiredRows() {
-    return isMobileLayout() ? 16 : 24;
-  }
+  function isCoarsePointer() { try { return matchMedia("(pointer:coarse)").matches; } catch { return false; } }
+  function isPortrait() { try { return matchMedia("(orientation: portrait)").matches; } catch { return (innerHeight >= innerWidth); } }
+  function isMobileUA() { const ua = navigator.userAgent || ""; return /Mobi|Android|iPhone|iPad|iPod/i.test(ua); }
+  function isMobileLayout() { return (isCoarsePointer() || isMobileUA()) && isPortrait(); }
+  function desiredRows() { return isMobileLayout() ? 16 : 24; }
 
   // ───────────────────────── Settings ─────────────────────────
   const defaultSettings = () => ({
@@ -169,13 +136,11 @@
     vibration: true,
     showDpad: true,
     fx: 1.0,
-
     musicOn: true,
     sfxOn: true,
     musicVol: 0.60,
     sfxVol: 0.90,
     muteAll: false,
-
     lang: "auto",
   });
 
@@ -184,19 +149,15 @@
     const s = raw ? safeParse(raw, null) : null;
     const base = defaultSettings();
     if (!s || typeof s !== "object") return base;
-
     return {
       ...base,
       ...s,
       fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
-
       musicOn: (s.musicOn ?? base.musicOn) !== false,
       sfxOn: (s.sfxOn ?? base.sfxOn) !== false,
-
       musicVol: clamp(Number(s.musicVol ?? base.musicVol) || base.musicVol, 0, 1),
       sfxVol: clamp(Number(s.sfxVol ?? base.sfxVol) || base.sfxVol, 0, 1),
       muteAll: !!(s.muteAll ?? base.muteAll),
-
       lang: (typeof s.lang === "string" ? s.lang : base.lang),
     };
   })();
@@ -255,15 +216,11 @@
       try {
         if (!overlayOptions || overlayOptions.hidden) return false;
         if (!target) return false;
-
-        // Si el evento viene de un elemento fuera de opciones, bloquea
         if (!overlayOptions.contains(target)) return false;
 
-        // Permite inputs/selects (gestos internos)
         const tag = (target.tagName || "").toLowerCase();
         if (tag === "input" || tag === "textarea" || tag === "select") return true;
 
-        // Composed path (mejor para componentes/Shadow DOM)
         const path = (event && typeof event.composedPath === "function") ? event.composedPath() : null;
         const iter = (path && path.length) ? path : null;
 
@@ -283,7 +240,6 @@
             if (canScrollEl(el)) return true;
           }
         } else {
-          // Fallback por ancestors
           let el = target;
           while (el && el !== overlayOptions) {
             if (canScrollEl(el)) return true;
@@ -291,15 +247,12 @@
           }
         }
 
-        // Fallbacks antiguos
         const body =
           overlayOptions.querySelector?.("#optionsBody") ||
           overlayOptions.querySelector?.(".options") ||
           overlayOptions;
         return !!(body && (target === body || target.closest?.("#optionsBody") || target.closest?.(".options")));
-      } catch {
-        return false;
-      }
+      } catch { return false; }
     };
 
     const preventIfNeeded = (e) => {
@@ -318,7 +271,6 @@
 
   let playerName = (migrateKeyIfNeeded(NAME_KEY, NAME_KEY_OLD) || "").trim().slice(0, 16);
   let best = parseInt(migrateKeyIfNeeded(BEST_KEY, BEST_KEY_OLD) || "0", 10) || 0;
-
   if (playerName.length < 2) playerName = I18n.t("defaultPlayer");
 
   function syncFromAuth() {
@@ -364,13 +316,11 @@
         vibration: !!settings.vibration,
         showDpad: !!settings.showDpad,
         fx: settings.fx,
-
         musicOn: !!settings.musicOn,
         sfxOn: !!settings.sfxOn,
         musicVol: settings.musicVol,
         sfxVol: settings.sfxVol,
         muteAll: !!settings.muteAll,
-
         lang: String(settings.lang || "auto"),
       });
     } catch {}
@@ -391,11 +341,7 @@
 
   async function tryLoadFirst(key, files) {
     for (const file of files) {
-      try {
-        const img = await loadImage(spriteUrl(file));
-        sprites.map.set(key, img);
-        return true;
-      } catch {}
+      try { const img = await loadImage(spriteUrl(file)); sprites.map.set(key, img); return true; } catch {}
     }
     return false;
   }
@@ -415,9 +361,7 @@
       const tasks = candidates.map(([k, list]) => tryLoadFirst(k, list));
       await Promise.race([Promise.all(tasks), timeout]);
       sprites.ready = sprites.map.size > 0;
-    } catch {
-      sprites.ready = sprites.map.size > 0;
-    }
+    } catch { sprites.ready = sprites.map.size > 0; }
   }
 
   // ───────────────────────── Game constants ─────────────────────────
@@ -486,7 +430,6 @@
   let colF = 3;
   let rowF = 1;
 
-  // ✅ VIDA
   const HP_START = 10;
   const HP_CAP = 24;
   let hpMax = HP_START;
@@ -494,7 +437,6 @@
 
   let shields = 0;
 
-  // ✅ Imán temporal
   let magnet = 0;
   let magnetTime = 0;
 
@@ -518,12 +460,10 @@
   let comboTimeMax = 6.0;
   let comboTime = 6.0;
 
-  // UI FX
   let toastT = 0;
   let playerPulse = 0;
   let zonePulse = 0;
 
-  // Shake: solo player
   let shakeT = 0;
   let shakePow = 0;
 
@@ -534,7 +474,6 @@
   const particles = [];
   const floatTexts = [];
 
-  // Background stars
   const bgStars = [];
   function initBgStars() {
     bgStars.length = 0;
@@ -586,10 +525,8 @@
 
   let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal, btnRepairPWA;
 
-  // AUDIO opts
   let optMusicOn, optSfxOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
 
-  // I18N opts
   let optLang = null;
 
   let errMsg, btnErrClose, btnErrReload;
@@ -599,14 +536,12 @@
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
 
-  // ✅ HUD extras: HP + badges (capa flotante)
+  // HUD flotante (para que NO empuje layout del HUD)
   let hudFloat = null;
   let hudStatus = null;
   let hudHearts = null;
   let hudBuffs = null;
   let _hudPosRAF = 0;
-
-  // Observers
   let _hudRO = null;
   let _hudAnchorRO = null;
 
@@ -669,7 +604,6 @@
 
   function escapeAttr(s) {
     const v = String(s ?? "");
-    // Sin replaceAll (compat)
     return v
       .replace(/&/g, "&amp;")
       .replace(/"/g, "&quot;")
@@ -684,9 +618,9 @@
       const st = document.createElement("style");
       st.id = "grCriticalCss";
       st.textContent = `
-        #hudFloat{position:absolute;inset:0;pointer-events:none;z-index:40;}
-        #hudStatus{position:absolute;left:0;top:0;transform:translate(0,0);pointer-events:none;will-change:transform;}
-        .upFxCanvas{position:absolute;inset:0;pointer-events:none;}
+#hudFloat{position:absolute;inset:0;pointer-events:none;z-index:40;overflow:visible}
+#hudStatus{position:absolute;left:0;top:0;transform:translate(0,0);pointer-events:none;will-change:transform}
+.upFxCanvas{position:absolute;inset:0;pointer-events:none}
       `.trim();
       document.head.appendChild(st);
     } catch {}
@@ -694,20 +628,24 @@
 
   function ensureHudFloatLayer() {
     ensureCriticalCSS();
+
     if (hudFloat && hudFloat.parentElement) return;
+
     const existing = $("hudFloat");
     if (existing) { hudFloat = existing; return; }
 
-    const host = hud || stage || document.body;
+    // Importante: host = STAGE para que el HUD flotante NO afecte a la maquetación del HUD real.
+    const host = stage || document.body;
     if (!host) return;
 
     try {
-      // host debe ser contenedor de posicionamiento
-      try {
-        const cs = getComputedStyle(host);
-        if (cs.position === "static") host.style.position = "relative";
-      } catch {}
+      const cs = getComputedStyle(host);
+      if (cs.position === "static") host.style.position = "relative";
+      // Evita que un overflow hidden “corte” los badges/vida
+      if (cs.overflow === "hidden") host.style.overflow = "visible";
+    } catch {}
 
+    try {
       const f = document.createElement("div");
       f.id = "hudFloat";
       f.className = "hudFloat";
@@ -736,9 +674,8 @@
   function positionHudStatus() {
     if (!hudStatus || !hudFloat) return;
 
-    const ref = hud || stage || document.body;
-    if (!ref) return;
-
+    // Referencia: stage (ideal), si no, fallback
+    const ref = stage || document.body;
     const refRect = ref.getBoundingClientRect?.();
     if (!refRect) return;
 
@@ -748,7 +685,6 @@
 
     const anchor = getLevelProgressAnchor();
 
-    // Fallback: esquina superior derecha del HUD
     let x = Math.max(0, Math.round(refRect.width - 260));
     let y = 8 + vvTop;
     let w = 260;
@@ -759,7 +695,6 @@
       y = Math.round((a.bottom - refRect.top) + 6 + vvTop);
       w = Math.round(a.width);
 
-      // Si se sale por abajo, lo colocamos arriba del anchor
       if ((y + 52) > (refRect.height + vvTop)) {
         y = Math.round((a.top - refRect.top) - 52 - 6 + vvTop);
       }
@@ -826,9 +761,9 @@
   function installHudObservers() {
     try {
       if (window.ResizeObserver) {
-        if (!_hudRO && (hud || stage)) {
+        if (!_hudRO && (stage || hud)) {
           _hudRO = new ResizeObserver(() => scheduleHudStatusPosition());
-          _hudRO.observe(hud || stage);
+          _hudRO.observe(stage || hud);
         }
 
         const anchor = getLevelProgressAnchor();
@@ -859,10 +794,10 @@
     }
 
     hudHearts.innerHTML = `
-      <span class="ms hpIcon">favorite</span>
-      <span class="hpHearts">${hearts.join("")}</span>
-      ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
-      <span class="hpText mono">(${hp}/${hpMax})</span>
+<span class="ms hpIcon">favorite</span>
+<span class="hpHearts">${hearts.join("")}</span>
+${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
+<span class="hpText mono">(${hp}/${hpMax})</span>
     `.trim();
 
     hudHearts.title = T("hud_hp_title", "Vida: {0}", `${hp}/${hpMax}`);
@@ -871,13 +806,12 @@
   function makeBuffBadge({ kind, icon, count = 0, time = 0, title = "" }) {
     const showCount = Number(count) > 1;
     const showTime = Number(time) > 0;
-
     return `
-      <div class="buffBadge" data-kind="${escapeAttr(kind)}" title="${escapeAttr(title)}">
-        <span class="ms bIcon">${escapeAttr(icon)}</span>
-        ${showTime ? `<span class="bTime mono">${escapeAttr(fmtTimeShort(time))}</span>` : ``}
-        ${showCount ? `<span class="bCount mono">${count | 0}</span>` : ``}
-      </div>
+<div class="buffBadge" data-kind="${escapeAttr(kind)}" title="${escapeAttr(title)}">
+  <span class="ms bIcon">${escapeAttr(icon)}</span>
+  ${showTime ? `<span class="bTime mono">${escapeAttr(fmtTimeShort(time))}</span>` : ``}
+  ${showCount ? `<span class="bCount mono">${count | 0}</span>` : ``}
+</div>
     `.trim();
   }
 
@@ -888,71 +822,23 @@
 
     const items = [];
 
-    if (shields > 0) {
-      items.push(makeBuffBadge({
-        kind: "shield",
-        icon: "shield",
-        count: shields,
-        title: T("buff_shield", "Escudo"),
-      }));
-    }
+    if (shields > 0) items.push(makeBuffBadge({ kind: "shield", icon: "shield", count: shields, title: T("buff_shield", "Escudo") }));
 
-    if (magnet > 0 && magnetTime > 0.01) {
-      items.push(makeBuffBadge({
-        kind: "magnet",
-        icon: "compass_calibration",
-        count: magnet,
-        time: magnetTime,
-        title: T("buff_magnet", "Imán"),
-      }));
-    }
+    if (magnet > 0 && magnetTime > 0.01) items.push(makeBuffBadge({
+      kind: "magnet", icon: "compass_calibration", count: magnet, time: magnetTime, title: T("buff_magnet", "Imán"),
+    }));
 
     const boostCount = pickedCount.get("boost") || 0;
-    if (boostCount > 0) {
-      items.push(makeBuffBadge({
-        kind: "boost",
-        icon: "bolt",
-        count: boostCount,
-        title: T("buff_boost", "Puntos +"),
-      }));
-    }
+    if (boostCount > 0) items.push(makeBuffBadge({ kind: "boost", icon: "bolt", count: boostCount, title: T("buff_boost", "Puntos +") }));
 
-    if (trapResist > 0) {
-      items.push(makeBuffBadge({
-        kind: "resist",
-        icon: "verified_user",
-        count: trapResist,
-        title: T("buff_trap_resist", "Resistencia a trampas"),
-      }));
-    }
+    if (trapResist > 0) items.push(makeBuffBadge({ kind: "resist", icon: "verified_user", count: trapResist, title: T("buff_trap_resist", "Resistencia a trampas") }));
 
-    if (zoneExtra > 0) {
-      items.push(makeBuffBadge({
-        kind: "zone",
-        icon: "open_with",
-        count: zoneExtra,
-        title: T("buff_zone", "Zona +"),
-      }));
-    }
+    if (zoneExtra > 0) items.push(makeBuffBadge({ kind: "zone", icon: "open_with", count: zoneExtra, title: T("buff_zone", "Zona +") }));
 
-    if (rerolls > 0) {
-      items.push(makeBuffBadge({
-        kind: "reroll",
-        icon: "casino",
-        count: rerolls,
-        title: T("buff_rerolls", "Rerolls"),
-      }));
-    }
+    if (rerolls > 0) items.push(makeBuffBadge({ kind: "reroll", icon: "casino", count: rerolls, title: T("buff_rerolls", "Rerolls") }));
 
     const hpExtra = Math.max(0, hpMax - HP_START);
-    if (hpExtra > 0) {
-      items.push(makeBuffBadge({
-        kind: "hp",
-        icon: "favorite",
-        count: hpExtra + 1,
-        title: T("buff_hp", "Vida máxima"),
-      }));
-    }
+    if (hpExtra > 0) items.push(makeBuffBadge({ kind: "hp", icon: "favorite", count: hpExtra + 1, title: T("buff_hp", "Vida máxima") }));
 
     hudBuffs.innerHTML = items.join("");
   }
@@ -1246,9 +1132,7 @@
   function loseHp(amount, x = null, y = null) {
     const prev = hp;
     hp = clampInt(hp - (amount | 0), 0, hpMax);
-    if (x != null && y != null) {
-      spawnFloatText(x, y, `-${amount}♥`, "rgba(255,120,120,0.95)");
-    }
+    if (x != null && y != null) spawnFloatText(x, y, `-${amount}♥`, "rgba(255,120,120,0.95)");
     updateStatusHUD();
     if (hp <= 0 && prev > 0) {
       AudioSys.sfx("gameover");
@@ -1280,10 +1164,7 @@
   }
 
   function applyCollect(t, checkCombo = true, x = null, y = null) {
-    if (t === CellType.Trap) {
-      applyTrapHit(x, y);
-      return;
-    }
+    if (t === CellType.Trap) { applyTrapHit(x, y); return; }
 
     playerPulse = 1;
     zonePulse = 1;
@@ -1352,7 +1233,6 @@
 
   function stepAdvance() {
     if (!ensureGridValid()) { makeGrid(); recomputeZone(); }
-
     shiftRows();
     score += 1;
 
@@ -1464,11 +1344,7 @@
     comboHint.textContent = I18n.t("combo_hint");
   }
 
-  function failCombo() {
-    comboIdx = 0;
-    comboTime = comboTimeMax;
-    renderComboUI();
-  }
+  function failCombo() { comboIdx = 0; comboTime = comboTimeMax; renderComboUI(); }
 
   // ───────────────────────── Upgrades ─────────────────────────
   const MAGNET_DUR = { rare: 12, epic: 18, legendary: 26 };
@@ -1494,11 +1370,7 @@
       apply() { shields++; updateStatusHUD(); } },
 
     { id: "heart", nameKey: "up_heart_name", descKey: "up_heart_desc", tagKey: "tag_survival", max: 10, rarity: "common", weight: 9,
-      apply() {
-        hpMax = clampInt(hpMax + 1, HP_START, HP_CAP);
-        hp = clampInt(hp + 1, 0, hpMax);
-        updateStatusHUD();
-      } },
+      apply() { hpMax = clampInt(hpMax + 1, HP_START, HP_CAP); hp = clampInt(hp + 1, 0, hpMax); updateStatusHUD(); } },
 
     { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, rarity: "rare", weight: 7,
       apply() { magnet = Math.max(magnet, 1); magnetTime += MAGNET_DUR.rare; updateStatusHUD(); } },
@@ -1593,7 +1465,6 @@
 
     try {
       host.style.position = host.style.position || "relative";
-
       const c = document.createElement("canvas");
       c.id = "upFxCanvas";
       c.className = "upFxCanvas";
@@ -1602,7 +1473,6 @@
 
       upFxCanvas = c;
       upFxCtx = c.getContext("2d", { alpha: true });
-
       resizeUpgradeFxCanvas();
     } catch {}
   }
@@ -1788,19 +1658,19 @@
       const icon = upgradeIcon(u);
 
       card.innerHTML = `
-        <div class="upHead">
-          <div class="upIcon"><span class="ms">${icon}</span></div>
-          <div class="upHeadText">
-            <div class="upTitle">${name}</div>
-            <div class="upSubRow">
-              <span class="upRarityBadge">${rarityText}</span>
-              <span class="badge">${tag}</span>
-              <span class="badge">Lv ${nextLv}/${maxLv}</span>
-              ${extraMeta ? `<span class="badge">${extraMeta}</span>` : ``}
-            </div>
-          </div>
-        </div>
-        <div class="upDesc">${desc}</div>
+<div class="upHead">
+  <div class="upIcon"><span class="ms">${icon}</span></div>
+  <div class="upHeadText">
+    <div class="upTitle">${name}</div>
+    <div class="upSubRow">
+      <span class="upRarityBadge">${rarityText}</span>
+      <span class="badge">${tag}</span>
+      <span class="badge">Lv ${nextLv}/${maxLv}</span>
+      ${extraMeta ? `<span class="badge">${extraMeta}</span>` : ``}
+    </div>
+  </div>
+</div>
+<div class="upDesc">${desc}</div>
       `;
 
       const pickThis = () => {
@@ -2078,9 +1948,7 @@
 
         const pad = Math.max(2, Math.floor(cellPx * 0.08));
 
-        if (!used && (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus)) {
-          drawTileGlow(x, y, t, 0);
-        }
+        if (!used && (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus)) drawTileGlow(x, y, t, 0);
 
         const ok = drawSprite(key, x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2, alpha);
         if (!ok) {
@@ -2461,12 +2329,12 @@
 
     if (goStats) {
       goStats.innerHTML = `
-        <div class="line"><span>${I18n.t("stats_reason")}</span><span>${reason}</span></div>
-        <div class="line"><span>${I18n.t("stats_level")}</span><span>${level}</span></div>
-        <div class="line"><span>${I18n.t("stats_time")}</span><span>${Math.round(runTime)}s</span></div>
-        <div class="line"><span>${I18n.t("stats_streak")}</span><span>${streak}</span></div>
-        <div class="line"><span>${I18n.t("stats_mult")}</span><span>${mult.toFixed(2)}</span></div>
-        <div class="line"><span>${T("stats_hp", "HP")}</span><span>${hp}/${hpMax}</span></div>
+<div class="line"><span>${I18n.t("stats_reason")}</span><span>${reason}</span></div>
+<div class="line"><span>${I18n.t("stats_level")}</span><span>${level}</span></div>
+<div class="line"><span>${I18n.t("stats_time")}</span><span>${Math.round(runTime)}s</span></div>
+<div class="line"><span>${I18n.t("stats_streak")}</span><span>${streak}</span></div>
+<div class="line"><span>${I18n.t("stats_mult")}</span><span>${mult.toFixed(2)}</span></div>
+<div class="line"><span>${T("stats_hp", "HP")}</span><span>${hp}/${hpMax}</span></div>
       `;
     }
 
@@ -2866,7 +2734,6 @@
 
       cacheDOM();
 
-      // flags de “ya arrancó” (para index/repair-mode)
       window.__GRIDRUNNER_BOOTED = true;
       window.__GRIDROGUE_BOOTED = true;
 
@@ -2919,22 +2786,9 @@
       btnCloseOptions?.addEventListener("click", hideOptions);
       overlayOptions?.addEventListener("click", (e) => { if (e.target === overlayOptions) hideOptions(); });
 
-      optSprites?.addEventListener("change", () => {
-        settings.useSprites = !!optSprites.checked;
-        saveSettings();
-        pushPrefsToAuth();
-      });
-      optVibration?.addEventListener("change", () => {
-        settings.vibration = !!optVibration.checked;
-        saveSettings();
-        pushPrefsToAuth();
-      });
-      optDpad?.addEventListener("change", () => {
-        settings.showDpad = !!optDpad.checked;
-        applySettingsToUI();
-        saveSettings();
-        pushPrefsToAuth();
-      });
+      optSprites?.addEventListener("change", () => { settings.useSprites = !!optSprites.checked; saveSettings(); pushPrefsToAuth(); });
+      optVibration?.addEventListener("change", () => { settings.vibration = !!optVibration.checked; saveSettings(); pushPrefsToAuth(); });
+      optDpad?.addEventListener("change", () => { settings.showDpad = !!optDpad.checked; applySettingsToUI(); saveSettings(); pushPrefsToAuth(); });
       optFx?.addEventListener("input", () => {
         settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
         if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
@@ -2942,20 +2796,8 @@
         pushPrefsToAuth();
       });
 
-      optMusicOn?.addEventListener("change", () => {
-        AudioSys.unlock();
-        settings.musicOn = !!optMusicOn.checked;
-        applyAudioSettingsNow();
-        saveSettings();
-        pushPrefsToAuth();
-      });
-      optSfxOn?.addEventListener("change", () => {
-        AudioSys.unlock();
-        settings.sfxOn = !!optSfxOn.checked;
-        applyAudioSettingsNow();
-        saveSettings();
-        pushPrefsToAuth();
-      });
+      optMusicOn?.addEventListener("change", () => { AudioSys.unlock(); settings.musicOn = !!optMusicOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+      optSfxOn?.addEventListener("change", () => { AudioSys.unlock(); settings.sfxOn = !!optSfxOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
       optMusicVol?.addEventListener("input", () => {
         AudioSys.unlock();
         settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.6"), 0, 1);
@@ -2972,13 +2814,7 @@
         saveSettings();
         pushPrefsToAuth();
       });
-      optMuteAll?.addEventListener("change", () => {
-        AudioSys.unlock();
-        settings.muteAll = !!optMuteAll.checked;
-        applyAudioSettingsNow();
-        saveSettings();
-        pushPrefsToAuth();
-      });
+      optMuteAll?.addEventListener("change", () => { AudioSys.unlock(); settings.muteAll = !!optMuteAll.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
 
       btnTestAudio?.addEventListener("click", async () => {
         await AudioSys.unlock();
@@ -3053,7 +2889,6 @@
       setupPWA();
       preloadSpritesWithTimeout(900);
 
-      // Perf sampling opcional (no rompe nada si no existe)
       try { GRPerf?.start?.(); } catch {}
 
       resetRun(true);
@@ -3081,9 +2916,7 @@
         }
       });
 
-      // Cierra medición de boot si existe
       try { perfEndBoot?.(); } catch {}
-
     } catch (e) {
       showFatal(e);
     }
