@@ -14,7 +14,7 @@
   <title>Grid Rogue</title>
 
   <script>
-    window.APP_VERSION = "0.2.2";
+    window.APP_VERSION = "0.2.3";
   </script>
 
   <script>
@@ -48,19 +48,6 @@
       }
     })();
   </script>
-
-  <script>
-    (function () {
-      const setVH = () => {
-        const vh = window.innerHeight * 0.01;
-        document.documentElement.style.setProperty("--vh", `${vh}px`);
-      };
-      setVH();
-      window.addEventListener("resize", setVH, { passive: true });
-      window.addEventListener("orientationchange", setVH, { passive: true });
-    })();
-  </script>
-
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -68,12 +55,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.2.2" />
+  <link rel="manifest" href="./manifest.webmanifest?v=0.2.3" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.2.2" />
+  <link rel="stylesheet" href="./styles.css?v=0.2.3" />
 </head>
 
 <body>
@@ -92,8 +79,9 @@
       </div>
 
       <div class="miniStats" aria-label="Estado">
-        <span class="pill subtle mini" id="pillMode" hidden title="Modo">
-          <span class="pv">WEB • PC</span>
+        <span class="pill subtle mini" id="pillMode" title="Modo">
+          <span class="ms" aria-hidden="true">devices</span>
+          <span class="pv" id="pillModeVal">WEB • PC</span>
         </span>
 
         <span class="pill mini" id="pillScore" title="Score">
@@ -121,7 +109,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.2.2</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.2.3</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -233,7 +221,7 @@
         </div>
 
         <section class="overlay" id="overlayLoading">
-          <div class="panel">
+          <div class="panel loadingPanel">
             <div class="splash">
               <div class="splashLogo" aria-hidden="true">
                 <span class="ms">grid_view</span>
@@ -269,29 +257,33 @@
         </section>
 
         <section class="overlay" id="overlayPress" hidden>
-          <div class="panel pressPanel" id="pressPanel" role="button" tabindex="0" aria-label="Pulsa para empezar">
-            <div class="splash">
+          <div class="panel pressPanel">
+            <div class="splash splashCompact">
               <div class="splashLogo" aria-hidden="true">
                 <span class="ms">grid_view</span>
               </div>
               <div class="splashText">
                 <div class="title">Grid Rogue</div>
-                <div class="sub">Pulsa cualquier tecla o toca para empezar</div>
+                <div class="sub" id="pressSub">Pulsa para empezar</div>
               </div>
             </div>
 
             <div class="panelBody pressBody">
-              <div class="pressHint">
+              <div class="pressLine">
                 <span class="ms" aria-hidden="true">touch_app</span>
-                <span>Start</span>
+                <span id="pressHint">Tecla / click / tap • Desbloquea audio</span>
               </div>
-              <div class="tiny muted pressMeta" id="pressMeta">—</div>
+              <div class="tiny muted" id="pressMeta">Modo: —</div>
+            </div>
+
+            <div class="panelActions panelActionsStretch">
+              <button class="btn primary btnBlock" id="btnPressStart" type="button">Empezar</button>
             </div>
           </div>
         </section>
 
         <section class="overlay" id="overlayStart" hidden>
-          <div class="panel startPanel">
+          <div class="panel wide startPanel">
             <div class="splash splashCompact">
               <div class="splashLogo" aria-hidden="true">
                 <span class="ms">grid_view</span>
@@ -606,12 +598,54 @@
       }
     })();
   </script>
-  <script src="./utils.js?v=0.2.2" defer></script>
-  <script src="./localization.js?v=0.2.2" defer></script>
-  <script src="./auth.js?v=0.2.2" defer></script>
-  <script src="./audio_sys.js?v=0.2.2" defer></script>
-  <script src="./audio.js?v=0.2.2" defer></script>
-  <script src="./rendiment.js?v=0.2.2" defer></script>
-  <script src="./app.js?v=0.2.2" defer></script>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById("gameCanvas");
+      const sizer = document.getElementById("canvasSizer");
+      if (!canvas || !sizer) return;
+
+      const readInt = (v, fb) => {
+        const n = parseInt(String(v || ""), 10);
+        return Number.isFinite(n) && n > 0 ? n : fb;
+      };
+
+      const baseW = readInt(canvas.dataset.basew, canvas.width || 640);
+      const baseH = readInt(canvas.dataset.baseh, canvas.height || 960);
+
+      function fit() {
+        const r = sizer.getBoundingClientRect();
+        const pad = 0;
+
+        const availW = Math.max(0, r.width - pad);
+        const availH = Math.max(0, r.height - pad);
+
+        const scale = Math.max(0, Math.min(availW / baseW, availH / baseH));
+        const w = Math.max(1, Math.floor(baseW * scale));
+        const h = Math.max(1, Math.floor(baseH * scale));
+
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+      }
+
+      const rafFit = () => requestAnimationFrame(fit);
+
+      rafFit();
+      window.addEventListener("resize", rafFit, { passive: true });
+      window.addEventListener("orientationchange", rafFit, { passive: true });
+
+      setTimeout(rafFit, 80);
+      setTimeout(rafFit, 240);
+      setTimeout(rafFit, 600);
+    })();
+  </script>
+
+  <script src="./utils.js?v=0.2.3" defer></script>
+  <script src="./localization.js?v=0.2.3" defer></script>
+  <script src="./auth.js?v=0.2.3" defer></script>
+  <script src="./audio_sys.js?v=0.2.3" defer></script>
+  <script src="./audio.js?v=0.2.3" defer></script>
+  <script src="./rendiment.js?v=0.2.3" defer></script>
+  <script src="./app.js?v=0.2.3" defer></script>
 </body>
 </html>

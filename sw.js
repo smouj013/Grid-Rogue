@@ -1,4 +1,4 @@
-/* sw.js — Grid Rogue (v0.2.2) — UPDATED
+/* sw.js — Grid Rogue (v0.2.3) — UPDATED
    ✅ Robusto para GH Pages / subcarpetas (scope estable)
    ✅ Precache core: index obligatorio + resto best-effort
    ✅ Offline navegación: devuelve index.html
@@ -10,7 +10,7 @@
 */
 "use strict";
 
-const VERSION = "v0.2.2";
+const VERSION = "v0.2.3";
 
 const CACHE_PREFIX = "gridrogue-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;

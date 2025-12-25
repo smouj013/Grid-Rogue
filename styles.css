@@ -45,6 +45,8 @@
   --dpadGap: 10px;
   --dpadPad: 12px;
 
+  --dpadReserve: 0px;
+
   --hpFull: rgba(255,80,110,0.92);
   --hpEmpty: rgba(255,255,255,0.18);
 
@@ -60,11 +62,6 @@ html{ overscroll-behavior:none; }
 
 html.noScroll,
 body.noScroll{ overflow:hidden !important; }
-
-body.noScroll{
-  position:fixed;
-  width:100%;
-}
 
 body{
   margin:0;
@@ -319,6 +316,16 @@ html.is-standalone #pillMode{
   .pill.mini{ padding:6px 8px; }
 }
 
+
+/* ───────────────────────── Modo (PWA / Browser / Mobile) ───────────────────────── */
+
+html[data-standalone="1"] .topbar{
+  background: rgba(8,8,12,0.82);
+}
+html[data-mobile="1"] .topbar{
+  padding-left: calc(10px + env(safe-area-inset-left));
+  padding-right: calc(10px + env(safe-area-inset-right));
+}
 /* ───────────────────────── Stage / Layout ───────────────────────── */
 
 .stage{
@@ -352,12 +359,7 @@ html.is-standalone #pillMode{
   flex-direction:column;
   align-items:stretch;
   justify-content:stretch;
-  gap:12px;
-}
-
-/* Cuando la cruceta está visible, reservamos espacio (evita tapar el player) */
-.gameArea.hasDpad{
-  padding-bottom: calc(var(--dpadBtn) * 2 + var(--dpadGap) * 2 + var(--dpadPad) + env(safe-area-inset-bottom));
+  gap:12px;  padding-bottom: var(--dpadReserve);
 }
 
 
@@ -396,11 +398,8 @@ html.is-standalone #pillMode{
 .railCanvas{
   min-width:0;
   min-height:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  overflow:hidden;
-  position:relative;
+  display:grid;
+  place-items:center;
   border-radius: 16px;
   background: rgba(0,0,0,0.10);
   border:1px solid rgba(255,255,255,0.06);
@@ -569,11 +568,19 @@ html.is-standalone #pillMode{
   backdrop-filter: blur(10px);
 }
 
-.hpIcon{
+.hpWrap::before{
+  content:"favorite";
+  font-family:"Material Symbols Rounded";
+  font-weight:700;
+  font-size:18px;
+  line-height:1;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   font-variation-settings:"FILL" 1, "wght" 700, "GRAD" 0, "opsz" 28;
   color: rgba(255,120,150,0.95);
+  margin-right:2px;
 }
-
 
 .heart{
   font-size:16px;
@@ -695,6 +702,9 @@ html.is-standalone #pillMode{
   .hpWrap, .buffDock{ padding: 9px 10px; }
 }
 
+
+/* Reserva de espacio cuando la cruceta está activa */
+html.dpadOn{ --dpadReserve: calc((var(--dpadBtn) * 2) + var(--dpadGap) + (var(--dpadPad) * 2) + env(safe-area-inset-bottom)); }
 /* ───────────────────────── D-Pad ───────────────────────── */
 
 .dpad{
@@ -743,37 +753,36 @@ html.is-standalone #pillMode{
 }
 
 
-/* ───────────────────────── Press Any Button ───────────────────────── */
+/* ───────────────────────── Menús (Start/Press) ───────────────────────── */
 
-.pressPanel{
-  width: min(100%, 520px);
-  cursor:pointer;
-  user-select:none;
+.pressPanel .pressBody{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
 }
-.pressPanel:active{ transform: translateY(1px); }
-
-.pressBody{
-  padding: 12px 14px 16px 14px;
+.pressLine{
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap:12px;
-}
-.pressHint{
-  display:inline-flex;
-  align-items:center;
   gap:10px;
-  padding: 10px 14px;
+  padding:10px 12px;
   border-radius: 14px;
-  border:1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.06);
-  box-shadow: 0 14px 28px rgba(0,0,0,0.28);
-  font-weight:950;
-  letter-spacing:.2px;
+  border:1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.14);
+  color: rgba(255,255,255,0.85);
+  font-weight:850;
 }
-.pressHint .ms{ font-size:20px; }
-.pressMeta{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 40ch; }
+.pressLine .ms{ font-size:20px; }
 
+.startPanel .form{ padding: 14px; }
+.startPanel .helpText{ padding: 10px 14px 14px 14px; }
+
+@media (max-width:560px){
+  .overlay{
+    padding: 12px 10px calc(12px + env(safe-area-inset-bottom)) 10px;
+    align-items:stretch;
+  }
+  .panel{ width: 100%; }
+}
 /* ───────────────────────── Overlays / Panels ───────────────────────── */
 
 .overlay{
@@ -786,10 +795,33 @@ html.is-standalone #pillMode{
   background: var(--overlayBack);
   backdrop-filter: blur(10px);
   z-index: 120;
+
+
+.overlay.fadeIn{
+  animation: overlayIn .18s ease-out both;
 }
+.overlay.fadeOut{
+  animation: overlayOut .18s ease-in both;
+}
+
+@keyframes overlayIn{
+  from{ opacity:0; transform: translateY(10px) scale(0.985); }
+  to{ opacity:1; transform: translateY(0) scale(1); }
+}
+@keyframes overlayOut{
+  from{ opacity:1; transform: translateY(0) scale(1); }
+  to{ opacity:0; transform: translateY(10px) scale(0.985); }
+}
+  will-change: opacity, transform;
+}
+
 
 .panel{
   width: min(100%, var(--panelMaxW));
+  max-height: 100%;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
   border-radius: var(--r);
   background: var(--card);
   border:1px solid rgba(255,255,255,0.10);
@@ -922,102 +954,19 @@ html.is-standalone #pillMode{
 .helpText{ padding: 8px 14px 14px 14px; }
 
 .options{
-  padding: 12px 14px;
-  max-height: min(70vh, 520px);
+  padding: 14px;
+  flex:1;
+  min-height:0;
   overflow:auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
-/* ───────────────────────── Opciones (UI) ───────────────────────── */
 
-.optionsPanel{
-  height: min(92svh, 760px);
-  display:flex;
-  flex-direction:column;
-  min-height:0;
-}
-.optionsPanel .options{
-  flex:1;
-  min-height:0;
-  max-height: none;
-}
-
-.optGroupTitle{
-  margin-top: 10px;
-  padding: 10px 10px;
-  border-radius: 14px;
-  border:1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.03);
-  display:flex;
-  align-items:center;
-  gap:10px;
-  font-weight:950;
-  letter-spacing:.2px;
-  color: rgba(255,255,255,0.90);
-}
-.optGroupTitle .ms{ font-size:18px; }
-.optGroupSpacer{ margin-top: 14px; }
-
-.optRow{
-  margin-top: 10px;
-  padding: 10px 10px;
-  border-radius: 14px;
-  border:1px solid rgba(255,255,255,0.06);
-  background: rgba(0,0,0,0.12);
-  display:grid;
-  grid-template-columns: 1fr auto;
-  align-items:center;
-  gap: 10px;
-}
-.optRow > span:first-child{ color: rgba(255,255,255,0.82); font-weight:800; }
-
-.optRow input[type="checkbox"]{
-  width: 22px;
-  height: 22px;
-}
-
-.optRow.sliderRow{
-  grid-template-columns: 120px 1fr auto;
-  gap: 10px;
-}
-.optRow.sliderRow input[type="range"]{
-  width: 100%;
-  min-width: 120px;
-}
-.optRow.sliderRow .mono{
-  min-width: 56px;
-  text-align:right;
-  color: rgba(255,255,255,0.86);
-  font-weight:900;
-}
-
-.optRow .btn{
-  height: 38px;
-  padding: 0 12px;
-  border-radius: 12px;
-}
-
-.optRow.danger{
-  border-color: rgba(255,59,89,0.22);
-  background: rgba(255,59,89,0.08);
-}
-
-#optLangRow{
-  grid-template-columns: 110px 1fr;
-}
-#optLangRow .select{ width:100%; }
-
-/* En pantallas muy estrechas: sliders en 2 filas */
-@media (max-width:420px){
-  .optRow.sliderRow{
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "label label"
-      "range value";
-  }
-  .optRow.sliderRow > span:first-child{ grid-area: label; }
-  .optRow.sliderRow input[type="range"]{ grid-area: range; }
-  .optRow.sliderRow .mono{ grid-area: value; }
+.options::-webkit-scrollbar{ width: 10px; }
+.options::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border-radius: 999px;
+  border: 2px solid rgba(0,0,0,0.20);
 }
 
 .options::-webkit-scrollbar{ width: 10px; }
@@ -1112,20 +1061,57 @@ html.is-standalone #pillMode{
 @media (prefers-reduced-motion: reduce){
   *{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
 }
+/* ───────────────────────── Opciones (UI) ───────────────────────── */
 
-/* ───────────────────────── Modo (WEB / APP / Móvil) ───────────────────────── */
+.optGroupTitle{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 10px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  font-weight:950;
+  letter-spacing:.15px;
+  margin-top: 14px;
+}
+.optGroupTitle:first-child{ margin-top: 0; }
+.optGroupTitle .ms{ font-size:18px; opacity:.92; }
 
-html[data-install="standalone"] .topbar{
-  background: rgba(8,8,12,0.84);
-  border-bottom-color: rgba(255,255,255,0.10);
+.optGroupSpacer{ margin-top: 18px; }
+
+.optRow{
+  margin-top: 10px;
+  display:grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items:center;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.16);
 }
-html[data-install="standalone"] #pillMode{
-  border-color: rgba(106,176,255,0.30);
-  background: rgba(106,176,255,0.10);
-  color: rgba(255,255,255,0.92);
+.optRow > span{ color: rgba(255,255,255,0.78); font-weight:800; }
+.optRow input[type="checkbox"]{ width: 20px; height: 20px; }
+
+.optRow.sliderRow{
+  grid-template-columns: 1fr 1fr auto;
+}
+.optRow.sliderRow input[type="range"]{ width:100%; }
+.optRow.sliderRow .mono{ color: rgba(255,255,255,0.82); font-weight:900; }
+
+.optLabel{ font-weight:900; color: rgba(255,255,255,0.78); }
+
+.optRow button.btn{ justify-self:start; }
+
+.optRow.danger{
+  border-color: rgba(255,59,89,0.18);
+  background: rgba(255,59,89,0.08);
+}
+.optRow.danger > span{ color: rgba(255,255,255,0.78); }
+
+@media (max-width:520px){
+  .optRow.sliderRow{ grid-template-columns: 1fr; gap:8px; }
+  .optRow.sliderRow .mono{ justify-self:end; }
 }
 
-html[data-device="mobile"] .topbar{
-  padding-left: 10px;
-  padding-right: 10px;
-}

@@ -1,4 +1,4 @@
-/* rendiment.js — Grid Rogue v0.2.0 (UPDATED+HARDENED)
+/* rendiment.js — Grid Rogue v0.2.3 (UPDATED+HARDENED)
    Performance/“rendiment” helpers (NO rompe nada existente).
    - No modifica app.js automáticamente.
    - Expone window.GRPerf con métricas, medidores y utilidades opcionales.

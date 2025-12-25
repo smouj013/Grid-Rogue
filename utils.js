@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.2.2";
+  const VERSION = "0.2.0";
 
   // ───────────────────────── Math / Random ─────────────────────────
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -234,6 +234,20 @@
     } catch {}
   }
 
+  function applyEnvClasses(){
+    const root = document.documentElement;
+    const mobile = isMobileLike();
+    const standalone = isStandalone();
+    root.classList.toggle("isMobile", mobile);
+    root.classList.toggle("isDesktop", !mobile);
+    root.classList.toggle("isStandalone", standalone);
+    root.classList.toggle("isBrowser", !standalone);
+    root.dataset.mobile = mobile ? "1" : "0";
+    root.dataset.standalone = standalone ? "1" : "0";
+    return { mobile, standalone };
+  }
+
+
   function rafThrottle(fn) {
     let raf = 0;
     let lastArgs = null;
@@ -448,7 +462,21 @@
   onViewportChange(() => applyViewportVars(), { immediate: true });
 
   // ───────────────────────── Export ─────────────────────────
-  const api = Object.freeze({
+  
+  // Auto: fijar unidades de viewport (iOS/Android address bar) y dataset/clases
+  try{
+    applyViewportVars();
+    let t = 0;
+    const on = () => {
+      clearTimeout(t);
+      t = setTimeout(() => { try{ applyViewportVars(); }catch(_){ } }, 50);
+    };
+    window.addEventListener("resize", on, { passive:true });
+    window.addEventListener("orientationchange", on, { passive:true });
+    // iOS: cuando vuelve del background
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) on(); }, { passive:true });
+  }catch(_){}
+const api = Object.freeze({
     VERSION,
 
     // Math
@@ -476,6 +504,7 @@
     // Device/Viewport
     isMobileLike, isStandalone,
     applyViewportVars,
+    applyEnvClasses,
     onViewportChange,
     rafThrottle,
 

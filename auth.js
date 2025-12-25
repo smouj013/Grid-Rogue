@@ -1,4 +1,4 @@
-/* auth.js — Grid Rogue v0.2.0 (UPDATED+HARDENED)
+/* auth.js — Grid Rogue v0.2.3 (UPDATED+HARDENED)
    Perfiles locales + best score + prefs opcionales por perfil.
    ✅ Mantiene API y migración desde gridrunner_* (sin perder datos)
    ✅ Sanitización reforzada (ids/nombres/prefs)

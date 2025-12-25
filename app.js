@@ -1,4 +1,4 @@
-/* app.js — Grid Rogue v0.2.0 (STABLE+FULLSCREEN + AUDIO + I18N)
+/* app.js — Grid Rogue v0.2.3 (STABLE+FULLSCREEN + AUDIO + I18N)
    ✅ Compatible con:
    - utils.js (window.GRUtils)
    - audio.js (window.AudioSys)
@@ -14,7 +14,7 @@
   const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V0200";
   try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
-  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.1");
+  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.0");
 
   // Compat flags (failsafe/index antiguo) — no pisar si ya existen
   try {
@@ -75,47 +75,6 @@
     applyDataAttrs() {},
   };
 
-
-  function pressToStartSetup() {
-    if (!overlayPress || !pressPanel) return;
-
-    const env = setEnvDataAttrs();
-    if (pillMode) pillMode.textContent = (env.install === "standalone" ? "APP" : "WEB") + (env.device === "mobile" ? " · MOB" : "");
-    if (pressMeta) pressMeta.textContent = (env.install === "standalone" ? "APP instalada" : "Navegador") + " • " + (env.device === "mobile" ? "Móvil" : "Desktop");
-
-    let armed = true;
-    const enterMenu = () => {
-      if (!armed) return;
-      armed = false;
-
-      // Primer gesto => unlock audio (móvil/iOS)
-      try { if (window.AudioSys && typeof window.AudioSys.unlock === "function") window.AudioSys.unlock(); } catch (e) {}
-
-      overlayFadeOut(overlayPress);
-      overlayShow(overlayStart);
-
-      try { profileSelect && profileSelect.focus({ preventScroll: true }); } catch (e) {}
-      window.removeEventListener("keydown", onKey, true);
-    };
-
-    const onKey = (ev) => {
-      if (!overlayPress || overlayPress.hidden) return;
-      if (ev.key === "Shift" || ev.key === "Control" || ev.key === "Alt" || ev.key === "Meta") return;
-      enterMenu();
-    };
-
-    pressPanel.addEventListener("click", enterMenu);
-    pressPanel.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") {
-        ev.preventDefault();
-        enterMenu();
-      }
-    });
-    window.addEventListener("keydown", onKey, true);
-
-    try { pressPanel.focus({ preventScroll: true }); } catch (e) {}
-  }
-
   function T(key, fallback = null, arg = null) {
     try {
       const s = I18n.t(key, arg);
@@ -170,23 +129,6 @@
   function isMobileUA() { const ua = navigator.userAgent || ""; return /Mobi|Android|iPhone|iPad|iPod/i.test(ua); }
   function isMobileLayout() { return (isCoarsePointer() || isMobileUA()) && isPortrait(); }
   function desiredRows() { return isMobileLayout() ? 16 : 24; }
-
-
-  function isStandalone() {
-    try {
-      return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || (navigator.standalone === true);
-    } catch (e) { return false; }
-  }
-  function setEnvDataAttrs() {
-    const install = isStandalone() ? "standalone" : "browser";
-    const device = (isCoarsePointer() || isMobileUA()) ? "mobile" : "desktop";
-    document.documentElement.dataset.install = install;
-    document.documentElement.dataset.device = device;
-    return { install, device };
-  }
-  function syncCanvasARCss() {
-    try { document.documentElement.style.setProperty("--gameAR", `${COLS} / ${ROWS}`); } catch (e) {}
-  }
 
   // ───────────────────────── Settings ─────────────────────────
   const defaultSettings = () => ({
@@ -443,7 +385,6 @@
     const want = desiredRows();
     if (want === ROWS) return false;
     ROWS = want;
-    syncCanvasARCss();
 
     if (forceReset) {
       resetRun(true);
@@ -567,13 +508,15 @@
   }
 
   // ───────────────────────── DOM refs ─────────────────────────
-  let stage, canvasWrap, railCanvas, canvasSizer, gameArea, hud, canvas, ctx;
+  let stage, canvasWrap, gameArea, hud, canvas, ctx;
   let brandSub;
 
-  let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion, pillMode;
+  let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion;
   let btnOptions, btnPause, btnRestart, btnInstall;
 
-  let overlayLoading, loadingSub, overlayPress, pressPanel, pressMeta, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
+  let overlayLoading, overlayPress, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
+  let btnPressStart, pressSub, pressHint, pressMeta;
+  let pillModeVal, railCanvasEl;
 
   let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
   let btnResume, btnQuitToStart, btnPausedRestart;
@@ -686,7 +629,7 @@
   }
 
   function ensureHudFloatLayer() {
-    
+    ensureCriticalCSS();
 
     if (hudFloat && hudFloat.parentElement) return;
 
@@ -694,7 +637,7 @@
     if (existing) { hudFloat = existing; return; }
 
     // Importante: host = STAGE para que el HUD flotante NO afecte a la maquetación del HUD real.
-    const host = canvasSizer || railCanvas || stage || document.body;
+    const host = stage || document.body;
     if (!host) return;
 
     try {
@@ -778,7 +721,7 @@
   }
 
   function ensureHudStatusUI() {
-    
+    ensureHudFloatLayer();
     if (!hudFloat) return;
 
     const existing = $("hudStatus");
@@ -903,72 +846,15 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   function updateStatusHUD() {
-    // HUD dentro del panel (sin capas flotantes ni duplicar IDs)
-    try {
-      if (window.GRUtils && GRUtils.hud && typeof GRUtils.hud.setHP === "function") {
-        GRUtils.hud.setHP(hp, hpMax);
-
-        const buffs = [];
-        if (shields > 0) buffs.push({ kind: "shield", icon: "shield", count: shields, title: "Escudo" });
-
-        if (magnetTime > 0) {
-          buffs.push({
-            kind: "magnet",
-            icon: "compass_calibration",
-            timeLeft: magnetTime,
-            duration: magnetTime,
-            title: "Imán"
-          });
-        }
-
-        if (trapResist > 0) buffs.push({ kind: "resist", icon: "health_and_safety", count: trapResist, title: "Resistencia" });
-        if (zoneExtra > 0) buffs.push({ kind: "zone", icon: "crop_free", count: zoneExtra, title: "Zona" });
-        if (rerolls > 0) buffs.push({ kind: "reroll", icon: "cached", count: rerolls, title: "Reroll" });
-        if (scoreBoost > 0) buffs.push({ kind: "boost", icon: "trending_up", count: scoreBoost, title: "Boost" });
-
-        const hpExtra = Math.max(0, (hpMax | 0) - (HP_START | 0));
-        if (hpExtra > 0) buffs.push({ kind: "hp", icon: "favorite", count: hpExtra, title: "Vida +" });
-
-        if (typeof GRUtils.hud.setBuffs === "function") GRUtils.hud.setBuffs(buffs);
-        return;
-      }
-    } catch (e) {}
-
-    // Fallback mínimo (si GRUtils no existe por lo que sea)
-    if (hudHearts) {
-      hudHearts.innerHTML = "";
-      const icon = document.createElement("span");
-      icon.className = "ms hpIcon";
-      icon.textContent = "favorite";
-      icon.setAttribute("aria-hidden", "true");
-      hudHearts.appendChild(icon);
-
-      const full = Math.max(0, Math.min(hp | 0, hpMax | 0));
-      const max = Math.max(0, hpMax | 0);
-      for (let i = 0; i < max; i++) {
-        const s = document.createElement("span");
-        s.className = "ms heart " + (i < full ? "full" : "empty");
-        s.textContent = "favorite";
-        s.setAttribute("aria-hidden", "true");
-        hudHearts.appendChild(s);
-      }
+    ensureHudStatusUI();
+    if (hudStatus) {
+      hudStatus.hidden = !shouldShowHudStatus();
+      hudStatus.classList.toggle("compact", isMobileLayout());
+      hudStatus.style.pointerEvents = "none";
     }
-
-    if (hudBuffs) {
-      hudBuffs.innerHTML = "";
-      if (shields > 0) {
-        const b = document.createElement("span");
-        b.className = "buffBadge";
-        b.innerHTML = '<span class="ms bIcon" aria-hidden="true">shield</span><span class="bTime">x' + (shields | 0) + "</span>";
-        hudBuffs.appendChild(b);
-      }
-      if (magnetTime > 0) {
-        const b = document.createElement("span");
-        b.className = "buffBadge";
-        b.innerHTML = '<span class="ms bIcon" aria-hidden="true">compass_calibration</span><span class="bTime">' + magnetTime.toFixed(1) + "s</span>";
-        hudBuffs.appendChild(b);
-      }
-    }
+    updateHeartsUI();
+    updateBuffsUI();
+    scheduleHudStatusPosition();
   }
 
   // Pills a 10Hz
@@ -1056,6 +942,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
     const coarse = isCoarsePointer() || isMobileUA();
     if (dpad) dpad.hidden = !(coarse && settings.showDpad);
+      document.documentElement.classList.toggle("dpadOn", coarse && settings.showDpad);
 
     I18n.applyDataAttrs(document);
     applyAudioSettingsNow();
@@ -2169,10 +2056,14 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     updateVhUnit();
     applyRowsIfNeeded({ forceReset: false });
 
-    const host = canvasSizer || railCanvas || canvasWrap || gameArea;
+    const host = railCanvasEl || canvasWrap || gameArea;
     const r = host.getBoundingClientRect();
-    const availW = Math.max(240, Math.floor(r.width));
-    const availH = Math.max(240, Math.floor(r.height));
+    const cs = getComputedStyle(host);
+    const padW = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const padH = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+
+    const availW = Math.max(240, Math.floor(r.width - padW));
+    const availH = Math.max(240, Math.floor(r.height - padH));
 
     let w = availW;
     let h = Math.floor(w / canvasAR());
@@ -2311,6 +2202,56 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     AudioSys.sfx("ui");
     updateStatusHUD();
   }
+
+  function showPressToStart(){
+    if (!overlayPress){
+      overlayShow(overlayStart);
+      return;
+    }
+
+    // Preparar texto de modo / dispositivo
+    const mode = (U && U.isStandalone && U.isStandalone()) ? "APP" : "WEB";
+    const device = (U && U.isMobileLike && U.isMobileLike()) ? "MÓVIL" : "PC";
+    if (pillModeVal) pillModeVal.textContent = `${mode} • ${device}`;
+    if (pressMeta) pressMeta.textContent = `Modo: ${mode} • ${device}`;
+
+    overlayHide(overlayStart);
+    overlayShow(overlayPress);
+
+    let done = false;
+    const proceed = async () => {
+      if (done) return;
+      done = true;
+
+      try{ sessionStorage.setItem("gridrogue_press_seen_v1", "1"); }catch(_){}
+      try{ AudioSys && AudioSys.unlock && AudioSys.unlock(true); }catch(_){}
+
+      await overlayFadeOut(overlayPress, 160);
+      overlayShow(overlayStart);
+
+      // Focus UX
+      try{ btnStart && btnStart.focus && btnStart.focus(); }catch(_){}
+    };
+
+    if (btnPressStart){
+      btnPressStart.onclick = proceed;
+    }
+
+    const onAny = (e) => {
+      // Evitar disparos cuando el usuario intenta seleccionar texto
+      if (e && e.target && e.target.closest && e.target.closest("a,button,input,select,textarea")) {
+        // Si es el botón de empezar, dejar al click hacer su trabajo
+        if (e.target === btnPressStart) return;
+      }
+      proceed();
+    };
+
+    // Captura una sola vez, luego se limpia.
+    window.addEventListener("keydown", onAny, { once:true });
+    window.addEventListener("pointerdown", onAny, { once:true, passive:true });
+    window.addEventListener("touchstart", onAny, { once:true, passive:true });
+  }
+
   function hideOptions() {
     overlayHide(overlayOptions);
     if (!inLevelUp && !gameOver && running) pauseForOverlay(false);
@@ -2740,8 +2681,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   function cacheDOM() {
     stage = $("stage");
     canvasWrap = $("canvasWrap");
-    railCanvas = $("railCanvas");
-    canvasSizer = $("canvasSizer");
     gameArea = $("gameArea");
     hud = $("hud");
     canvas = $("gameCanvas");
@@ -2767,7 +2706,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     pillUpdate = $("pillUpdate");
     pillOffline = $("pillOffline");
     pillVersion = $("pillVersion");
-    pillMode = $("pillMode");
 
     btnOptions = $("btnOptions");
     btnPause = $("btnPause");
@@ -2775,11 +2713,17 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     btnInstall = $("btnInstall");
 
     overlayLoading = $("overlayLoading");
-    overlayPress = $("overlayPress");
-    pressPanel = $("pressPanel");
-    pressMeta = $("pressMeta");
+      overlayPress = $("overlayPress");
     loadingSub = $("loadingSub");
     overlayStart = $("overlayStart");
+
+    btnPressStart = $("btnPressStart");
+    pressSub = $("pressSub");
+    pressHint = $("pressHint");
+    pressMeta = $("pressMeta");
+    pillModeVal = $("pillModeVal");
+    railCanvasEl = $("railCanvas");
+
     overlayPaused = $("overlayPaused");
     overlayUpgrades = $("overlayUpgrades");
     overlayGameOver = $("overlayGameOver");
@@ -2864,8 +2808,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       updateVhUnit();
 
       ensureUpgradeFxCanvas();
-      
-      
+      ensureHudStatusUI();
+      installHudObservers();
 
       setPill(pillVersion, `v${APP_VERSION}`);
       if (pillUpdate) pillUpdate.hidden = true;
@@ -3024,19 +2968,20 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
       setTimeout(async () => {
         await overlayFadeOut(overlayLoading, 180);
-        if (overlayPress) {
-          overlayShow(overlayPress);
-          overlayHide(overlayStart);
-        } else {
-          overlayShow(overlayStart);
-        }
-        pressToStartSetup();
+
+        try{ U && U.applyViewportVars && U.applyViewportVars(); }catch(_){}
+        try{ U && U.applyEnvClasses && U.applyEnvClasses(); }catch(_){}
+
         setState("menu");
         if (brandSub) brandSub.textContent = I18n.t("app_ready");
+
+        const seen = (() => { try{ return sessionStorage.getItem("gridrogue_press_seen_v1") === "1"; }catch(_){ return false; } })();
+        if (!seen && overlayPress) showPressToStart();
+        else overlayShow(overlayStart);
+
         updatePillsNow();
       }, wait);
-
-      document.addEventListener("visibilitychange", () => {
+document.addEventListener("visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {
           pauseForOverlay(true);
           overlayShow(overlayPaused);
