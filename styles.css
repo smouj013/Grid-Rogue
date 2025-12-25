@@ -35,7 +35,7 @@
   --panelMaxW: 560px;
   --panelWideMaxW: 980px;
 
-  --railMaxW: 1600px;
+  --railMaxW: 1700px;
   --railPad: 10px;
   --railPadDesktop: 18px;
 
@@ -48,7 +48,8 @@
   --hpFull: rgba(255,80,110,0.92);
   --hpEmpty: rgba(255,255,255,0.18);
 
-  --gameAR: 8 / 16;
+  /* 640x960 = 2/3 (coherente con el canvas) */
+  --gameAR: 2 / 3;
 }
 
 /* ───────────────────────── Base ───────────────────────── */
@@ -183,6 +184,11 @@ input[type="range"]{ accent-color: var(--accent); }
   gap:10px;
 }
 
+html.is-standalone .topbar{
+  background: rgba(10,10,14,0.88);
+  border-bottom-color: rgba(46,242,160,0.18);
+}
+
 .brand{ grid-area:brand; display:flex; align-items:center; gap:10px; min-width:0; }
 .brandDot{
   width:12px; height:12px;
@@ -190,6 +196,9 @@ input[type="range"]{ accent-color: var(--accent); }
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   box-shadow: 0 0 0 4px rgba(255,255,255,0.05), 0 10px 28px rgba(0,0,0,0.35);
   flex:0 0 auto;
+}
+html.is-standalone .brandDot{
+  box-shadow: 0 0 0 4px rgba(46,242,160,0.10), 0 10px 28px rgba(0,0,0,0.35);
 }
 .brandText{ min-width:0; }
 .brandTitle{ font-weight:950; letter-spacing:.2px; }
@@ -237,6 +246,15 @@ input[type="range"]{ accent-color: var(--accent); }
 .pillBtn:active{ transform: translateY(1px); }
 .pill.mini{ padding:6px 9px; font-size:12px; }
 .pill.mini .ms{ font-size:16px; }
+
+#pillMode{
+  border-color: rgba(255,255,255,0.14);
+}
+html.is-standalone #pillMode{
+  border-color: rgba(46,242,160,0.30);
+  background: rgba(46,242,160,0.06);
+  color: rgba(255,255,255,0.86);
+}
 
 .actions{
   grid-area:actions;
@@ -332,21 +350,23 @@ input[type="range"]{ accent-color: var(--accent); }
   width:100%;
   display:flex;
   flex-direction:column;
-  align-items:center;
-  justify-content:flex-start;
+  align-items:stretch;
+  justify-content:stretch;
   gap:12px;
 }
 
-/* ───────────────────────── RailFrame: HUD + Canvas (NO solape) ───────────────────────── */
+/* ───────────────────────── RailFrame: HUD + Canvas ───────────────────────── */
 
 .railFrame{
   position:relative;
   width: min(100%, var(--railMaxW));
+  margin: 0 auto;
   flex:1 1 auto;
   min-height:0;
 
   display:grid;
   grid-template-columns: clamp(280px, 26vw, 420px) 1fr;
+  align-items:stretch;
   gap: 14px;
 
   padding: var(--railPadDesktop);
@@ -355,6 +375,7 @@ input[type="range"]{ accent-color: var(--accent); }
   border:1px solid rgba(255,255,255,0.08);
   box-shadow: 0 14px 34px rgba(0,0,0,0.28);
   contain: layout paint;
+  overflow:hidden;
 }
 
 .railHud{
@@ -363,6 +384,7 @@ input[type="range"]{ accent-color: var(--accent); }
   display:flex;
   flex-direction:column;
   justify-content:flex-start;
+  overflow:hidden;
 }
 
 .railCanvas{
@@ -374,9 +396,19 @@ input[type="range"]{ accent-color: var(--accent); }
   background: rgba(0,0,0,0.10);
   border:1px solid rgba(255,255,255,0.06);
   padding: 10px;
+  overflow:hidden;
 }
 
-/* Móvil: HUD arriba, canvas abajo */
+.canvasSizer{
+  width:100%;
+  height:100%;
+  min-width:0;
+  min-height:0;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+}
+
 @media (max-width:900px){
   .railFrame{
     grid-template-columns: 1fr;
@@ -388,7 +420,7 @@ input[type="range"]{ accent-color: var(--accent); }
   .railCanvas{ padding: 8px; }
 }
 
-/* ───────────────────────── Canvas: escala por ALTURA (más estable) ───────────────────────── */
+/* ───────────────────────── Canvas: encajado perfecto ───────────────────────── */
 
 #gameCanvas{
   display:block;
@@ -396,29 +428,22 @@ input[type="range"]{ accent-color: var(--accent); }
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
   image-rendering: pixelated;
   touch-action: none;
-
-  height: 100%;
-  width: auto;
-  max-height: 100%;
-  max-width: 100%;
-  aspect-ratio: var(--gameAR);
+  max-width:100%;
+  max-height:100%;
+  background: rgba(0,0,0,0.10);
 }
 
-/* Si falta aspect-ratio */
-@supports not (aspect-ratio: 1 / 1){
-  #gameCanvas{ width:auto; height:100%; }
-}
-
-/* ───────────────────────── HUD (sin solape, con padding real) ───────────────────────── */
+/* ───────────────────────── HUD ───────────────────────── */
 
 .hud{
   position:relative;
   width:100%;
   min-width:0;
+  min-height:0;
   display:flex;
   flex-direction:column;
   gap:10px;
-  pointer-events:none;
+  pointer-events:auto;
 }
 
 .combo{
@@ -522,7 +547,6 @@ input[type="range"]{ accent-color: var(--accent); }
   min-width:0;
 }
 
-/* HP: wrap real, nunca solapa */
 .hpWrap{
   display:flex;
   align-items:center;
@@ -567,7 +591,6 @@ input[type="range"]{ accent-color: var(--accent); }
   color: rgba(255,255,255,0.78);
 }
 
-/* Buffs: scroll horizontal dentro de caja (no invade nada) */
 .buffDock{
   display:flex;
   min-width:0;
@@ -599,7 +622,8 @@ input[type="range"]{ accent-color: var(--accent); }
   display:inline-flex;
   align-items:center;
   gap:6px;
-  padding:7px 9px;
+  padding:7px 14px 7px 9px;
+  margin-right: 6px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(255,255,255,0.04);
@@ -638,7 +662,6 @@ input[type="range"]{ accent-color: var(--accent); }
 .buffBadge[data-kind="reroll"]{ border-color: rgba(255,211,90,0.28); }
 .buffBadge[data-kind="hp"]{ border-color: rgba(255,120,160,0.28); }
 
-/* Toast */
 .toast{
   position:absolute;
   left:50%;
@@ -661,6 +684,14 @@ input[type="range"]{ accent-color: var(--accent); }
 .toast.show{
   opacity:1;
   transform: translateX(-50%) translateY(-8px);
+}
+
+/* Compactación extra en pantallas bajas */
+@media (max-height: 760px){
+  .railFrame{ padding: 12px; }
+  .combo{ padding: 12px; }
+  .levelProg{ padding: 10px; }
+  .hpWrap, .buffDock{ padding: 9px 10px; }
 }
 
 /* ───────────────────────── D-Pad ───────────────────────── */
@@ -871,7 +902,6 @@ input[type="range"]{ accent-color: var(--accent); }
   border: 2px solid rgba(0,0,0,0.20);
 }
 
-/* Upgrades (igual que tenías, ya bien) */
 .upgradesPanel{
   max-height: min(86vh, 780px);
   display:flex;
@@ -913,7 +943,6 @@ input[type="range"]{ accent-color: var(--accent); }
 .upCard:active{ transform: translateY(0px); }
 .upgradesActions{ justify-content:space-between; }
 
-/* Game Over */
 .goBig{
   display:flex;
   align-items:flex-end;
@@ -955,7 +984,6 @@ input[type="range"]{ accent-color: var(--accent); }
   line-height:1.35;
 }
 
-/* Reduce motion */
 @media (prefers-reduced-motion: reduce){
   *{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
 }

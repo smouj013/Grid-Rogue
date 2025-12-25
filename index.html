@@ -92,6 +92,10 @@
       </div>
 
       <div class="miniStats" aria-label="Estado">
+        <span class="pill subtle mini" id="pillMode" hidden title="Modo">
+          <span class="pv">WEB • PC</span>
+        </span>
+
         <span class="pill mini" id="pillScore" title="Score">
           <span class="ms" aria-hidden="true">flag</span>
           <span class="pv">0</span>
@@ -148,7 +152,6 @@
       <div class="canvasWrap" id="canvasWrap">
         <div class="gameArea" id="gameArea">
 
-          <!-- ✅ PANEL PRINCIPAL: HUD izquierda + CANVAS derecha (desktop), stack en móvil -->
           <div class="railFrame" id="railFrame" aria-label="Panel de juego">
 
             <aside class="railHud" id="railHud" aria-label="HUD">
@@ -195,15 +198,17 @@
             </aside>
 
             <div class="railCanvas" id="railCanvas" aria-label="Canvas">
-              <canvas
-                id="gameCanvas"
-                width="640"
-                height="960"
-                data-rail="1"
-                data-basew="640"
-                data-baseh="960"
-                aria-label="Juego"
-              ></canvas>
+              <div class="canvasSizer" id="canvasSizer" aria-hidden="true">
+                <canvas
+                  id="gameCanvas"
+                  width="640"
+                  height="960"
+                  data-rail="1"
+                  data-basew="640"
+                  data-baseh="960"
+                  aria-label="Juego"
+                ></canvas>
+              </div>
             </div>
 
           </div>
@@ -545,6 +550,79 @@
       setTimeout(() => {
         if (!isBooted()) showFailsafe();
       }, 7000);
+    })();
+  </script>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+
+      const ua = navigator.userAgent || "";
+      const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isStandalone = !!(
+        (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+        (isIOS && ("standalone" in navigator) && navigator.standalone)
+      );
+
+      const isMobile = !!(
+        (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) ||
+        /Android|iPhone|iPad|iPod/i.test(ua)
+      );
+
+      root.classList.toggle("is-standalone", isStandalone);
+      root.classList.toggle("is-browser", !isStandalone);
+      root.classList.toggle("is-mobile", isMobile);
+      root.classList.toggle("is-desktop", !isMobile);
+
+      const pillMode = document.getElementById("pillMode");
+      if (pillMode) {
+        const modeTxt = isStandalone ? "APP" : "WEB";
+        const devTxt = isMobile ? "MÓVIL" : "PC";
+        const pv = pillMode.querySelector(".pv");
+        if (pv) pv.textContent = `${modeTxt} • ${devTxt}`;
+        pillMode.hidden = false;
+      }
+    })();
+  </script>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById("gameCanvas");
+      const sizer = document.getElementById("canvasSizer");
+      if (!canvas || !sizer) return;
+
+      const readInt = (v, fb) => {
+        const n = parseInt(String(v || ""), 10);
+        return Number.isFinite(n) && n > 0 ? n : fb;
+      };
+
+      const baseW = readInt(canvas.dataset.basew, canvas.width || 640);
+      const baseH = readInt(canvas.dataset.baseh, canvas.height || 960);
+
+      function fit() {
+        const r = sizer.getBoundingClientRect();
+        const pad = 0;
+
+        const availW = Math.max(0, r.width - pad);
+        const availH = Math.max(0, r.height - pad);
+
+        const scale = Math.max(0, Math.min(availW / baseW, availH / baseH));
+        const w = Math.max(1, Math.floor(baseW * scale));
+        const h = Math.max(1, Math.floor(baseH * scale));
+
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+      }
+
+      const rafFit = () => requestAnimationFrame(fit);
+
+      rafFit();
+      window.addEventListener("resize", rafFit, { passive: true });
+      window.addEventListener("orientationchange", rafFit, { passive: true });
+
+      setTimeout(rafFit, 80);
+      setTimeout(rafFit, 240);
+      setTimeout(rafFit, 600);
     })();
   </script>
 
