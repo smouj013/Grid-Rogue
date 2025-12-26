@@ -1,12 +1,12 @@
-/* sw.js — Grid Rogue (v1.0.0) — STABLE
-   ✅ Robusto para GitHub Pages / subcarpetas (scope estable)
-   ✅ Precache core: index.html obligatorio + resto best-effort (no rompe si falta un asset)
-   ✅ Offline navegación: fallback a index.html (APP_SHELL)
-   ✅ Core: stale-while-revalidate (key normalizada sin query en estáticos)
-   ✅ Runtime: stale-while-revalidate suave
-   ✅ Audio: soporte Range (206) generando 206 desde un fetch 200 (slice) para iOS/Android
-   ✅ Limpieza de caches antiguos (gridrunner/gridrogue)
-   ✅ No cachea respuestas opaque / no-ok
+/* sw.js — Grid Rogue (v1.0.0) — STABLE (FIX updates)
+   ✅ GH Pages / subcarpetas (scope estable)
+   ✅ Precache core (index.html obligatorio + resto best-effort)
+   ✅ Navegación offline -> APP_SHELL
+   ✅ Core/runtime: stale-while-revalidate (claves normalizadas sin query)
+   ✅ Audio Range (206) desde 200 (slice) para iOS/Android
+   ✅ Limpieza agresiva de caches antiguos (gridrunner/gridrogue)
+   ✅ Update “atómico”: al activar nueva versión, si hay red, recarga clientes (evita mix de versiones)
+   ✅ Mensajes: SKIP_WAITING / CLEAR_ALL_CACHES / GET_VERSION
 */
 "use strict";
 
@@ -33,7 +33,7 @@ const CORE_ASSETS = [
   // Main
   new URL("app.js", SCOPE).toString(),
 
-  // Opcionales (best-effort, si existen en tu build no fallan, si no, tampoco)
+  // Opcionales (best-effort)
   new URL("utils.js", SCOPE).toString(),
   new URL("localization.js", SCOPE).toString(),
   new URL("audio_sys.js", SCOPE).toString(),
@@ -87,6 +87,7 @@ function stripSearch(inputUrl) {
 }
 
 const CORE_SET = new Set(CORE_ASSETS.map(stripSearch));
+const META_KEY = stripSearch(new URL("__sw_meta__.json", SCOPE).toString());
 
 function isSameOrigin(reqUrl) {
   return new URL(reqUrl, self.location.href).origin === self.location.origin;
@@ -140,7 +141,6 @@ function parseRange(rangeHeader, size) {
 }
 
 async function makeRangedResponse(fullResponse, rangeHeader) {
-  // fullResponse debe ser 200 completo; devolvemos 206 con slice de ArrayBuffer
   const buf = await fullResponse.arrayBuffer();
   const size = buf.byteLength;
 
@@ -162,34 +162,14 @@ async function makeRangedResponse(fullResponse, rangeHeader) {
   return new Response(sliced, { status: 206, statusText: "Partial Content", headers });
 }
 
-// ───────────────────────── Core precache ─────────────────────────
-async function precacheCore() {
-  const cache = await caches.open(CORE_CACHE);
-
-  // index.html obligatorio (si falla, aborta install)
-  const shellReq = new Request(APP_SHELL, { cache: "reload" });
-  const shellRes = await fetch(shellReq);
-
-  if (!shellRes || !shellRes.ok) {
-    throw new Error(`No se pudo precachear index.html (APP_SHELL). (${shellRes?.status || "?"})`);
-  }
-
-  await cache.put(stripSearch(APP_SHELL), shellRes.clone());
-
-  // resto best-effort
-  await Promise.allSettled(
-    CORE_ASSETS
-      .filter((u) => stripSearch(u) !== stripSearch(APP_SHELL))
-      .map(async (url) => {
-        try {
-          const res = await fetch(new Request(url, { cache: "reload" }));
-          if (!canCacheResponse(res)) throw new Error(`Precache failed: ${url} (${res?.status})`);
-          await cache.put(stripSearch(url), res.clone());
-        } catch (_) {
-          // best-effort: no rompemos instalación por assets opcionales
-        }
-      })
-  );
+// ───────────────────────── Helpers ─────────────────────────
+async function broadcast(msg) {
+  try {
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of clients) {
+      try { c.postMessage(msg); } catch (_) {}
+    }
+  } catch (_) {}
 }
 
 async function cleanupOldCaches() {
@@ -204,33 +184,121 @@ async function cleanupOldCaches() {
   );
 }
 
+async function clearAllKnownCaches() {
+  const keys = await caches.keys();
+  await Promise.all(
+    keys.map((k) => {
+      const isKnownPrefix = OLD_PREFIXES.some((p) => k.startsWith(p));
+      if (!isKnownPrefix) return null;
+      return caches.delete(k);
+    })
+  );
+}
+
+// ───────────────────────── Core precache ─────────────────────────
+async function precacheCore() {
+  const cache = await caches.open(CORE_CACHE);
+
+  // index.html obligatorio (si falla, aborta install)
+  // IMPORTANTE: cache:"no-store" evita que te devuelva HTML viejo desde caché HTTP del navegador
+  const shellReq = new Request(APP_SHELL, { cache: "no-store" });
+  const shellRes = await fetch(shellReq);
+
+  if (!shellRes || !shellRes.ok) {
+    throw new Error(`No se pudo precachear index.html (APP_SHELL). (${shellRes?.status || "?"})`);
+  }
+
+  await cache.put(stripSearch(APP_SHELL), shellRes.clone());
+
+  // meta (útil para debug/diagnóstico)
+  try {
+    const meta = JSON.stringify({ version: VERSION, scope: SCOPE, ts: Date.now() });
+    await cache.put(META_KEY, new Response(meta, {
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
+    }));
+  } catch (_) {}
+
+  // resto best-effort
+  await Promise.allSettled(
+    CORE_ASSETS
+      .filter((u) => stripSearch(u) !== stripSearch(APP_SHELL))
+      .map(async (url) => {
+        try {
+          const res = await fetch(new Request(url, { cache: "no-store" }));
+          if (!canCacheResponse(res)) throw new Error(`Precache failed: ${url} (${res?.status})`);
+          await cache.put(stripSearch(url), res.clone());
+        } catch (_) {
+          // best-effort
+        }
+      })
+  );
+}
+
 // ───────────────────────── Lifecycle ─────────────────────────
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    (async () => {
-      await precacheCore();
-      await self.skipWaiting();
-    })()
-  );
+  event.waitUntil((async () => {
+    await precacheCore();
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    (async () => {
-      await cleanupOldCaches();
+  event.waitUntil((async () => {
+    // Limpia TODO lo viejo (incluye runtime antiguo)
+    await cleanupOldCaches();
 
-      if (self.registration.navigationPreload) {
-        try { await self.registration.navigationPreload.enable(); } catch (_) {}
+    if (self.registration.navigationPreload) {
+      try { await self.registration.navigationPreload.enable(); } catch (_) {}
+    }
+
+    await self.clients.claim();
+
+    // Aviso a la app
+    broadcast({ type: "SW_ACTIVATED", version: VERSION }).catch(() => {});
+
+    // UPDATE ATÓMICO:
+    // si hay red y el shell responde OK, recargamos las pestañas para evitar mezclar JS viejo + HTML nuevo
+    // (esto es lo que suele causar “error infinito” tras update).
+    try {
+      const ok = await fetch(new Request(APP_SHELL, { cache: "no-store" })).then(r => !!(r && r.ok)).catch(() => false);
+      if (ok) {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const c of clients) {
+          try {
+            // evita recargar pestañas “raras”
+            if (!c.url || c.url.startsWith("about:")) continue;
+            await c.navigate(c.url);
+          } catch (_) {}
+        }
       }
-
-      await self.clients.claim();
-    })()
-  );
+    } catch (_) {}
+  })());
 });
 
 self.addEventListener("message", (event) => {
   const msg = event.data;
-  if (msg && msg.type === "SKIP_WAITING") self.skipWaiting();
+
+  if (msg && msg.type === "SKIP_WAITING") {
+    self.skipWaiting();
+    return;
+  }
+
+  if (msg && msg.type === "CLEAR_ALL_CACHES") {
+    event.waitUntil((async () => {
+      await clearAllKnownCaches();
+      // recarga clientes si quieres (normalmente usado por “Reparar PWA”)
+      try {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const c of clients) { try { await c.navigate(c.url); } catch (_) {} }
+      } catch (_) {}
+    })());
+    return;
+  }
+
+  if (msg && msg.type === "GET_VERSION") {
+    // responde con la versión del SW
+    try { event.source?.postMessage?.({ type: "SW_VERSION", version: VERSION }); } catch (_) {}
+  }
 });
 
 // ───────────────────────── Fetch strategy ─────────────────────────
@@ -244,7 +312,7 @@ self.addEventListener("fetch", (event) => {
 
   // Clave normalizada (evita duplicidades por ?v=...)
   const normalizedKey = shouldIgnoreSearch(url) ? stripSearch(req.url) : req.url;
-  const looksCore = CORE_SET.has(stripSearch(req.url));
+  const looksCore = CORE_SET.has(stripSearch(req.url)) || stripSearch(req.url) === META_KEY;
 
   // ── Audio RANGE (iOS/Android) ────────────────────────────────
   if (isAudioPath(url) && req.headers.has("range")) {
@@ -270,7 +338,7 @@ self.addEventListener("fetch", (event) => {
 
       // 2) si no hay cache, pedimos COMPLETO (sin Range) y luego cortamos
       try {
-        const full = await fetch(new Request(key, { cache: "no-store" })); // sin Range header
+        const full = await fetch(new Request(key, { cache: "no-store" }));
         if (!full || !full.ok) return fetch(req);
 
         // guarda best-effort en runtime (clave sin query)
@@ -299,9 +367,9 @@ self.addEventListener("fetch", (event) => {
           return preload;
         }
 
-        const fresh = await fetch(req);
+        // IMPORTANTÍSIMO: no-store para evitar HTML viejo del caché HTTP
+        const fresh = await fetch(new Request(req.url, { cache: "no-store" }));
         if (fresh && fresh.ok) {
-          // Guardamos como shell para fallback offline (clave estable)
           core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
           return fresh;
         }
@@ -309,13 +377,10 @@ self.addEventListener("fetch", (event) => {
         throw new Error("Nav fetch not ok");
       } catch (_) {
         const cachedShell = await core.match(stripSearch(APP_SHELL));
-        return (
-          cachedShell ||
-          new Response("Offline", {
-            status: 503,
-            headers: { "Content-Type": "text/plain; charset=utf-8" },
-          })
-        );
+        return cachedShell || new Response("Offline", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
       }
     })());
     return;
@@ -329,14 +394,18 @@ self.addEventListener("fetch", (event) => {
 
       const cached = await core.match(key);
 
-      const refresh = fetch(req)
+      // IMPORTANTÍSIMO: no-store para que la revalidación no quede “atrapada” en caché HTTP
+      const refresh = fetch(new Request(req.url, { cache: "no-store" }))
         .then((res) => {
           if (canCacheResponse(res)) core.put(key, res.clone()).catch(() => {});
           return res;
         })
         .catch(() => null);
 
-      return cached || (await refresh) || new Response("", { status: 504 });
+      return cached || (await refresh) || new Response("Offline", {
+        status: 503,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
     })());
     return;
   }
@@ -346,7 +415,7 @@ self.addEventListener("fetch", (event) => {
     const runtime = await caches.open(RUNTIME_CACHE);
     const cached = await runtime.match(normalizedKey);
 
-    const refresh = fetch(req)
+    const refresh = fetch(new Request(req.url, { cache: "no-store" }))
       .then((res) => {
         if (canCacheResponse(res)) runtime.put(normalizedKey, res.clone()).catch(() => {});
         return res;
@@ -358,6 +427,9 @@ self.addEventListener("fetch", (event) => {
       return cached;
     }
 
-    return (await refresh) || new Response("", { status: 504 });
+    return (await refresh) || new Response("Offline", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
   })());
 });
