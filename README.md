@@ -1,4 +1,4 @@
-# Grid Rogue — Arcade Roguelite (v0.2.0)
+# Grid Rogue — Arcade Roguelite (v1.0.0)
 
 **Grid Rogue** es un **arcade roguelite en cuadrícula**: runs cortas, decisiones rápidas, **upgrades** al subir de nivel, **combos** por secuencias y un gameplay que se vuelve más “peligroso” cuanto mejor juegas.  
 Diseñado para sentirse **fluido, directo y adictivo**, con **feedback juicy** (SFX, animaciones, resaltados) y controles cómodos tanto en **móvil (portrait)** como en escritorio.
@@ -101,70 +101,18 @@ Este proyecto no se licencia para uso público. El acceso al repositorio/archivo
 ## 🔖 Versión
 
 ```
-✅ Update v0.2.0
+## ✅ Características (v1.0.0)
 
-🧭 HUD sin “layout shift” (HP + Badges fuera del container)
-
-La vida (corazones) y los badges de mejoras activas ahora se renderizan en un dock/overlay propio del HUD.
-
-Resultado: no empujan ni deforman la barra de nivel/progreso, y no cambian el layout cuando aparecen/desaparecen badges.
-
-Mejor soporte de safe-area (móvil) y z-index para que nunca queden tapados.
-
-📐 Layout responsive “pro” (más espacio al juego sin romper el grid)
-
-El panel/fondo del juego (container del grid) ahora se expande si hay espacio en pantalla.
-
-El grid mantiene intacto el número correcto de celdas visibles (sin estirar ni deformar).
-
-Se eliminan efectos raros de padding: más aire, mejor centrado y lectura.
-
-Objetivo: cero scroll en gameplay y una UI más limpia.
-
-❤️ Sistema de Vida (Corazones) refinado
-
-HP sigue siendo 10 corazones iniciales.
-
-Trampa (tile rojo) = -1 corazón con feedback más inmediato.
-
-Mejor feedback visual: “flash/impacto” al recibir daño y mejor claridad del estado.
-
-➕ Mejora “Vida +” mejor integrada (rareza y feedback)
-
-La mejora Vida + se integra mejor en UI/UX:
-
-Mejor mensaje/feedback al curarte.
-
-Preparada para escalar por rareza sin romper el balance ni el sistema.
-
-🧲 Imán temporal pulido (tiempo + badge claro)
-
-El Imán sigue siendo temporal según rareza.
-
-El badge de Imán muestra la duración restante de forma más legible y estable (sin afectar el layout).
-
-Mejor consistencia en stacking/contador cuando hay varias copias.
-
-🧱 Panel de Upgrades “más premium” (espaciado y jerarquía)
-
-Más padding, separación entre elementos y lectura.
-
-Rareza/nombre/descripción se ven más claros y sin solaparse.
-
-Mejor comportamiento en pantallas pequeñas y grandes.
-
-🔊 Audio (v0.2.0) y robustez
-
-Mejoras de estabilidad para evitar dobles inicializaciones.
-
-Mantiene aliases SFX (hurt/heal/magnet_on/off/upgrade_open/pick, etc.) y refuerza el comportamiento de fallback.
-
-🧠 Rendimiento / Estabilidad general
-
-Helpers de rendimiento (“rendiment”) listos para medir FPS/stutters sin romper nada.
-
-Mejor comportamiento al cambiar de pestaña/volver (sin cuelgues ni estados raros).
-
-Ajustes de compatibilidad y limpieza para que todo siga funcionando aunque falte algún nodo del HUD en HTML.
+- **HUD PRO** sin solapamientos (sin “layout shift”).
+- **Header minimalista** (solo Menú + Pausa).
+- **Stage oculto hasta Start** (no se ve el juego hasta iniciar run).
+- **Modos**
+  - **Endless**: progresión por XP/level, runs infinitas.
+  - **Arcade**: rondas con **timer + objetivo** (estilo “score target”).
+  - **Story**: campaña por stages con objetivos y modificadores.
+- **50+ Upgrades** con rarezas + rerolls + buffs visibles.
+- **Perfiles** (auth local) + best score + stats persistentes.
+- **PWA** (instalable) + **offline** con Service Worker.
+- Audio (si existe `audio.js` / `AudioSys`) con fallback seguro.
 
 ```

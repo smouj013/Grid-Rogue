@@ -14,13 +14,13 @@
   <title>Grid Rogue</title>
 
   <script>
-    window.APP_VERSION = "0.2.3";
+    window.APP_VERSION = "1.0.0";
   </script>
 
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
-      window.__GRIDRUNNER_NOSW = qs.has("nosw");
+      window.__GRIDROGUE_NOSW = qs.has("nosw");
 
       async function nukeSWAndCaches() {
         try {
@@ -29,7 +29,6 @@
             await Promise.all(regs.map(r => r.unregister()));
           }
         } catch (e) {}
-
         try {
           if (window.caches && caches.keys) {
             const keys = await caches.keys();
@@ -48,19 +47,20 @@
       }
     })();
   </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,600,0,0&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,650,0,0&display=swap"
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.2.3" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.0.0" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.2.3" />
+  <link rel="stylesheet" href="./styles.css?v=1.0.0" />
 </head>
 
 <body>
@@ -69,583 +69,525 @@
   </noscript>
 
   <div id="app">
+    <!-- Header MINIMAL: SOLO Menú + Pausa -->
     <header class="topbar" role="banner">
       <div class="brand">
         <div class="brandDot" aria-hidden="true"></div>
         <div class="brandText">
           <div class="brandTitle">Grid Rogue</div>
-          <div class="brandSub" id="brandSub">Corazones • buffs • upgrades • combos</div>
+          <div class="brandSub" id="brandSub">v1.0.0</div>
         </div>
       </div>
 
-      <div class="miniStats" aria-label="Estado">
-        <span class="pill subtle mini" id="pillMode" title="Modo">
-          <span class="ms" aria-hidden="true">devices</span>
-          <span class="pv" id="pillModeVal">WEB • PC</span>
-        </span>
-
-        <span class="pill mini" id="pillScore" title="Score">
-          <span class="ms" aria-hidden="true">flag</span>
-          <span class="pv">0</span>
-        </span>
-
-        <span class="pill mini" id="pillBest" title="Mejor">
-          <span class="ms" aria-hidden="true">emoji_events</span>
-          <span class="pv">0</span>
-        </span>
-
-        <span class="pill mini" id="pillLevel" title="Nivel">
-          <span class="ms" aria-hidden="true">stars</span>
-          <span class="pv">Lv 1</span>
-        </span>
-
-        <span class="pill mini" id="pillMult" title="Multiplicador">
-          <span class="ms" aria-hidden="true">close</span>
-          <span class="pv">1.00</span>
-        </span>
-
-        <span class="pill mini pillBtn subtle" id="pillPlayer" title="Abrir menú" role="button" tabindex="0">
-          <span class="ms" aria-hidden="true">person</span>
-          <span class="pv">Jugador</span>
-        </span>
-
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.2.3</span>
-
-        <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
-          <span class="ms" aria-hidden="true">cloud_off</span>
-          <span class="pv">Offline</span>
-        </span>
-
-        <span class="pill pillBtn mini" id="pillUpdate" hidden title="Actualizar" role="button" tabindex="0">
-          <span class="ms" aria-hidden="true">system_update</span>
-          <span class="pv">Update</span>
-        </span>
-
-        <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
-        <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
-      </div>
-
-      <div class="actions" aria-label="Acciones">
-        <button class="iconBtn small" id="btnPause" type="button" title="Pausa">
-          <span class="ms" aria-hidden="true">pause</span>
+      <div class="topActions">
+        <button class="iconBtn" id="btnHome" type="button" title="Menú">
+          <span class="ms" aria-hidden="true">home</span>
+          <span class="dot" id="homeDot" hidden></span>
         </button>
 
-        <button class="iconBtn small" id="btnOptions" type="button" title="Opciones">
-          <span class="ms" aria-hidden="true">settings</span>
+        <button class="iconBtn" id="btnPause" type="button" title="Pausa" disabled>
+          <span class="ms" aria-hidden="true">pause</span>
         </button>
       </div>
     </header>
 
-    <main class="stage" id="stage" role="main">
-      <div class="canvasWrap" id="canvasWrap">
-        <div class="gameArea" id="gameArea">
-
-          <div class="railFrame" id="railFrame" aria-label="Panel de juego">
-
-            <aside class="railHud" id="railHud" aria-label="HUD">
-              <div class="hud" id="hud">
-                <div class="combo">
-                  <div class="comboTop">
-                    <div class="comboSeq" id="comboSeq"></div>
-
-                    <div class="comboTimer" id="comboTimer" aria-label="Tiempo de combo">
-                      <span class="ms" aria-hidden="true">timer</span>
-                      <span id="comboTimerVal">0.0</span>
-                    </div>
-                  </div>
-
-                  <div class="comboHint" id="comboHint">
-                    Completa la secuencia para subir el multiplicador.
-                  </div>
-
-                  <div class="levelProg levelProgress" id="levelProg">
-                    <div class="levelRow">
-                      <div class="left">
-                        <span class="ms" aria-hidden="true">bolt</span>
-                        <span id="levelProgText">Lv 1 • 0/220</span>
-                      </div>
-                      <span class="tiny muted" id="levelProgPct">0%</span>
-                    </div>
-
-                    <div class="progBar" aria-hidden="true">
-                      <div class="progFill" id="levelProgFill"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="hudFloat" id="hudFloat" aria-label="Estado del jugador">
-                  <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
-
-                  <div class="buffDock" aria-label="Mejoras activas">
-                    <div class="buffBar" id="hudBuffs"></div>
-                  </div>
-                </div>
-
-                <div class="toast" id="toast" hidden aria-live="polite"></div>
+    <!-- STAGE: NO se ve hasta iniciar run -->
+    <main id="stage" class="stage isHidden" role="main">
+      <section class="gameArea" aria-label="Área de juego">
+        <div class="railFrame" id="railFrame">
+          <aside class="hud" id="hud" aria-label="HUD">
+            <div class="card statusCard">
+              <div class="statusHeader">
+                <div class="chip" id="hudProfile">Perfil</div>
+                <div class="chip" id="hudMode">Modo</div>
               </div>
-            </aside>
 
-            <div class="railCanvas" id="railCanvas" aria-label="Canvas">
-              <div class="canvasSizer" id="canvasSizer" aria-hidden="true">
-                <canvas
-                  id="gameCanvas"
-                  width="640"
-                  height="960"
-                  data-rail="1"
-                  data-basew="640"
-                  data-baseh="960"
-                  aria-label="Juego"
-                ></canvas>
+              <div class="statusGrid">
+                <div class="stat">
+                  <div class="k">Score</div>
+                  <div class="v mono" id="hudScore">0</div>
+                </div>
+                <div class="stat">
+                  <div class="k">Best</div>
+                  <div class="v mono" id="hudBest">0</div>
+                </div>
+                <div class="stat">
+                  <div class="k">Nivel</div>
+                  <div class="v mono" id="hudLevel">1</div>
+                </div>
+                <div class="stat">
+                  <div class="k">Vel</div>
+                  <div class="v mono" id="hudSpeed">1.00x</div>
+                </div>
+
+                <div class="stat statWide" id="hudStageWrap" hidden>
+                  <div class="k">Ronda</div>
+                  <div class="v mono" id="hudStage">1</div>
+                </div>
+
+                <div class="stat statWide" id="hudTimerWrap" hidden>
+                  <div class="k">Tiempo</div>
+                  <div class="v mono" id="hudTimer">0.0</div>
+                </div>
+
+                <div class="stat statWide" id="hudTargetWrap" hidden>
+                  <div class="k">Objetivo</div>
+                  <div class="v mono" id="hudTarget">0</div>
+                </div>
+
+                <div class="stat statWide" id="hudStageScoreWrap" hidden>
+                  <div class="k">Ronda score</div>
+                  <div class="v mono" id="hudStageScore">0</div>
+                </div>
+              </div>
+
+              <div class="hpRow" id="hpRow" aria-label="Vida"></div>
+              <div class="buffRow" id="buffRow" aria-label="Buffs"></div>
+            </div>
+
+            <div class="card comboCard">
+              <div class="cardTitle">
+                <span class="ms" aria-hidden="true">bolt</span>
+                <span>Combo</span>
+                <span class="spacer"></span>
+                <span class="mono tiny" id="comboTimerVal">0.0s</span>
+              </div>
+              <div class="comboSeq" id="comboSeq"></div>
+              <div class="tiny muted" id="comboHint">Completa la secuencia para multiplicador.</div>
+            </div>
+
+            <div class="card progCard">
+              <div class="cardTitle">
+                <span class="ms" aria-hidden="true">military_tech</span>
+                <span>Progreso</span>
+              </div>
+              <div class="progBar" aria-hidden="true">
+                <div class="fill" id="levelProgFill"></div>
+              </div>
+              <div class="progRow">
+                <div class="tiny muted" id="levelProgText">0 / 0</div>
+                <div class="mono tiny" id="levelProgPct">0%</div>
               </div>
             </div>
 
-          </div>
+            <div class="card tinyCard" id="hudTipCard">
+              <div class="tiny muted" id="hudTipText">
+                WASD/Cursores • Esc pausa • En móvil: D-Pad
+              </div>
+            </div>
+          </aside>
 
-          <div class="dpad" id="dpad" hidden>
-            <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
-              <span class="ms" aria-hidden="true">keyboard_arrow_up</span>
-            </button>
-            <div class="dpadRow">
-              <button class="dpadBtn" id="btnLeft" type="button" aria-label="Izquierda">
-                <span class="ms" aria-hidden="true">keyboard_arrow_left</span>
-              </button>
-              <button class="dpadBtn" id="btnDown" type="button" aria-label="Abajo">
-                <span class="ms" aria-hidden="true">keyboard_arrow_down</span>
-              </button>
-              <button class="dpadBtn" id="btnRight" type="button" aria-label="Derecha">
-                <span class="ms" aria-hidden="true">keyboard_arrow_right</span>
-              </button>
+          <div class="railCanvas" id="railCanvas">
+            <div class="canvasWrap" id="canvasWrap">
+              <canvas id="gameCanvas" width="640" height="960"></canvas>
+              <canvas id="fxCanvas" class="fxCanvas" width="640" height="960"></canvas>
             </div>
           </div>
+        </div>
+      </section>
+    </main>
 
+    <!-- D-Pad (móvil) -->
+    <div class="dpad" id="dpad" hidden>
+      <button class="dbtn" data-dir="up" aria-label="Arriba"><span class="ms">keyboard_arrow_up</span></button>
+      <div class="drow">
+        <button class="dbtn" data-dir="left" aria-label="Izquierda"><span class="ms">keyboard_arrow_left</span></button>
+        <button class="dbtn" data-dir="down" aria-label="Abajo"><span class="ms">keyboard_arrow_down</span></button>
+        <button class="dbtn" data-dir="right" aria-label="Derecha"><span class="ms">keyboard_arrow_right</span></button>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <!-- Loading -->
+    <section class="overlay" id="overlayLoading">
+      <div class="panel pressPanel">
+        <div class="splash splashCompact">
+          <div class="splashLogo" aria-hidden="true"><span class="ms">grid_view</span></div>
+          <div class="splashText">
+            <div class="title">Grid Rogue</div>
+            <div class="sub">Cargando…</div>
+          </div>
         </div>
 
-        <section class="overlay" id="overlayLoading">
-          <div class="panel loadingPanel">
-            <div class="splash">
-              <div class="splashLogo" aria-hidden="true">
-                <span class="ms">grid_view</span>
+        <div class="panelBody pressBody">
+          <div class="loadingBar" aria-hidden="true"><div class="loadingBarFill"></div></div>
+          <div class="tiny muted" id="loadingHint">Si tarda, se desbloquea solo (failsafe).</div>
+        </div>
+
+        <div class="panelActions panelActionsLeft">
+          <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
+          <button class="btn danger" id="btnEmergencyRepair" type="button" hidden>Reparar PWA</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Press (unlock audio) -->
+    <section class="overlay" id="overlayPress" hidden>
+      <div class="panel pressPanel">
+        <div class="splash splashCompact">
+          <div class="splashLogo" aria-hidden="true"><span class="ms">grid_view</span></div>
+          <div class="splashText">
+            <div class="title">Grid Rogue</div>
+            <div class="sub" id="pressSub">Pulsa para empezar</div>
+          </div>
+        </div>
+
+        <div class="panelBody pressBody">
+          <div class="pressLine">
+            <span class="ms" aria-hidden="true">touch_app</span>
+            <span id="pressHint">Tecla / click / tap • Desbloquea audio</span>
+          </div>
+          <div class="tiny muted" id="pressMeta">v1.0.0</div>
+        </div>
+
+        <div class="panelActions panelActionsStretch">
+          <button class="btn primary btnBlock" id="btnPressStart" type="button">Entrar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Menu PRO -->
+    <section class="overlay" id="overlayMenu" hidden>
+      <div class="panel wide menuPanel">
+        <div class="panelHead menuHead">
+          <div>
+            <div class="h2">Menú</div>
+            <div class="tiny muted" id="menuMeta">Grid Rogue • v1.0.0</div>
+          </div>
+
+          <div class="menuHeadRight">
+            <button class="btn" id="btnInstall" type="button" hidden>
+              <span class="ms">download</span> Instalar
+            </button>
+            <button class="iconBtn" id="btnCloseMenu" type="button" title="Cerrar">
+              <span class="ms">close</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Secciones">
+          <button class="tab active" data-tab="play" type="button">Jugar</button>
+          <button class="tab" data-tab="profiles" type="button">Perfiles</button>
+          <button class="tab" data-tab="options" type="button">Opciones</button>
+          <button class="tab" data-tab="records" type="button">Récords</button>
+          <button class="tab" data-tab="how" type="button">Cómo jugar</button>
+        </div>
+
+        <div class="panelBody menuBody">
+          <!-- PLAY -->
+          <div class="tabPage" data-page="play">
+            <div class="grid2">
+              <div class="card modeCard">
+                <div class="modeTop">
+                  <div class="modeTitle"><span class="ms">all_inclusive</span> Infinito</div>
+                  <div class="tiny muted">Sin límite. Escala por nivel y upgrades.</div>
+                </div>
+                <div class="modeActions">
+                  <button class="btn primary" id="btnStartEndless" type="button">Empezar Infinito</button>
+                </div>
               </div>
-              <div class="splashText">
-                <div class="title">Grid Rogue</div>
-                <div class="sub">
-                  Cargando
-                  <span class="dots" aria-hidden="true">
-                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                  </span>
+
+              <div class="card modeCard">
+                <div class="modeTop">
+                  <div class="modeTitle"><span class="ms">timer</span> Arcade (Rondas)</div>
+                  <div class="tiny muted">Consigue el objetivo antes de que acabe el tiempo. Mejora entre rondas.</div>
+                </div>
+                <div class="modeActions">
+                  <button class="btn primary" id="btnStartArcade" type="button">Empezar Arcade</button>
+                </div>
+              </div>
+
+              <div class="card modeCard">
+                <div class="modeTop">
+                  <div class="modeTitle"><span class="ms">auto_stories</span> Historia</div>
+                  <div class="tiny muted">Campaña de rondas con modificadores. Progreso guardado por perfil.</div>
+                </div>
+                <div class="modeActions">
+                  <button class="btn primary" id="btnStartStory" type="button">Empezar Historia</button>
+                </div>
+              </div>
+
+              <div class="card modeCard">
+                <div class="modeTop">
+                  <div class="modeTitle"><span class="ms">upgrade</span> Catálogo de mejoras</div>
+                  <div class="tiny muted">Más de 50 upgrades nuevos en v1.0.0.</div>
+                </div>
+                <div class="modeActions">
+                  <button class="btn" id="btnOpenCatalog" type="button">Ver mejoras</button>
                 </div>
               </div>
             </div>
 
-            <div class="panelHead">
-              <div class="muted tiny" id="loadingSub">Iniciando…</div>
-            </div>
-
-            <div class="loadingBar" aria-hidden="true">
-              <div class="loadingBarFill"></div>
-            </div>
-
-            <div class="tiny muted" id="loadingHint">
-              Si tarda, se desbloquea solo (failsafe).
-            </div>
-
-            <div class="panelActions panelActionsLeft">
-              <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
-              <button class="btn danger" id="btnEmergencyRepair" type="button" hidden>Reparar PWA</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="overlay" id="overlayPress" hidden>
-          <div class="panel pressPanel">
-            <div class="splash splashCompact">
-              <div class="splashLogo" aria-hidden="true">
-                <span class="ms">grid_view</span>
+            <div class="card soft">
+              <div class="tiny muted">
+                Consejo: en Arcade/Historia, cuando alcanzas el objetivo, la ronda termina y eliges upgrade.
               </div>
-              <div class="splashText">
-                <div class="title">Grid Rogue</div>
-                <div class="sub" id="pressSub">Pulsa para empezar</div>
-              </div>
-            </div>
-
-            <div class="panelBody pressBody">
-              <div class="pressLine">
-                <span class="ms" aria-hidden="true">touch_app</span>
-                <span id="pressHint">Tecla / click / tap • Desbloquea audio</span>
-              </div>
-              <div class="tiny muted" id="pressMeta">Modo: —</div>
-            </div>
-
-            <div class="panelActions panelActionsStretch">
-              <button class="btn primary btnBlock" id="btnPressStart" type="button">Empezar</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="overlay" id="overlayStart" hidden>
-          <div class="panel wide startPanel">
-            <div class="splash splashCompact">
-              <div class="splashLogo" aria-hidden="true">
-                <span class="ms">grid_view</span>
-              </div>
-              <div class="splashText">
-                <div class="title">Grid Rogue</div>
-                <div class="sub">Arcade roguelite en cuadrícula • runs cortas • upgrades</div>
-              </div>
-            </div>
-
-            <div class="panelHead">
-              <div>
-                <div class="h2" id="startTitle">Nuevo run</div>
-                <div class="muted tiny" id="startSub">Elige tu perfil y lánzate a por combos.</div>
-              </div>
-            </div>
-
-            <div class="form">
-              <label class="label" for="profileSelect">Perfil</label>
-              <div class="row rowGap">
-                <select id="profileSelect" class="select"></select>
-                <button class="btn" id="btnNewProfile" type="button">Nuevo</button>
-              </div>
-
-              <div id="newProfileWrap" hidden>
-                <label class="label" for="startName">Nombre</label>
-                <input
-                  id="startName"
-                  class="input"
-                  type="text"
-                  inputmode="text"
-                  maxlength="16"
-                  placeholder="Tu nombre (mín. 2)"
-                  autocomplete="nickname"
-                />
-                <div class="tiny muted" id="profileHint">Tus datos se guardan en este dispositivo.</div>
-              </div>
-
-              <div class="panelActions panelActionsStretch">
-                <button class="btn primary btnBlock" id="btnStart" type="button">Empezar</button>
-              </div>
-
-              <div class="tiny muted helpText">
-                Controles: WASD / Flechas / Swipe (móvil).<br />
-                Consejo: completa secuencias para subir el multiplicador.
+              <div class="row rowGap wrap">
+                <button class="btn" id="btnResumeIfRunning" type="button" disabled>
+                  <span class="ms">play_arrow</span> Volver a la partida
+                </button>
+                <button class="btn danger" id="btnHardReset" type="button">
+                  <span class="ms">delete_forever</span> Reset run actual
+                </button>
               </div>
             </div>
           </div>
-        </section>
 
-        <section class="overlay" id="overlayPaused" hidden>
-          <div class="panel">
-            <div class="panelHead">
-              <div class="h2">Pausa</div>
-            </div>
-            <div class="panelActions">
-              <button class="btn primary" id="btnResume" type="button">Continuar</button>
-              <button class="btn" id="btnPausedRestart" type="button">Reiniciar</button>
-              <button class="btn" id="btnQuitToStart" type="button">Salir al menú</button>
-            </div>
-          </div>
-        </section>
+          <!-- PROFILES -->
+          <div class="tabPage" data-page="profiles" hidden>
+            <div class="profilesGrid">
+              <div class="card">
+                <div class="cardTitle">
+                  <span class="ms">person</span> Perfiles
+                </div>
+                <div class="row rowGap">
+                  <select id="profileSelect" class="select"></select>
+                  <button class="btn" id="btnNewProfile" type="button">Nuevo</button>
+                </div>
 
-        <section class="overlay" id="overlayUpgrades" hidden>
-          <div class="panel wide upgradesPanel">
-            <div class="panelHead">
-              <div>
-                <div class="h2" id="upTitle">Subida de nivel</div>
-                <div class="muted tiny" id="upSub">Elige una mejora</div>
-              </div>
-            </div>
+                <div id="newProfileWrap" class="soft" hidden>
+                  <label class="label" for="newProfileName">Nombre</label>
+                  <input id="newProfileName" class="input" type="text" maxlength="16" placeholder="Tu nombre (mín. 2)" />
+                  <div class="row rowGap wrap">
+                    <button class="btn primary" id="btnCreateProfile" type="button">Crear</button>
+                    <button class="btn" id="btnCancelCreateProfile" type="button">Cancelar</button>
+                  </div>
+                </div>
 
-            <div class="panelBody">
-              <div class="upgradeChoices" id="upgradeChoices"></div>
-              <div class="tiny muted" id="upgradeHint">El juego se pausa aquí.</div>
-            </div>
+                <div class="row rowGap wrap">
+                  <button class="btn" id="btnRenameProfile" type="button">Renombrar</button>
+                  <button class="btn danger" id="btnDeleteProfile" type="button">Eliminar</button>
+                </div>
 
-            <div class="panelActions upgradesActions">
-              <button class="btn" id="btnReroll" type="button">Reroll</button>
-              <button class="btn" id="btnSkipUpgrade" type="button">Saltar</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="overlay" id="overlayGameOver" hidden>
-          <div class="panel">
-            <div class="panelHead">
-              <div class="h2">Game Over</div>
-            </div>
-
-            <div class="goBig">
-              <div>
-                <div class="tiny muted">Tu score</div>
-                <div class="goScore" id="goScoreBig">0</div>
-              </div>
-              <div class="goBest">
-                Mejor <span class="v" id="goBestBig">0</span>
-              </div>
-            </div>
-
-            <div class="stats" id="goStats"></div>
-
-            <div class="panelActions">
-              <button class="btn" id="btnBackToStart" type="button">Menú</button>
-              <button class="btn" id="btnRestart" type="button" hidden>Reiniciar</button>
-              <button class="btn primary" id="btnRetry" type="button">Reintentar</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="overlay" id="overlayOptions" hidden>
-          <div class="panel wide optionsPanel">
-            <div class="panelHead">
-              <div class="h2">Opciones</div>
-              <button class="iconBtn small" id="btnCloseOptions" type="button" title="Cerrar">
-                <span class="ms" aria-hidden="true">close</span>
-              </button>
-            </div>
-
-            <div class="options" id="optionsBody">
-              <div class="optGroupTitle">
-                <span class="ms" aria-hidden="true">volume_up</span>
-                <span>Audio</span>
+                <div class="tiny muted">Tus perfiles se guardan en este dispositivo.</div>
               </div>
 
-              <label class="optRow">
-                <span>Música</span>
-                <input id="optMusicOn" type="checkbox" />
-              </label>
+              <div class="card">
+                <div class="cardTitle">
+                  <span class="ms">analytics</span> Stats del perfil
+                </div>
 
-              <label class="optRow">
-                <span>Efectos (SFX)</span>
-                <input id="optSfxOn" type="checkbox" />
-              </label>
-
-              <div class="optRow sliderRow">
-                <span>Vol. música</span>
-                <input id="optMusicVol" type="range" min="0" max="1" step="0.01" />
-                <span class="mono" id="optMusicVolValue">0.60</span>
-              </div>
-
-              <div class="optRow sliderRow">
-                <span>Vol. SFX</span>
-                <input id="optSfxVol" type="range" min="0" max="1" step="0.01" />
-                <span class="mono" id="optSfxVolValue">0.90</span>
-              </div>
-
-              <label class="optRow">
-                <span>Mute</span>
-                <input id="optMuteAll" type="checkbox" />
-              </label>
-
-              <div class="optRow">
-                <button class="btn" id="btnTestAudio" type="button">Probar sonido</button>
-                <span class="tiny muted">Desbloquea audio si el móvil lo bloquea</span>
-              </div>
-
-              <div class="optGroupTitle optGroupSpacer">
-                <span class="ms" aria-hidden="true">tune</span>
-                <span>Juego</span>
-              </div>
-
-              <label class="optRow">
-                <span>Usar sprites (si existen)</span>
-                <input id="optSprites" type="checkbox" />
-              </label>
-
-              <label class="optRow">
-                <span>Vibración (móvil)</span>
-                <input id="optVibration" type="checkbox" />
-              </label>
-
-              <label class="optRow">
-                <span>Mostrar cruceta (móvil)</span>
-                <input id="optDpad" type="checkbox" />
-              </label>
-
-              <div class="optRow sliderRow">
-                <span>FX</span>
-                <input id="optFx" type="range" min="0.4" max="1.25" step="0.01" />
-                <span class="mono" id="optFxValue">1.00</span>
-              </div>
-
-              <div class="optGroupTitle optGroupSpacer">
-                <span class="ms" aria-hidden="true">translate</span>
-                <span>Idioma</span>
-              </div>
-
-              <div class="optRow" id="optLangRow">
-                <label class="optLabel" for="optLang">Idioma</label>
-                <select id="optLang" class="select"></select>
-              </div>
-
-              <div class="optGroupTitle optGroupSpacer">
-                <span class="ms" aria-hidden="true">phone_iphone</span>
-                <span>PWA</span>
-              </div>
-
-              <div class="optRow">
-                <button class="btn" id="btnInstall" type="button" hidden>Instalar</button>
-                <span class="tiny muted">Si tu navegador lo soporta</span>
-              </div>
-
-              <div class="optRow danger">
-                <button class="btn danger" id="btnRepairPWA" type="button">Reparar PWA</button>
-                <span class="tiny muted">Desinstala SW + borra caches</span>
-              </div>
-
-              <div class="optRow danger">
-                <button class="btn danger" id="btnClearLocal" type="button">Borrar datos locales</button>
-                <span class="tiny muted">Perfiles, settings y runs</span>
+                <div class="statsList" id="profileStats"></div>
               </div>
             </div>
           </div>
-        </section>
 
-        <section class="overlay" id="overlayError" hidden>
-          <div class="panel">
-            <div class="panelHead">
-              <div class="h2">Error</div>
-            </div>
-            <div class="errMsg" id="errMsg">—</div>
-            <div class="panelActions">
-              <button class="btn" id="btnErrClose" type="button">Cerrar</button>
-              <button class="btn primary" id="btnErrReload" type="button">Recargar</button>
+          <!-- OPTIONS -->
+          <div class="tabPage" data-page="options" hidden>
+            <div class="optionsGrid">
+              <div class="card">
+                <div class="cardTitle"><span class="ms">tune</span> Juego</div>
+
+                <div class="row rowGap">
+                  <label class="chk">
+                    <input type="checkbox" id="optUseSprites" />
+                    <span>Sprites (SVG) en tiles</span>
+                  </label>
+
+                  <label class="chk">
+                    <input type="checkbox" id="optVibration" />
+                    <span>Vibración (móvil)</span>
+                  </label>
+                </div>
+
+                <div class="row rowGap">
+                  <label class="chk">
+                    <input type="checkbox" id="optShowDpad" />
+                    <span>Mostrar D-Pad</span>
+                  </label>
+
+                  <label class="chk">
+                    <input type="checkbox" id="optReduceMotion" />
+                    <span>Reducir animaciones</span>
+                  </label>
+                </div>
+
+                <label class="label" for="optFx">Intensidad FX</label>
+                <input id="optFx" class="range" type="range" min="0.4" max="1.25" step="0.05" value="1" />
+                <div class="tiny muted">Ajusta partículas, glow y sacudidas.</div>
+              </div>
+
+              <div class="card">
+                <div class="cardTitle"><span class="ms">volume_up</span> Audio</div>
+
+                <div class="row rowGap">
+                  <label class="chk">
+                    <input type="checkbox" id="optMusicOn" />
+                    <span>Música</span>
+                  </label>
+
+                  <label class="chk">
+                    <input type="checkbox" id="optSfxOn" />
+                    <span>SFX</span>
+                  </label>
+
+                  <label class="chk">
+                    <input type="checkbox" id="optMuteAll" />
+                    <span>Mute total</span>
+                  </label>
+                </div>
+
+                <label class="label" for="optMusicVol">Volumen música</label>
+                <input id="optMusicVol" class="range" type="range" min="0" max="1" step="0.02" />
+
+                <label class="label" for="optSfxVol">Volumen SFX</label>
+                <input id="optSfxVol" class="range" type="range" min="0" max="1" step="0.02" />
+
+                <div class="row rowGap wrap">
+                  <button class="btn" id="btnTestSfx" type="button">Probar SFX</button>
+                  <button class="btn" id="btnTestMusic" type="button">Probar música</button>
+                </div>
+              </div>
+
+              <div class="card soft">
+                <div class="row rowGap wrap">
+                  <button class="btn danger" id="btnRepairPwa" type="button">
+                    <span class="ms">build</span> Reparar PWA
+                  </button>
+                </div>
+                <div class="tiny muted">Si ves cosas raras por caché, usa “Reparar PWA”.</div>
+              </div>
             </div>
           </div>
-        </section>
 
+          <!-- RECORDS -->
+          <div class="tabPage" data-page="records" hidden>
+            <div class="card">
+              <div class="cardTitle"><span class="ms">leaderboard</span> Últimas runs</div>
+              <div class="recordsList" id="recordsList"></div>
+              <div class="row rowGap wrap">
+                <button class="btn danger" id="btnClearRecords" type="button">Borrar historial</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- HOW -->
+          <div class="tabPage" data-page="how" hidden>
+            <div class="card">
+              <div class="cardTitle"><span class="ms">help</span> Instrucciones</div>
+              <div class="howText">
+                <p><b>Objetivo:</b> recoge tiles para sumar score, evita trampas y muros, y encadena <b>combos</b>.</p>
+                <p><b>Controles:</b> WASD / Cursores. <b>Esc</b> pausa. En móvil usa D-Pad.</p>
+                <p><b>Infinito:</b> subes de nivel por score y eliges upgrades.</p>
+                <p><b>Arcade/Historia:</b> cada ronda tiene <b>tiempo</b> y <b>objetivo</b>. Si lo alcanzas, eliges upgrade y sigues.</p>
+                <p><b>Trampas:</b> quitan vida (escudos primero si tienes). Si la vida llega a 0, game over.</p>
+              </div>
+            </div>
+
+            <div class="card soft">
+              <div class="tiny muted">
+                Licencia: todos los derechos reservados.
+              </div>
+            </div>
+          </div>
+
+          <!-- Catálogo modal dentro del menú -->
+          <div class="catalog" id="catalog" hidden>
+            <div class="card">
+              <div class="cardTitle">
+                <span class="ms">upgrade</span> Catálogo de mejoras
+                <span class="spacer"></span>
+                <button class="iconBtn" id="btnCloseCatalog" type="button" title="Cerrar"><span class="ms">close</span></button>
+              </div>
+              <div class="catalogList" id="catalogList"></div>
+            </div>
+          </div>
+        </div>
       </div>
-    </main>
+    </section>
+
+    <!-- Upgrades Overlay -->
+    <section class="overlay" id="overlayUpgrades" hidden>
+      <div class="panel wide">
+        <div class="panelHead">
+          <div>
+            <div class="h2" id="upTitle">Elige una mejora</div>
+            <div class="tiny muted" id="upSub">3 opciones • raridades • sin solapamientos</div>
+          </div>
+          <div class="row rowGap">
+            <button class="btn" id="btnReroll" type="button" disabled>
+              <span class="ms">casino</span> Re-roll <span class="pill mono" id="rerollCount">0</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="panelBody">
+          <div class="upgradeChoices" id="upgradeChoices"></div>
+          <div class="panelActions panelActionsStretch">
+            <button class="btn primary btnBlock" id="btnContinue" type="button">Continuar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Paused -->
+    <section class="overlay" id="overlayPaused" hidden>
+      <div class="panel">
+        <div class="panelHead">
+          <div>
+            <div class="h2">Pausa</div>
+            <div class="tiny muted">Menú o continuar</div>
+          </div>
+        </div>
+        <div class="panelActions panelActionsStretch">
+          <button class="btn primary btnBlock" id="btnUnpause" type="button">Continuar</button>
+          <button class="btn btnBlock" id="btnOpenMenuFromPause" type="button">Menú</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- GameOver -->
+    <section class="overlay" id="overlayGameOver" hidden>
+      <div class="panel wide">
+        <div class="panelHead">
+          <div>
+            <div class="h2">Game Over</div>
+            <div class="tiny muted" id="goReason">—</div>
+          </div>
+        </div>
+        <div class="goBig">
+          <div>
+            <div class="tiny muted">Score</div>
+            <div class="goScore mono" id="goScore">0</div>
+          </div>
+          <div class="goBest mono" id="goBest">Best: <span class="v">0</span></div>
+        </div>
+
+        <div class="stats" id="goStats"></div>
+
+        <div class="panelActions panelActionsStretch">
+          <button class="btn primary btnBlock" id="btnPlayAgain" type="button">Jugar otra</button>
+          <button class="btn btnBlock" id="btnBackToMenu" type="button">Menú</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Error -->
+    <section class="overlay" id="overlayError" hidden>
+      <div class="panel wide">
+        <div class="panelHead">
+          <div>
+            <div class="h2">Error</div>
+            <div class="tiny muted">Si pasa a menudo, usa “Reparar PWA”.</div>
+          </div>
+        </div>
+        <div class="panelBody">
+          <div class="errMsg" id="errMsg">—</div>
+          <div class="panelActions panelActionsStretch">
+            <button class="btn primary btnBlock" id="btnReload" type="button">Recargar</button>
+            <button class="btn danger btnBlock" id="btnRepair" type="button">Reparar PWA</button>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 
-  <script>
-    (function () {
-      const $ = (id) => document.getElementById(id);
-
-      const overlayLoading = $("overlayLoading");
-      const overlayStart = $("overlayStart");
-      const loadingSub = $("loadingSub");
-      const btnReload = $("btnEmergencyReload");
-      const btnRepair = $("btnEmergencyRepair");
-
-      function setOverlay(el, on) {
-        if (!el) return;
-        el.hidden = !on;
-      }
-
-      function isBooted() {
-        return (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true);
-      }
-
-      function showFailsafe() {
-        if (loadingSub) loadingSub.textContent = "Arranque atascado. Puedes recargar o reparar la PWA.";
-        if (btnReload) btnReload.hidden = false;
-        if (btnRepair) btnRepair.hidden = false;
-
-        setOverlay(overlayLoading, true);
-        setOverlay(overlayStart, false);
-      }
-
-      if (btnReload) btnReload.addEventListener("click", () => location.reload());
-
-      if (btnRepair) btnRepair.addEventListener("click", async () => {
-        try {
-          if ("serviceWorker" in navigator) {
-            const regs = await navigator.serviceWorker.getRegistrations();
-            await Promise.all(regs.map(r => r.unregister()));
-          }
-          if (window.caches && caches.keys) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map(k => caches.delete(k)));
-          }
-        } catch (e) {}
-        location.reload();
-      });
-
-      setTimeout(() => {
-        if (!isBooted()) showFailsafe();
-      }, 7000);
-    })();
-  </script>
-
-  <script>
-    (function () {
-      const root = document.documentElement;
-
-      const ua = navigator.userAgent || "";
-      const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const isStandalone = !!(
-        (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
-        (isIOS && ("standalone" in navigator) && navigator.standalone)
-      );
-
-      const isMobile = !!(
-        (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) ||
-        /Android|iPhone|iPad|iPod/i.test(ua)
-      );
-
-      root.classList.toggle("is-standalone", isStandalone);
-      root.classList.toggle("is-browser", !isStandalone);
-      root.classList.toggle("is-mobile", isMobile);
-      root.classList.toggle("is-desktop", !isMobile);
-
-      const pillMode = document.getElementById("pillMode");
-      if (pillMode) {
-        const modeTxt = isStandalone ? "APP" : "WEB";
-        const devTxt = isMobile ? "MÓVIL" : "PC";
-        const pv = pillMode.querySelector(".pv");
-        if (pv) pv.textContent = `${modeTxt} • ${devTxt}`;
-        pillMode.hidden = false;
-      }
-    })();
-  </script>
-
-  <script>
-    (function () {
-      const canvas = document.getElementById("gameCanvas");
-      const sizer = document.getElementById("canvasSizer");
-      if (!canvas || !sizer) return;
-
-      const readInt = (v, fb) => {
-        const n = parseInt(String(v || ""), 10);
-        return Number.isFinite(n) && n > 0 ? n : fb;
-      };
-
-      const baseW = readInt(canvas.dataset.basew, canvas.width || 640);
-      const baseH = readInt(canvas.dataset.baseh, canvas.height || 960);
-
-      function fit() {
-        const r = sizer.getBoundingClientRect();
-        const pad = 0;
-
-        const availW = Math.max(0, r.width - pad);
-        const availH = Math.max(0, r.height - pad);
-
-        const scale = Math.max(0, Math.min(availW / baseW, availH / baseH));
-        const w = Math.max(1, Math.floor(baseW * scale));
-        const h = Math.max(1, Math.floor(baseH * scale));
-
-        canvas.style.width = w + "px";
-        canvas.style.height = h + "px";
-      }
-
-      const rafFit = () => requestAnimationFrame(fit);
-
-      rafFit();
-      window.addEventListener("resize", rafFit, { passive: true });
-      window.addEventListener("orientationchange", rafFit, { passive: true });
-
-      setTimeout(rafFit, 80);
-      setTimeout(rafFit, 240);
-      setTimeout(rafFit, 600);
-    })();
-  </script>
-
-  <script src="./utils.js?v=0.2.3" defer></script>
-  <script src="./localization.js?v=0.2.3" defer></script>
-  <script src="./auth.js?v=0.2.3" defer></script>
-  <script src="./audio_sys.js?v=0.2.3" defer></script>
-  <script src="./audio.js?v=0.2.3" defer></script>
-  <script src="./rendiment.js?v=0.2.3" defer></script>
-  <script src="./app.js?v=0.2.3" defer></script>
+  <!-- Scripts -->
+  <script src="./utils.js?v=1.0.0"></script>
+  <script src="./auth.js?v=1.0.0"></script>
+  <script src="./rendiment.js?v=1.0.0" defer></script>
+  <script src="./app.js?v=1.0.0" defer></script>
 </body>
 </html>
