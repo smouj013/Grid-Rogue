@@ -2459,7 +2459,13 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   // ───────────────────────── PWA / SW / Install ─────────────────────────
   let deferredPrompt = null;
   let swReg = null;
+
+  let pendingReload = false;
   let swReloadGuard = false;
+  let hadControllerAtBoot = false;
+  let swActivatedVersion = null;
+
+  const SW_RELOAD_TAG = "gridrogue_sw_reload_tag_v1";
 
   function isStandalone() {
     return (window.matchMedia?.("(display-mode: standalone)")?.matches) ||
@@ -2473,7 +2479,13 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     setPill(pillUpdate, msg || I18n.t("pill_update"));
   }
 
+  function clearUpdatePill() {
+    if (!pillUpdate) return;
+    pillUpdate.hidden = true;
+  }
+
   function requestAppReload() {
+    // Si estamos jugando, marca para aplicar al final de la run (o al morir)
     if (running && !gameOver) {
       pendingReload = true;
       markUpdateAvailable(I18n.t("pill_update"));
@@ -2483,35 +2495,164 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     location.reload();
   }
 
+  function waitForControllerChange(timeoutMs = 3500) {
+    return new Promise((resolve) => {
+      let done = false;
+
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        try { clearTimeout(t); } catch {}
+        try { navigator.serviceWorker.removeEventListener("controllerchange", onChange); } catch {}
+        resolve(!!ok);
+      };
+
+      const onChange = () => finish(true);
+      const t = setTimeout(() => finish(false), timeoutMs);
+
+      try { navigator.serviceWorker.addEventListener("controllerchange", onChange); }
+      catch { finish(false); }
+    });
+  }
+
   async function applySWUpdateNow() {
-    if (!swReg) { location.reload(); return; }
+    AudioSys.unlock();
 
-    if (swReg.waiting) { try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {} }
-    else { try { await swReg.update?.(); } catch {} }
+    // Si no hay SW, recarga normal (cache-bust debería venir por APP_VERSION en assets)
+    if (!("serviceWorker" in navigator)) {
+      requestAppReload();
+      return;
+    }
 
-    const k = SW_RELOAD_KEY;
-    const kOld = SW_RELOAD_KEY_OLD;
+    // Si no tenemos registro, intenta recargar igualmente
+    if (!swReg) {
+      requestAppReload();
+      return;
+    }
 
-    if (sessionStorage.getItem(k) !== "1" && sessionStorage.getItem(kOld) !== "1") {
-      sessionStorage.setItem(k, "1");
-      setTimeout(() => location.reload(), 650);
-    } else location.reload();
+    // Si estamos en partida, aplaza
+    if (running && !gameOver) {
+      pendingReload = true;
+      markUpdateAvailable(I18n.t("pill_update"));
+      showToast(I18n.t("update_apply_end_short"), 900);
+      return;
+    }
+
+    try {
+      // Fuerza comprobar update
+      try { await swReg.update?.(); } catch {}
+
+      // Si ya hay waiting, lo activamos
+      if (swReg.waiting) {
+        try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {}
+        // Espera a controllerchange un poco; si no llega, recarga igual
+        await waitForControllerChange(3500);
+        requestAppReload();
+        return;
+      }
+
+      // Si no hay waiting, recarga igualmente (por si el SW ya hizo “clients.navigate”)
+      requestAppReload();
+    } catch {
+      requestAppReload();
+    }
   }
 
   async function repairPWA() {
+    // “Reparar” = intenta pedir al SW que borre caches conocidas + fallback a hard reset.
+    try {
+      if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: "CLEAR_ALL_CACHES" });
+        // el SW nuevo que te pasé hace navigate() en activate y aquí además limpiará caches
+        setTimeout(() => location.reload(), 600);
+        return;
+      }
+    } catch {}
+
+    // Fallback duro si no hay controller o algo falla
     try {
       if ("serviceWorker" in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
         await Promise.all(regs.map(r => r.unregister()));
       }
     } catch {}
+
     try {
       if (window.caches && caches.keys) {
         const keys = await caches.keys();
         await Promise.all(keys.map(k => caches.delete(k)));
       }
     } catch {}
+
     location.reload();
+  }
+
+  function setupInstallUI() {
+    if (btnInstall) btnInstall.hidden = true;
+
+    if (isStandalone()) return;
+
+    window.addEventListener("beforeinstallprompt", (e) => {
+      if (isStandalone()) return;
+      e.preventDefault();
+      deferredPrompt = e;
+      if (btnInstall) btnInstall.hidden = false;
+    });
+
+    window.addEventListener("appinstalled", () => {
+      deferredPrompt = null;
+      if (btnInstall) btnInstall.hidden = true;
+    });
+
+    btnInstall?.addEventListener("click", async () => {
+      AudioSys.unlock();
+      if (!deferredPrompt) return;
+      btnInstall.disabled = true;
+      try { deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch {}
+      deferredPrompt = null;
+      btnInstall.hidden = true;
+      btnInstall.disabled = false;
+    });
+  }
+
+  function wireUpdatePill() {
+    if (!pillUpdate) return;
+
+    pillUpdate.addEventListener("click", () => {
+      AudioSys.unlock();
+      applySWUpdateNow();
+    });
+  }
+
+  function setupSWMessaging() {
+    if (!("serviceWorker" in navigator)) return;
+
+    navigator.serviceWorker.addEventListener("message", (ev) => {
+      const d = ev?.data;
+      if (!d || !d.type) return;
+
+      if (d.type === "SW_ACTIVATED") {
+        // SW nuevo activo: normalmente ya navegó clientes (según sw.js). Aun así, reflejamos estado.
+        swActivatedVersion = String(d.version || "");
+        // Si estamos jugando, avisamos; si no, aplicamos reload suave (pero sin bucle)
+        markUpdateAvailable(I18n.t("pill_update"));
+      }
+
+      if (d.type === "SW_VERSION") {
+        swActivatedVersion = String(d.version || "");
+      }
+    });
+
+    // Pide versión al controller actual (si existe)
+    try {
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" });
+      }
+    } catch {}
+  }
+
+  function setOfflinePill() {
+    if (pillOffline) pillOffline.hidden = navigator.onLine;
   }
 
   async function setupPWA() {
@@ -2519,78 +2660,78 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     window.addEventListener("online", setOfflinePill, { passive: true });
     window.addEventListener("offline", setOfflinePill, { passive: true });
 
-    if (btnInstall) btnInstall.hidden = true;
+    setupInstallUI();
+    wireUpdatePill();
 
-    if (!isStandalone()) {
-      window.addEventListener("beforeinstallprompt", (e) => {
-        if (isStandalone()) return;
-        e.preventDefault();
-        deferredPrompt = e;
-        if (btnInstall) btnInstall.hidden = false;
-      });
-
-      window.addEventListener("appinstalled", () => {
-        deferredPrompt = null;
-        if (btnInstall) btnInstall.hidden = true;
-      });
-
-      btnInstall?.addEventListener("click", async () => {
-        AudioSys.unlock();
-        if (!deferredPrompt) return;
-        btnInstall.disabled = true;
-        try { deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch {}
-        deferredPrompt = null;
-        btnInstall.hidden = true;
-        btnInstall.disabled = false;
-      });
-    }
-
-    pillUpdate?.addEventListener("click", () => {
-      AudioSys.unlock();
-      if (running && !gameOver) {
-        pendingReload = true;
-        showToast(I18n.t("update_apply_end_short"), 900);
-        return;
-      }
-      applySWUpdateNow();
-    });
+    if (btnRepairPWA) btnRepairPWA.addEventListener("click", repairPWA);
 
     if (window.__GRIDRUNNER_NOSW) return;
+    if (!("serviceWorker" in navigator)) return;
 
-    if ("serviceWorker" in navigator) {
-      try {
-        const swUrl = new URL(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`, location.href);
-        swReg = await navigator.serviceWorker.register(swUrl);
+    hadControllerAtBoot = !!navigator.serviceWorker.controller;
 
-        try { await swReg.update(); } catch {}
-        if (swReg.waiting) markUpdateAvailable(I18n.t("pill_update"));
+    setupSWMessaging();
 
-        swReg.addEventListener("updatefound", () => {
-          const nw = swReg.installing;
-          if (!nw) return;
-          nw.addEventListener("statechange", () => {
-            if (nw.state === "installed" && navigator.serviceWorker.controller) {
+    try {
+      // IMPORTANTÍSIMO: updateViaCache:"none" + scope "./" en GH Pages
+      const swUrl = new URL("./sw.js", location.href);
+      swUrl.searchParams.set("v", String(APP_VERSION || "1.0.0"));
+
+      swReg = await navigator.serviceWorker.register(swUrl.toString(), {
+        scope: "./",
+        updateViaCache: "none",
+      });
+
+      // Fuerza check de update
+      try { await swReg.update?.(); } catch {}
+
+      // Si ya hay waiting al entrar, lo mostramos
+      if (swReg.waiting) {
+        markUpdateAvailable(I18n.t("pill_update"));
+      }
+
+      // Detecta instalación de nuevo SW
+      swReg.addEventListener("updatefound", () => {
+        const nw = swReg.installing;
+        if (!nw) return;
+
+        nw.addEventListener("statechange", () => {
+          if (nw.state === "installed") {
+            // Si ya había controller, esto es update real
+            if (navigator.serviceWorker.controller) {
               markUpdateAvailable(I18n.t("pill_update"));
               showToast(I18n.t("update_available"), 1100);
             }
-          });
-        });
-
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
-          if (swReloadGuard) return;
-          swReloadGuard = true;
-
-          const k = SW_RELOAD_KEY;
-          const kOld = SW_RELOAD_KEY_OLD;
-
-          if (sessionStorage.getItem(k) !== "1" && sessionStorage.getItem(kOld) !== "1") {
-            sessionStorage.setItem(k, "1");
-            requestAppReload();
           }
         });
-      } catch (e) {
-        console.warn("SW register failed:", e);
-      }
+      });
+
+      // Cuando el controller cambia (update aplicado)
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (swReloadGuard) return;
+        swReloadGuard = true;
+
+        // Evita bucle: etiqueta por sesión
+        try {
+          const tag = `${Date.now()}`;
+          const prev = sessionStorage.getItem(SW_RELOAD_TAG);
+          if (prev === tag) return;
+          sessionStorage.setItem(SW_RELOAD_TAG, tag);
+        } catch {}
+
+        // Si era primera instalación (sin controller al arrancar), NO hace falta recargar agresivo
+        if (!hadControllerAtBoot) {
+          // pero sí limpiamos el pill si estaba
+          clearUpdatePill();
+          return;
+        }
+
+        // Update real: si estamos jugando, aplazamos; si no, recargamos
+        requestAppReload();
+      });
+
+    } catch (e) {
+      console.warn("SW register failed:", e);
     }
   }
 
@@ -2933,7 +3074,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       pillPlayer?.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") resetRun(true); });
 
       if (loadingSub) loadingSub.textContent = I18n.t("app_pwa");
-      setupPWA();
+      await setupPWA();
       preloadSpritesWithTimeout(900);
 
       try { GRPerf?.start?.(); } catch {}
