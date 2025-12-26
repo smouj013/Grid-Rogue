@@ -1,10 +1,10 @@
-/* rendiment.js — Grid Rogue v1.0.0 (UPDATED+HARDENED)
+/* rendiment.js — Grid Rogue v0.2.3 (UPDATED+HARDENED)
    Performance/“rendiment” helpers (NO rompe nada existente).
    - No modifica app.js automáticamente.
    - Expone window.GRPerf con métricas, medidores y utilidades opcionales.
    - Funciona aunque falten APIs modernas (fallbacks seguros).
 
-   ✅ v1.0.0:
+   ✅ Mejoras:
    - Guard ultra-robusto contra doble carga (incluye escenarios raros con SW/cache)
    - Auto-pause del sampling al ocultar pestaña (configurable, seguro)
    - Snapshot estable + percentiles (dtP95, fpsP5/fpsP95) para detectar stutter real
@@ -14,15 +14,14 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.0.0";
+  const VERSION = "0.2.0";
   const NS = "GRPerf";
-  const GUARD_KEY = "__GRIDROGUE_RENDIMENT_LOADED_V1000";
 
   // ───────────────────────── Guard robusto ─────────────────────────
+  // (si por cualquier motivo este script se inyecta 2 veces, salimos sin romper)
   try {
-    const gg = typeof globalThis !== "undefined" ? globalThis : window;
-    if (gg && (gg[GUARD_KEY] || gg[NS])) return;
-    if (gg) gg[GUARD_KEY] = true;
+    const g = typeof globalThis !== "undefined" ? globalThis : window;
+    if (g && g[NS]) return;
   } catch (_) {}
 
   // ───────────────────────── Safe env / Fallbacks ─────────────────────────
@@ -66,14 +65,8 @@
     const dm = clampInt((nav && nav.deviceMemory) || 0, 0, 64); // Chrome only
     const ua = (nav && nav.userAgent) || "";
     const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
-    const coarse = (() => {
-      try { return typeof matchMedia === "function" && matchMedia("(pointer:coarse)").matches; }
-      catch { return false; }
-    })();
-    const reducedMotion = (() => {
-      try { return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches; }
-      catch { return false; }
-    })();
+    const coarse = (() => { try { return typeof matchMedia === "function" && matchMedia("(pointer:coarse)").matches; } catch { return false; } })();
+    const reducedMotion = (() => { try { return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
 
     const lowEnd = (mobile || coarse) && ((hc > 0 && hc <= 4) || (dm > 0 && dm <= 3));
     return { hardwareConcurrency: hc, deviceMemory: dm, mobile, coarse, reducedMotion, lowEnd };
@@ -129,6 +122,7 @@
   // ───────────────────────── Core state ─────────────────────────
   const state = {
     version: VERSION,
+
     running: false,
 
     // Config
@@ -410,6 +404,7 @@
         try { step && step(budget); } catch {}
         acc -= budget;
       }
+      // si se “atascó”, recorta acumulación para que no explote
       if (steps >= capSteps && acc >= budget) acc = 0;
 
       try { draw && draw(dt); } catch {}
@@ -475,6 +470,7 @@
     isRunning() { return !!state.running; },
 
     getMetrics() {
+      // snapshot “live” (sin freeze) para llamadas internas
       return {
         ...stableSnapshot(),
         memory: getMemoryHint(),
@@ -543,6 +539,8 @@
 
   // Alias opcional (por si en algún build lo llamas distinto)
   if (hasWindow) {
-    try { if (!window.Rendiment) window.Rendiment = api; } catch {}
+    try {
+      if (!window.Rendiment) window.Rendiment = api;
+    } catch {}
   }
 })();
