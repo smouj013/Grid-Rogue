@@ -1,64 +1,44 @@
-/* audio.js — Grid Rogue v0.1.9
-   ✅ UI/Bindings de opciones de audio (Music/SFX + volúmenes + Mute All + Test)
-   ✅ Compatible con app.js v0.1.9 y AudioSys (audio_sys.js)
-   ✅ Compatible con auth.js (prefs por perfil) SIN romper si no existe Auth
-   ✅ Best-effort: si faltan DOM / AudioSys no listo / localStorage falla -> NO explota
-   ✅ Guarda en:
-      - gridrogue_settings_v1 (nuevo)
-      - gridrunner_settings_v1 (legacy compat)
-      - prefs del perfil activo (si Auth disponible)
-   ✅ Watcher ligero: cambio de perfil => re-sync audio/UI
-   ✅ v0.1.9:
-      - “NO música procedural” reforzado: pide al AudioSys interno desactivar fallback procedural.
-      - Alias SFX extra para gameplay/UI: hurt/heal/heart/magnet_on/magnet_off/upgrade_open/upgrade_pick/...
+/* audio.js — Grid Rogue v1.0.0
+   UI/Bindings de opciones de audio (Music/SFX + volúmenes + Mute + Test)
+   - Compatible con AudioSys (audio_sys.js)
+   - Compatible con Auth (prefs por perfil) si existe
+   - MUY IMPORTANTE: NO sobrescribe gridrogue_settings_v1 completo:
+     hace MERGE y solo toca campos de audio.
 */
-
 (() => {
   "use strict";
 
-  const VERSION = "0.2.3";
+  const VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "1.0.0");
 
-  // ───────────────────────── Utils (best-effort) ─────────────────────────
   const U = window.GRUtils || window.Utils || null;
-
   const clamp = U?.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
   const $ = U?.$ || ((id) => document.getElementById(id));
 
-  const safeNum =
-    U?.safeNum ||
-    ((x, fallback = 0) => {
-      const n = Number(x);
-      return Number.isFinite(n) ? n : fallback;
-    });
+  const safeNum = U?.safeNum || ((x, fb = 0) => {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : fb;
+  });
 
-  const safeParse =
-    U?.safeParse ||
-    ((raw, fallback) => {
-      try { return JSON.parse(raw); } catch { return fallback; }
-    });
+  const safeParse = U?.safeParse || ((raw, fb) => {
+    try { return JSON.parse(raw); } catch (_) { return fb; }
+  });
 
-  const canLS =
-    U?.canLS ||
-    (() => {
-      try {
-        const k = "__ls_test__";
-        localStorage.setItem(k, "1");
-        localStorage.removeItem(k);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+  const canLS = U?.canLS || (() => {
+    try {
+      const k = "__ls_test__";
+      localStorage.setItem(k, "1");
+      localStorage.removeItem(k);
+      return true;
+    } catch (_) { return false; }
+  });
 
-  function readLS(key) { try { return localStorage.getItem(key); } catch { return null; } }
-  function writeLS(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } }
+  function readLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+  function writeLS(key, value) { try { localStorage.setItem(key, value); return true; } catch (_) { return false; } }
 
-  // ───────────────────────── Keys ─────────────────────────
   const SETTINGS_KEY = "gridrogue_settings_v1";
   const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1";
 
-  // ───────────────────────── Defaults ─────────────────────────
-  const defaultSettings = () => ({
+  const defaultAudio = () => ({
     musicOn: true,
     sfxOn: true,
     musicVol: 0.60,
@@ -66,10 +46,9 @@
     muteAll: false,
   });
 
-  function sanitizeSettings(s) {
-    const base = defaultSettings();
+  function sanitizeAudio(s) {
+    const base = defaultAudio();
     if (!s || typeof s !== "object") return base;
-
     return {
       ...base,
       ...s,
@@ -84,15 +63,45 @@
   function getAudioSys() { return window.AudioSys || null; }
   function getAuth() { return window.Auth || null; }
 
-  // ───────────────────────── Perfil (prefs) ─────────────────────────
-  function getProfileId() {
-    const Auth = getAuth();
-    try {
-      const p = Auth?.getActiveProfile?.();
-      return p?.id || null;
-    } catch {
-      return null;
-    }
+  function readFullSettingsFromLS() {
+    if (!canLS()) return null;
+    const rawNew = readLS(SETTINGS_KEY);
+    const rawOld = readLS(LEGACY_SETTINGS_KEY);
+    const obj = safeParse(rawNew || rawOld || "null", null);
+    return (obj && typeof obj === "object") ? obj : null;
+  }
+
+  function writeFullSettingsToLS(obj) {
+    if (!canLS()) return false;
+    const json = JSON.stringify(obj || {});
+    const ok1 = writeLS(SETTINGS_KEY, json);
+    const ok2 = writeLS(LEGACY_SETTINGS_KEY, json);
+    return !!(ok1 || ok2);
+  }
+
+  function extractAudioFromAnySettingsObject(obj) {
+    if (!obj || typeof obj !== "object") return null;
+    const hasAny = ("musicOn" in obj) || ("sfxOn" in obj) || ("musicVol" in obj) || ("sfxVol" in obj) || ("muteAll" in obj);
+    if (!hasAny) return null;
+    return sanitizeAudio({
+      musicOn: obj.musicOn,
+      sfxOn: obj.sfxOn,
+      musicVol: obj.musicVol,
+      sfxVol: obj.sfxVol,
+      muteAll: obj.muteAll,
+    });
+  }
+
+  function mergeAudioIntoSettingsObject(fullObj, audioObj) {
+    const base = (fullObj && typeof fullObj === "object") ? fullObj : {};
+    return {
+      ...base,
+      musicOn: !!audioObj.musicOn,
+      sfxOn: audioObj.sfxOn !== false,
+      musicVol: clamp(safeNum(audioObj.musicVol, 0.6), 0, 1),
+      sfxVol: clamp(safeNum(audioObj.sfxVol, 0.9), 0, 1),
+      muteAll: !!audioObj.muteAll,
+    };
   }
 
   function loadAudioFromProfilePrefs() {
@@ -101,110 +110,55 @@
       const prefs = Auth?.getPrefsForActive?.();
       if (!prefs || typeof prefs !== "object") return null;
 
-      const hasAny =
-        ("musicOn" in prefs) || ("sfxOn" in prefs) ||
-        ("musicVol" in prefs) || ("sfxVol" in prefs) ||
-        ("muteAll" in prefs);
-
-      if (!hasAny) return null;
-
-      return sanitizeSettings({
-        musicOn: prefs.musicOn,
-        sfxOn: prefs.sfxOn,
-        musicVol: prefs.musicVol,
-        sfxVol: prefs.sfxVol,
-        muteAll: prefs.muteAll,
-      });
-    } catch {
+      const audio = extractAudioFromAnySettingsObject(prefs);
+      return audio;
+    } catch (_) {
       return null;
     }
   }
 
-  function saveAudioToProfilePrefs(nextSettings) {
+  function saveAudioToProfilePrefs(audioObj) {
     const Auth = getAuth();
     if (!Auth?.setPrefsForActive) return false;
 
     try {
       const prev = Auth.getPrefsForActive?.() || {};
-      const merged = {
-        ...prev,
-        musicOn: !!nextSettings.musicOn,
-        sfxOn: nextSettings.sfxOn !== false,
-        musicVol: clamp(safeNum(nextSettings.musicVol, 0.6), 0, 1),
-        sfxVol: clamp(safeNum(nextSettings.sfxVol, 0.9), 0, 1),
-        muteAll: !!nextSettings.muteAll,
-      };
+      const merged = mergeAudioIntoSettingsObject(prev, audioObj);
       return !!Auth.setPrefsForActive(merged);
-    } catch {
+    } catch (_) {
       return false;
     }
   }
 
-  // ───────────────────────── Load/Save ─────────────────────────
-  function loadFromLocalStorage() {
-    const base = defaultSettings();
-    if (!canLS()) return base;
-
-    const rawNew = readLS(SETTINGS_KEY);
-    const rawOld = readLS(LEGACY_SETTINGS_KEY);
-
-    const sNew = rawNew ? safeParse(rawNew, null) : null;
-    const sOld = rawOld ? safeParse(rawOld, null) : null;
-
-    return sanitizeSettings(sNew || sOld || base);
-  }
-
-  let settings = (() => {
+  function loadAudioBestEffort() {
     const fromProfile = loadAudioFromProfilePrefs();
     if (fromProfile) return fromProfile;
-    return loadFromLocalStorage();
-  })();
+
+    const full = readFullSettingsFromLS();
+    const fromFull = extractAudioFromAnySettingsObject(full);
+    return fromFull || defaultAudio();
+  }
+
+  let settings = loadAudioBestEffort();
 
   let saveT = 0;
-  function saveSettingsGlobal() {
-    if (!canLS()) return;
-
+  function saveAudioEverywhere() {
     clearTimeout(saveT);
     saveT = setTimeout(() => {
-      const payload = JSON.stringify(settings);
-      writeLS(SETTINGS_KEY, payload);
-      writeLS(LEGACY_SETTINGS_KEY, payload); // compat
+      const full = readFullSettingsFromLS() || {};
+      const merged = mergeAudioIntoSettingsObject(full, settings);
+      writeFullSettingsToLS(merged);
+      saveAudioToProfilePrefs(settings);
     }, 60);
   }
 
-  function saveSettingsEverywhere() {
-    saveSettingsGlobal();
-    saveAudioToProfilePrefs(settings); // best-effort
-  }
-
-  // ───────────────────────── Helpers: “No procedural music” ─────────────────────────
   let musicAttempted = false;
 
-  function canTryMusicStart(A) {
-    try {
-      const st = A?.getState?.() || {};
-      // si no expone musicMode, asumimos engine externo o wrapper => OK
-      if (!("musicMode" in st)) return true;
-
-      // motor interno:
-      if (st.musicMode === "procedural") return false;
-      if (st.musicMode === "html" || st.musicMode === "none") return true;
-
-      return true;
-    } catch {
-      return true;
-    }
-  }
-
-  // ───────────────────────── Apply ─────────────────────────
   function applyAudioSettingsNow() {
     const A = getAudioSys();
     if (!A) return;
 
-    try {
-      // v0.1.9: fuerza NO procedural si el AudioSys interno soporta el flag
-      A.setAllowProceduralMusic?.(false);
-    } catch {}
+    try { A.setAllowProceduralMusic?.(false); } catch (_) {}
 
     try {
       A.setMute?.(!!settings.muteAll);
@@ -215,12 +169,23 @@
       if (settings.muteAll || !settings.musicOn || settings.musicVol <= 0.001) {
         A.stopMusic?.();
       }
-    } catch {}
+    } catch (_) {}
   }
 
   async function unlockGesture() {
     const A = getAudioSys();
-    try { await A?.unlock?.(); } catch {}
+    try { await A?.unlock?.(); } catch (_) {}
+  }
+
+  function canTryMusicStart(A) {
+    try {
+      const st = A?.getState?.() || {};
+      if (!("musicMode" in st)) return true;
+      if (st.musicMode === "procedural") return false;
+      return true;
+    } catch (_) {
+      return true;
+    }
   }
 
   async function maybeStartMusic() {
@@ -228,33 +193,28 @@
     if (!A) return;
 
     if (!settings.musicOn || settings.muteAll || settings.musicVol <= 0.001) return;
-
-    // NO insistimos si vemos que caería a procedural.
     if (!canTryMusicStart(A)) return;
-
     if (musicAttempted) return;
+
     musicAttempted = true;
 
     try {
       await A.startMusic?.();
-
-      // Re-check: si tras startMusic el motor cae a procedural, paramos y silencio.
       if (!canTryMusicStart(A)) {
-        try { A.stopMusic?.(); } catch {}
+        try { A.stopMusic?.(); } catch (_) {}
       }
-    } catch {
-      try { A.stopMusic?.(); } catch {}
+    } catch (_) {
+      try { A.stopMusic?.(); } catch (_) {}
     }
   }
 
-  // ✅ Auto-unlock en primer gesto (pero NO “consume” el gesto si AudioSys aún no existe)
   let didAutoUnlock = false;
   function bindGlobalUnlock() {
     const handler = async () => {
       if (didAutoUnlock) return;
 
       const A = getAudioSys();
-      if (!A) return; // aún no cargó -> esperamos a otro gesto
+      if (!A) return; // aún no cargó
 
       didAutoUnlock = true;
 
@@ -272,7 +232,6 @@
     window.addEventListener("touchstart", handler, true);
   }
 
-  // ───────────────────────── DOM refs ─────────────────────────
   const optMusicOn = $("optMusicOn");
   const optSfxOn = $("optSfxOn");
   const optMusicVol = $("optMusicVol");
@@ -282,7 +241,6 @@
   const optMuteAll = $("optMuteAll");
   const btnTestAudio = $("btnTestAudio");
 
-  // Compat ids viejos
   const optMusic = optMusicOn || $("optMusic");
   const optSfx = optSfxOn || $("optSfx");
 
@@ -303,18 +261,17 @@
     const A = getAudioSys();
     try {
       if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui");
-    } catch {}
+    } catch (_) {}
   }
 
-  // ───────────────────────── Binds ─────────────────────────
   function bind() {
-    // Music ON/OFF
     optMusic?.addEventListener("change", async () => {
       await unlockGesture();
 
       settings.musicOn = !!optMusic.checked;
-      musicAttempted = false; // permitir reintento si se vuelve a activar
-      saveSettingsEverywhere();
+      musicAttempted = false;
+
+      saveAudioEverywhere();
       applyAudioSettingsNow();
 
       const A = getAudioSys();
@@ -324,72 +281,65 @@
         } else {
           A?.stopMusic?.();
         }
-      } catch {}
+      } catch (_) {}
 
       await playUiClick();
     });
 
-    // SFX ON/OFF
     optSfx?.addEventListener("change", async () => {
       await unlockGesture();
 
       settings.sfxOn = !!optSfx.checked;
-      saveSettingsEverywhere();
+      saveAudioEverywhere();
       applyAudioSettingsNow();
 
       await playUiClick();
     });
 
-    // Music volume
     optMusicVol?.addEventListener("input", async () => {
       await unlockGesture();
 
       settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.60"), 0, 1);
       if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
 
-      saveSettingsEverywhere();
+      saveAudioEverywhere();
       applyAudioSettingsNow();
 
-      // si sube desde 0, intentamos una vez (sin procedural)
       if (settings.musicVol > 0.001) {
         musicAttempted = false;
         await maybeStartMusic();
       }
     });
 
-    // SFX volume
     optSfxVol?.addEventListener("input", async () => {
       await unlockGesture();
 
       settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.90"), 0, 1);
       if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
 
-      saveSettingsEverywhere();
+      saveAudioEverywhere();
       applyAudioSettingsNow();
 
       await playUiClick();
     });
 
-    // Mute All
     optMuteAll?.addEventListener("change", async () => {
       await unlockGesture();
 
       settings.muteAll = !!optMuteAll.checked;
-      saveSettingsEverywhere();
+      saveAudioEverywhere();
       applyAudioSettingsNow();
 
       const A = getAudioSys();
-      try { if (settings.muteAll) A?.stopMusic?.(); } catch {}
+      try { if (settings.muteAll) A?.stopMusic?.(); } catch (_) {}
     });
 
-    // Test Audio
     btnTestAudio?.addEventListener("click", async () => {
       await unlockGesture();
 
       syncUIFromSettings();
       applyAudioSettingsNow();
 
-      // Música: solo si se puede sin procedural
       musicAttempted = false;
       await maybeStartMusic();
 
@@ -398,15 +348,21 @@
         if (settings.sfxOn && !settings.muteAll) {
           await A?.sfx?.("coin");
           await A?.sfx?.("ui");
-          await A?.sfx?.("hurt"); // nuevo alias (vida/corazones)
-          await A?.sfx?.("heal"); // nuevo alias (vida/corazones)
+          await A?.sfx?.("hurt");
+          await A?.sfx?.("heal");
         }
-      } catch {}
+      } catch (_) {}
     });
   }
 
-  // ───────────────────────── Watcher de perfil (ligero) ─────────────────────────
   let lastProfileId = null;
+  function getProfileId() {
+    const Auth = getAuth();
+    try {
+      const p = Auth?.getActiveProfile?.();
+      return p?.id || null;
+    } catch (_) { return null; }
+  }
 
   function startProfileWatcher() {
     lastProfileId = getProfileId();
@@ -417,24 +373,21 @@
       lastProfileId = cur;
 
       const fromProfile = loadAudioFromProfilePrefs();
-      settings = fromProfile ? fromProfile : loadFromLocalStorage();
+      settings = fromProfile ? fromProfile : loadAudioBestEffort();
 
       musicAttempted = false;
-
       syncUIFromSettings();
       applyAudioSettingsNow();
-      // no autostart aquí; esperamos gesto o botón
     }, 1500);
   }
 
-  // ───────────────────────── Public API ─────────────────────────
   window.AudioUI = {
     VERSION,
     getSettings: () => ({ ...settings }),
     setSettings: (partial) => {
-      settings = sanitizeSettings({ ...settings, ...(partial || {}) });
+      settings = sanitizeAudio({ ...settings, ...(partial || {}) });
       musicAttempted = false;
-      saveSettingsEverywhere();
+      saveAudioEverywhere();
       syncUIFromSettings();
       applyAudioSettingsNow();
       return { ...settings };
@@ -450,15 +403,13 @@
       await maybeStartMusic();
     },
 
-    // sfx general (mantiene compat)
     sfx: async (name) => {
       await unlockGesture();
       const A = getAudioSys();
-      try { if (settings.sfxOn && !settings.muteAll) return await A?.sfx?.(name); } catch {}
+      try { if (settings.sfxOn && !settings.muteAll) return await A?.sfx?.(name); } catch (_) {}
       return false;
     },
 
-    // helpers (opcionales) para gameplay/UI v0.1.9
     hurt: async () => window.AudioUI.sfx("hurt"),
     heal: async () => window.AudioUI.sfx("heal"),
     magnetOn: async () => window.AudioUI.sfx("magnet_on"),
@@ -467,11 +418,8 @@
     upgradePick: async () => window.AudioUI.sfx("upgrade_pick"),
   };
 
-  // ───────────────────────── Boot ─────────────────────────
   function boot() {
-    const fromProfile = loadAudioFromProfilePrefs();
-    if (fromProfile) settings = fromProfile;
-
+    settings = loadAudioBestEffort();
     syncUIFromSettings();
     applyAudioSettingsNow();
 

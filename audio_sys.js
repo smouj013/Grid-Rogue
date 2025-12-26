@@ -1,37 +1,32 @@
-/* audio_sys.js — Grid Rogue v0.1.9
+/* audio_sys.js — Grid Rogue v1.0.0
    window.AudioSys
-   ✅ Si detecta un motor externo lo envuelve.
-   ✅ Si no, usa motor interno (HTMLAudio música + WebAudio SFX + fallback procedural SFX)
-   ✅ iOS/Android friendly:
-      - unlock() idempotente, resume AudioContext, “prime” música
-   ✅ v0.1.9:
-      - Flag setAllowProceduralMusic(false): permite DESACTIVAR música procedural (fallback) sin romper compat
-      - Más alias SFX: hurt/heal/heart/magnet_on/magnet_off/upgrade_open/upgrade_pick/...
-      - Normalización de rutas robusta (GH Pages/subcarpetas)
+   - Si detecta motor externo: lo envuelve (wrapper) sin romper compat.
+   - Si no: motor interno (HTMLAudio música + WebAudio SFX + fallback procedural SFX)
+   - unlock() idempotente (iOS/Android friendly)
+   - setAllowProceduralMusic(false): permite desactivar música procedural fallback (por defecto: false)
 */
-
 (() => {
   "use strict";
 
-  const VERSION = "0.2.3";
+  const VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "1.0.0");
 
-  // Si ya existe AudioSys (por motor externo), no lo tocamos.
+  // Si ya existe AudioSys (motor externo / ya cargado), no lo tocamos.
   if (window.AudioSys && typeof window.AudioSys.sfx === "function") return;
 
   const U = window.GRUtils || window.Utils || {};
   const clamp = U.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
-  const clampInt = U.clampInt || ((v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : a));
+  const clampInt = U.clampInt || ((v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : (a | 0)));
 
-  // Base robusta: respeta subcarpetas (GH Pages) y también file:// en local
   const BASE = (() => {
-    try { return new URL("./", location.href); } catch { return null; }
+    try { return new URL("./", location.href); } catch (_) { return null; }
   })();
 
   const urlOf = (rel) => {
     try {
+      if (!rel) return "";
       if (/^https?:\/\//i.test(rel)) return rel;
       return new URL(rel, BASE || location.href).toString();
-    } catch {
+    } catch (_) {
       return String(rel || "");
     }
   };
@@ -47,8 +42,17 @@
 
     for (const e of cands) {
       if (!e || typeof e !== "object") continue;
-      const hasSfx = typeof e.sfx === "function" || typeof e.playSfx === "function" || typeof e.play === "function";
-      const hasMusic = typeof e.startMusic === "function" || typeof e.playMusic === "function" || typeof e.musicStart === "function";
+
+      const hasSfx =
+        typeof e.sfx === "function" ||
+        typeof e.playSfx === "function" ||
+        typeof e.play === "function";
+
+      const hasMusic =
+        typeof e.startMusic === "function" ||
+        typeof e.playMusic === "function" ||
+        typeof e.musicStart === "function";
+
       if (hasSfx || hasMusic) return e;
     }
     return null;
@@ -59,72 +63,80 @@
     const api = {
       VERSION,
       supports: true,
+
       unlock: async () => {
         try {
           if (typeof ext.unlock === "function") return await ext.unlock();
           if (typeof ext.resume === "function") return await ext.resume();
-        } catch {}
+        } catch (_) {}
         return true;
       },
+
       sfx: async (name) => {
         try {
           if (typeof ext.sfx === "function") return await ext.sfx(name);
           if (typeof ext.playSfx === "function") return await ext.playSfx(name);
           if (typeof ext.play === "function") return await ext.play(name);
-        } catch {}
+        } catch (_) {}
         return false;
       },
+
       startMusic: async () => {
         try {
           if (typeof ext.startMusic === "function") return await ext.startMusic();
           if (typeof ext.playMusic === "function") return await ext.playMusic();
           if (typeof ext.musicStart === "function") return await ext.musicStart();
-        } catch {}
+        } catch (_) {}
       },
+
       stopMusic: () => {
         try {
           if (typeof ext.stopMusic === "function") return ext.stopMusic();
           if (typeof ext.musicStop === "function") return ext.musicStop();
           if (typeof ext.stop === "function") return ext.stop();
-        } catch {}
+        } catch (_) {}
       },
+
       duckMusic: (on) => {
         try {
           if (typeof ext.duckMusic === "function") return ext.duckMusic(on);
           if (typeof ext.duck === "function") return ext.duck(on);
           if (typeof ext.setDuck === "function") return ext.setDuck(on ? 0.35 : 1.0);
-        } catch {}
+        } catch (_) {}
       },
+
       setMute: (v) => {
         try {
           if (typeof ext.setMute === "function") return ext.setMute(v);
           if (typeof ext.mute === "function") return ext.mute(v);
-        } catch {}
+        } catch (_) {}
       },
+
       setMusicOn: (v) => {
         try {
           if (typeof ext.setMusicOn === "function") return ext.setMusicOn(v);
           if (typeof ext.enableMusic === "function") return ext.enableMusic(v);
-        } catch {}
+        } catch (_) {}
       },
+
       setSfxOn: (v) => {
         try {
           if (typeof ext.setSfxOn === "function") return ext.setSfxOn(v);
           if (typeof ext.enableSfx === "function") return ext.enableSfx(v);
-        } catch {}
+        } catch (_) {}
       },
+
       setVolumes: (o) => {
         try {
           if (typeof ext.setVolumes === "function") return ext.setVolumes(o);
           if (typeof ext.setVolume === "function") return ext.setVolume(o);
-        } catch {}
+        } catch (_) {}
       },
 
-      // v0.1.9 (si el externo no lo soporta, no pasa nada)
       setAllowProceduralMusic: (_v) => {},
 
       getState: () => {
-        try { if (typeof ext.getState === "function") return ext.getState(); } catch {}
+        try { if (typeof ext.getState === "function") return ext.getState(); } catch (_) {}
         return {};
       },
     };
@@ -135,7 +147,7 @@
 
   // ───────────────────────── Motor interno ─────────────────────────
   const supportsCtx = (() => {
-    try { return !!(window.AudioContext || window.webkitAudioContext); } catch { return false; }
+    try { return !!(window.AudioContext || window.webkitAudioContext); } catch (_) { return false; }
   })();
 
   const FILES = {
@@ -171,10 +183,10 @@
   let sfxVol = 0.90;
 
   const buffers = new Map();
-  let proceduralNode = null;
 
-  // v0.1.9: permite desactivar música procedural como fallback
-  let allowProceduralMusic = true;
+  // Música procedural fallback: por defecto DESACTIVADA (tu audio.js la fuerza a false)
+  let allowProceduralMusic = false;
+  let proceduralNode = null;
 
   function ensureCtx() {
     if (!supportsCtx) return null;
@@ -187,7 +199,7 @@
     sfxGain = ctx.createGain();
 
     master.gain.value = muted ? 0 : 1;
-    sfxGain.gain.value = sfxOn ? sfxVol : 0;
+    sfxGain.gain.value = (sfxOn && !muted) ? sfxVol : 0;
 
     sfxGain.connect(master);
     master.connect(ctx.destination);
@@ -203,8 +215,8 @@
       el.preload = "auto";
       el.autoplay = false;
       el.playsInline = true;
-      try { el.setAttribute("playsinline", ""); } catch {}
-      try { el.setAttribute("webkit-playsinline", ""); } catch {}
+      try { el.setAttribute("playsinline", ""); } catch (_) {}
+      try { el.setAttribute("webkit-playsinline", ""); } catch (_) {}
 
       // Arranca silenciado (iOS)
       el.muted = true;
@@ -213,7 +225,7 @@
       musicEl = el;
       musicMode = "html";
       return musicEl;
-    } catch {
+    } catch (_) {
       musicEl = null;
       return null;
     }
@@ -227,11 +239,12 @@
   function setMusicVolumeImmediate(v) {
     const el = ensureMusicEl();
     if (!el) return;
+
     const vv = clamp(v, 0, 1);
     try {
       el.muted = vv <= 0.0001;
       el.volume = vv;
-    } catch {}
+    } catch (_) {}
   }
 
   function setMusicVolumeSmooth(target, ms = 140) {
@@ -239,17 +252,18 @@
     if (!el) return;
 
     if (volAnimRaf) cancelAnimationFrame(volAnimRaf);
-    const t0 = performance.now();
+    const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+
     let from = 0;
-    try { from = Number.isFinite(el.volume) ? el.volume : 0; } catch { from = 0; }
+    try { from = Number.isFinite(el.volume) ? el.volume : 0; } catch (_) { from = 0; }
+
     const to = clamp(target, 0, 1);
 
     const step = () => {
-      const t = performance.now();
+      const t = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
       const k = clamp((t - t0) / Math.max(1, ms), 0, 1);
       const e = 1 - Math.pow(1 - k, 2);
-      const v = from + (to - from) * e;
-      setMusicVolumeImmediate(v);
+      setMusicVolumeImmediate(from + (to - from) * e);
       if (k < 1) volAnimRaf = requestAnimationFrame(step);
       else volAnimRaf = 0;
     };
@@ -263,11 +277,11 @@
     if (supportsCtx) {
       const c = ensureCtx();
       if (c) {
-        try { if (c.state !== "running") await c.resume(); } catch {}
+        try { if (c.state !== "running") await c.resume(); } catch (_) {}
       }
     }
 
-    // “Prime” música en silencio para iOS
+    // Prime música en silencio (iOS)
     try {
       const el = ensureMusicEl();
       if (el) {
@@ -275,26 +289,26 @@
         el.volume = 0;
         const p = el.play();
         if (p && typeof p.then === "function") await p.catch(() => {});
-        try { el.pause(); } catch {}
-        try { el.currentTime = 0; } catch {}
+        try { el.pause(); } catch (_) {}
+        try { el.currentTime = 0; } catch (_) {}
       }
-    } catch {}
+    } catch (_) {}
 
     return true;
   }
 
   function stopProceduralMusic() {
     if (!proceduralNode) return;
-    try { proceduralNode.stop?.(); } catch {}
-    try { proceduralNode.disconnect?.(); } catch {}
+    try { proceduralNode.stop?.(); } catch (_) {}
+    try { proceduralNode.disconnect?.(); } catch (_) {}
     proceduralNode = null;
     if (musicMode === "procedural") musicMode = "none";
   }
 
   function stopMusic() {
     if (musicEl) {
-      try { musicEl.pause(); } catch {}
-      try { musicEl.currentTime = 0; } catch {}
+      try { musicEl.pause(); } catch (_) {}
+      try { musicEl.currentTime = 0; } catch (_) {}
     }
     stopProceduralMusic();
   }
@@ -316,15 +330,14 @@
         if (p && typeof p.then === "function") await p;
         musicMode = "html";
         return;
-      } catch {
-        // si falla, intentaremos procedural SOLO si está permitido
+      } catch (_) {
+        // Si falla, intentaremos procedural solo si está permitido
       }
     }
 
-    // v0.1.9: si procedural no permitido => silencio
     if (!allowProceduralMusic) return;
-
     if (!supportsCtx) return;
+
     const c = ensureCtx();
     if (!c || proceduralNode) return;
 
@@ -369,15 +382,15 @@
 
       proceduralNode = {
         stop() {
-          try { o1.stop(); o2.stop(); lfo.stop(); } catch {}
-          try { o1.disconnect(); o2.disconnect(); lfo.disconnect(); lfoG.disconnect(); g.disconnect(); } catch {}
+          try { o1.stop(); o2.stop(); lfo.stop(); } catch (_) {}
+          try { o1.disconnect(); o2.disconnect(); lfo.disconnect(); lfoG.disconnect(); g.disconnect(); } catch (_) {}
         },
         disconnect() {},
       };
 
       musicMode = "procedural";
       step();
-    } catch {}
+    } catch (_) {}
   }
 
   function setMute(v) {
@@ -385,6 +398,7 @@
     if (master) master.gain.value = muted ? 0 : 1;
     if (muted) stopMusic();
     else setMusicVolumeImmediate(effectiveMusicVolume());
+    if (sfxGain) sfxGain.gain.value = (sfxOn && !muted) ? sfxVol : 0;
   }
 
   function setMusicOn(v) {
@@ -395,13 +409,13 @@
 
   function setSfxOn(v) {
     sfxOn = !!v;
-    if (sfxGain) sfxGain.gain.value = sfxOn ? sfxVol : 0;
+    if (sfxGain) sfxGain.gain.value = (sfxOn && !muted) ? sfxVol : 0;
   }
 
   function setVolumes({ music, sfx } = {}) {
     if (Number.isFinite(music)) musicVol = clamp(music, 0, 1);
     if (Number.isFinite(sfx)) sfxVol = clamp(sfx, 0, 1);
-    if (sfxGain) sfxGain.gain.value = sfxOn ? sfxVol : 0;
+    if (sfxGain) sfxGain.gain.value = (sfxOn && !muted) ? sfxVol : 0;
     setMusicVolumeImmediate(effectiveMusicVolume());
   }
 
@@ -412,7 +426,6 @@
 
   function setAllowProceduralMusic(v) {
     allowProceduralMusic = (v !== false);
-    // si lo desactivan y estaba sonando procedural, lo cortamos
     if (!allowProceduralMusic && musicMode === "procedural") stopProceduralMusic();
   }
 
@@ -430,7 +443,7 @@
       const buf = await c.decodeAudioData(arr.slice(0));
       buffers.set(key, buf);
       return buf;
-    } catch {
+    } catch (_) {
       buffers.set(key, null);
       return null;
     }
@@ -461,9 +474,9 @@
       g.connect(sfxGain);
 
       src.start();
-      src.onended = () => { try { src.disconnect(); g.disconnect(); } catch {} };
+      src.onended = () => { try { src.disconnect(); g.disconnect(); } catch (_) {} };
       return true;
-    } catch {
+    } catch (_) {
       return false;
     }
   }
@@ -492,23 +505,20 @@
     o.start(t0);
     o.stop(t1);
 
-    o.onended = () => { try { o.disconnect(); g.disconnect(); } catch {} };
+    o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (_) {} };
     return true;
   }
 
-  // Aliases permisivos (app.js/UI/gameplay v0.1.9)
   function normalizeSfxName(name) {
     const n = String(name || "ui").trim().toLowerCase();
 
     const alias = {
-      // UI
       click: "ui",
       button: "ui",
       tap: "ui",
       ui_click: "ui",
       ui: "ui",
 
-      // base
       coin: "coin",
       gem: "gem",
       bonus: "bonus",
@@ -518,16 +528,12 @@
       levelup: "level",
       pick: "pick",
       reroll: "reroll",
-
-      // extras ya existentes
       gameover: "gameover",
       over: "gameover",
       combo: "combo",
       block: "block",
       upgrade: "upgrade",
-      shield: "bonus",
 
-      // v0.1.9 — vidas/corazones + upgrades + imán
       hurt: "trap",
       damage: "trap",
       hit: "trap",
@@ -553,8 +559,8 @@
     if (!supportsCtx) return false;
 
     const k = normalizeSfxName(name);
-
     const file = FILES[k] || FILES.ui;
+
     if (file) {
       const buf = await loadBuffer(k, file);
       if (buf) {
@@ -570,19 +576,18 @@
       }
     }
 
-    // fallback procedural (SFX) — música procedural puede estar desactivada, esto NO afecta a sfx()
-    if (k === "coin")   return beep({ f: 820, ms: 60,  type: "square",   gain: 0.14, slideTo: 980 });
-    if (k === "gem")    return beep({ f: 620, ms: 85,  type: "triangle", gain: 0.16, slideTo: 920 });
-    if (k === "bonus")  return beep({ f: 520, ms: 120, type: "sawtooth", gain: 0.12, slideTo: 1040 });
-    if (k === "trap")   return beep({ f: 220, ms: 140, type: "square",   gain: 0.16, slideTo: 110 });
-    if (k === "ko")     return beep({ f: 150, ms: 220, type: "sawtooth", gain: 0.18, slideTo: 60 });
-    if (k === "level")  return beep({ f: 440, ms: 140, type: "triangle", gain: 0.14, slideTo: 880 });
-    if (k === "pick")   return beep({ f: 520, ms: 80,  type: "square",   gain: 0.12, slideTo: 700 });
-    if (k === "reroll") return beep({ f: 360, ms: 90,  type: "triangle", gain: 0.12, slideTo: 520 });
-    if (k === "combo")  return beep({ f: 740, ms: 120, type: "triangle", gain: 0.12, slideTo: 980 });
-    if (k === "block")  return beep({ f: 260, ms: 90,  type: "square",   gain: 0.12, slideTo: 220 });
-    if (k === "upgrade")return beep({ f: 480, ms: 140, type: "sawtooth", gain: 0.12, slideTo: 960 });
-    if (k === "gameover")return beep({ f: 190, ms: 260,type: "sawtooth", gain: 0.16, slideTo: 70 });
+    if (k === "coin")    return beep({ f: 820, ms: 60,  type: "square",   gain: 0.14, slideTo: 980 });
+    if (k === "gem")     return beep({ f: 620, ms: 85,  type: "triangle", gain: 0.16, slideTo: 920 });
+    if (k === "bonus")   return beep({ f: 520, ms: 120, type: "sawtooth", gain: 0.12, slideTo: 1040 });
+    if (k === "trap")    return beep({ f: 220, ms: 140, type: "square",   gain: 0.16, slideTo: 110 });
+    if (k === "ko")      return beep({ f: 150, ms: 220, type: "sawtooth", gain: 0.18, slideTo: 60 });
+    if (k === "level")   return beep({ f: 440, ms: 140, type: "triangle", gain: 0.14, slideTo: 880 });
+    if (k === "pick")    return beep({ f: 520, ms: 80,  type: "square",   gain: 0.12, slideTo: 700 });
+    if (k === "reroll")  return beep({ f: 360, ms: 90,  type: "triangle", gain: 0.12, slideTo: 520 });
+    if (k === "combo")   return beep({ f: 740, ms: 120, type: "triangle", gain: 0.12, slideTo: 980 });
+    if (k === "block")   return beep({ f: 260, ms: 90,  type: "square",   gain: 0.12, slideTo: 220 });
+    if (k === "upgrade") return beep({ f: 480, ms: 140, type: "sawtooth", gain: 0.12, slideTo: 960 });
+    if (k === "gameover")return beep({ f: 190, ms: 260, type: "sawtooth", gain: 0.16, slideTo: 70 });
 
     return beep({ f: 520, ms: 55, type: "square", gain: 0.09, slideTo: 610 });
   }
