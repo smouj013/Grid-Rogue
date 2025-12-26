@@ -13,9 +13,7 @@
 
   <title>Grid Rogue</title>
 
-  <script>
-    window.APP_VERSION = "0.2.3";
-  </script>
+  <script>window.APP_VERSION = "0.2.3";</script>
 
   <script>
     (function () {
@@ -29,7 +27,6 @@
             await Promise.all(regs.map(r => r.unregister()));
           }
         } catch (e) {}
-
         try {
           if (window.caches && caches.keys) {
             const keys = await caches.keys();
@@ -48,6 +45,7 @@
       }
     })();
   </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -137,6 +135,9 @@
     </header>
 
     <main class="stage" id="stage" role="main">
+      <!-- ✅ HUD flotante REAL (lo rellena app.js; aquí SOLO el contenedor) -->
+      <div id="hudFloat" class="hudFloat" aria-label="Estado del jugador"></div>
+
       <div class="canvasWrap" id="canvasWrap">
         <div class="gameArea" id="gameArea">
 
@@ -158,7 +159,8 @@
                     Completa la secuencia para subir el multiplicador.
                   </div>
 
-                  <div class="levelProg levelProgress" id="levelProg">
+                  <!-- ✅ id coherente con app.js (anchor) -->
+                  <div class="levelProg levelProgress" id="levelProgress">
                     <div class="levelRow">
                       <div class="left">
                         <span class="ms" aria-hidden="true">bolt</span>
@@ -170,14 +172,6 @@
                     <div class="progBar" aria-hidden="true">
                       <div class="progFill" id="levelProgFill"></div>
                     </div>
-                  </div>
-                </div>
-
-                <div class="hudFloat" id="hudFloat" aria-label="Estado del jugador">
-                  <div class="hpWrap" id="hudHearts" aria-label="Vida"></div>
-
-                  <div class="buffDock" aria-label="Mejoras activas">
-                    <div class="buffBar" id="hudBuffs"></div>
                   </div>
                 </div>
 
@@ -220,6 +214,7 @@
 
         </div>
 
+        <!-- Overlays (igual que tenías) -->
         <section class="overlay" id="overlayLoading">
           <div class="panel loadingPanel">
             <div class="splash">
@@ -404,6 +399,7 @@
             </div>
 
             <div class="options" id="optionsBody">
+              <!-- igual que tenías -->
               <div class="optGroupTitle">
                 <span class="ms" aria-hidden="true">volume_up</span>
                 <span>Audio</span>
@@ -517,6 +513,7 @@
     </main>
   </div>
 
+  <!-- failsafe (igual que tenías) -->
   <script>
     (function () {
       const $ = (id) => document.getElementById(id);
@@ -527,14 +524,8 @@
       const btnReload = $("btnEmergencyReload");
       const btnRepair = $("btnEmergencyRepair");
 
-      function setOverlay(el, on) {
-        if (!el) return;
-        el.hidden = !on;
-      }
-
-      function isBooted() {
-        return (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true);
-      }
+      function setOverlay(el, on) { if (el) el.hidden = !on; }
+      function isBooted() { return (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true); }
 
       function showFailsafe() {
         if (loadingSub) loadingSub.textContent = "Arranque atascado. Puedes recargar o reparar la PWA.";
@@ -545,9 +536,8 @@
         setOverlay(overlayStart, false);
       }
 
-      if (btnReload) btnReload.addEventListener("click", () => location.reload());
-
-      if (btnRepair) btnRepair.addEventListener("click", async () => {
+      btnReload?.addEventListener("click", () => location.reload());
+      btnRepair?.addEventListener("click", async () => {
         try {
           if ("serviceWorker" in navigator) {
             const regs = await navigator.serviceWorker.getRegistrations();
@@ -561,9 +551,7 @@
         location.reload();
       });
 
-      setTimeout(() => {
-        if (!isBooted()) showFailsafe();
-      }, 7000);
+      setTimeout(() => { if (!isBooted()) showFailsafe(); }, 7000);
     })();
   </script>
 
@@ -596,47 +584,6 @@
         if (pv) pv.textContent = `${modeTxt} • ${devTxt}`;
         pillMode.hidden = false;
       }
-    })();
-  </script>
-
-  <script>
-    (function () {
-      const canvas = document.getElementById("gameCanvas");
-      const sizer = document.getElementById("canvasSizer");
-      if (!canvas || !sizer) return;
-
-      const readInt = (v, fb) => {
-        const n = parseInt(String(v || ""), 10);
-        return Number.isFinite(n) && n > 0 ? n : fb;
-      };
-
-      const baseW = readInt(canvas.dataset.basew, canvas.width || 640);
-      const baseH = readInt(canvas.dataset.baseh, canvas.height || 960);
-
-      function fit() {
-        const r = sizer.getBoundingClientRect();
-        const pad = 0;
-
-        const availW = Math.max(0, r.width - pad);
-        const availH = Math.max(0, r.height - pad);
-
-        const scale = Math.max(0, Math.min(availW / baseW, availH / baseH));
-        const w = Math.max(1, Math.floor(baseW * scale));
-        const h = Math.max(1, Math.floor(baseH * scale));
-
-        canvas.style.width = w + "px";
-        canvas.style.height = h + "px";
-      }
-
-      const rafFit = () => requestAnimationFrame(fit);
-
-      rafFit();
-      window.addEventListener("resize", rafFit, { passive: true });
-      window.addEventListener("orientationchange", rafFit, { passive: true });
-
-      setTimeout(rafFit, 80);
-      setTimeout(rafFit, 240);
-      setTimeout(rafFit, 600);
     })();
   </script>
 
