@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.9";
+  const VERSION = "0.2.3";
 
   // ───────────────────────── Utils (best-effort) ─────────────────────────
   const U = window.GRUtils || window.Utils || null;

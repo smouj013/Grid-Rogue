@@ -13,7 +13,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.9";
+  const VERSION = "0.2.3";
 
   // Si ya existe AudioSys (por motor externo), no lo tocamos.
   if (window.AudioSys && typeof window.AudioSys.sfx === "function") return;
