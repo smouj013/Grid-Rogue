@@ -51,6 +51,7 @@
 *{ box-sizing:border-box; }
 html, body{ height:100%; }
 html{ overscroll-behavior:none; }
+
 body{
   margin:0;
   color: var(--text);
@@ -66,6 +67,7 @@ body{
   -webkit-tap-highlight-color:transparent;
   user-select:none;
 }
+
 body::before{
   content:"";
   position:fixed;
@@ -90,9 +92,13 @@ body::before{
     );
   transform: translateZ(0);
 }
-button, input, select{ font-family:inherit; -webkit-tap-highlight-color:transparent; }
+
+button, input, select{
+  font-family:inherit;
+  -webkit-tap-highlight-color:transparent;
+}
 button{ cursor:pointer; }
-a{ color:inherit; }
+a{ color:inherit; text-decoration:none; }
 
 .mono{
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -120,14 +126,16 @@ a{ color:inherit; }
 }
 
 input[type="checkbox"]{ accent-color: var(--accent); }
-input, select{ font-size:16px; } /* iOS anti-zoom */
+input, select{ font-size:16px; }
 
-/* ───────────────────────── App layout ───────────────────────── */
+.hidden{ display:none !important; }
 
+/* App layout */
 #app{
   height: calc(var(--vh, 1vh) * 100);
   display:flex;
   flex-direction:column;
+  min-height:0;
 }
 
 .topbar{
@@ -143,8 +151,13 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   border-bottom:1px solid var(--stroke2);
   background: rgba(10,10,14,0.50);
   backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   position:relative;
   z-index:80;
+}
+
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))){
+  .topbar{ background: rgba(10,10,14,0.78); }
 }
 
 .brand{
@@ -171,6 +184,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   min-width: 0;
   flex-wrap: wrap;
 }
+
 .actions{
   display:flex;
   gap:8px;
@@ -223,16 +237,21 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   justify-content:center;
   overflow:hidden;
   z-index:10;
+  min-height:0;
 }
+
 .canvasWrap{
   width:100%;
   height:100%;
   position:relative;
+  min-height:0;
 }
+
 .gameArea{
   width:100%;
   height:100%;
   position:relative;
+  min-height:0;
 }
 
 .railFrame{
@@ -244,6 +263,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   gap: var(--railPadDesktop);
   align-items:stretch;
   justify-content:center;
+  min-height:0;
 }
 
 .railHud{
@@ -251,7 +271,9 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   max-width: 360px;
   min-width: 280px;
   display:flex;
+  min-height:0;
 }
+
 .hud{
   width:100%;
   border-radius: var(--r);
@@ -261,6 +283,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   padding: 12px;
   position:relative;
   overflow:hidden;
+  min-height:0;
 }
 
 .railCanvas{
@@ -275,7 +298,9 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   align-items:center;
   justify-content:center;
   overflow:hidden;
+  min-height:0;
 }
+
 .canvasSizer{
   width:100%;
   height:100%;
@@ -283,13 +308,19 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   align-items:center;
   justify-content:center;
   padding: 10px;
+  min-height:0;
 }
+
 #gameCanvas{
+  display:block;
+  max-width:100%;
+  max-height:100%;
   border-radius: 18px;
   border: 1px solid rgba(255,255,255,0.10);
   background: #05050b;
   box-shadow: 0 18px 40px rgba(0,0,0,0.40);
   image-rendering: pixelated;
+  touch-action:none;
 }
 
 /* HUD (combo + progreso) */
@@ -395,7 +426,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   transform: translateY(0);
 }
 
-/* HUD flotante (creado por app.js: #hudStatus dentro de #hudFloat) */
+/* HUD flotante */
 #hudFloat{
   position:absolute;
   inset:0;
@@ -403,6 +434,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   z-index:40;
   overflow:visible;
 }
+
 .statusBar{
   display:flex;
   flex-direction:column;
@@ -412,6 +444,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   border:1px solid rgba(255,255,255,0.10);
   background: rgba(0,0,0,0.35);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 16px 40px rgba(0,0,0,0.34);
   pointer-events:none;
 }
@@ -423,6 +456,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   gap:8px;
 }
 .hpWrap .hpIcon{ color: var(--hpFull); }
+
 .hpHearts{
   display:flex;
   gap:3px;
@@ -494,10 +528,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   z-index:70;
   pointer-events:auto;
 }
-.dpadRow{
-  display:flex;
-  gap: var(--dpadGap);
-}
+.dpadRow{ display:flex; gap: var(--dpadGap); }
 .dpadBtn{
   width: var(--dpadBtn);
   height: var(--dpadBtn);
@@ -508,6 +539,10 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   color: var(--text);
 }
 .dpadBtn:active{ transform: translateY(1px); }
+
+@media (hover:hover) and (pointer:fine){
+  .dpad{ display:none !important; }
+}
 
 /* Buttons / inputs */
 .btn{
@@ -520,6 +555,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   font-weight: 700;
 }
 .btn:hover{ border-color: rgba(255,255,255,0.14); }
+.btn:active{ transform: translateY(1px); }
 .btn.primary{
   background: linear-gradient(90deg, rgba(105,168,255,0.35), rgba(255,170,60,0.22));
   border-color: rgba(105,168,255,0.22);
@@ -547,15 +583,16 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
 
 /* Overlays / Panels */
 .overlay{
-  position:absolute;
+  position:fixed;
   inset:0;
   display:flex;
   align-items:center;
   justify-content:center;
   padding: 16px;
   background: var(--overlayBack);
-  z-index:60;
+  z-index:90;
 }
+
 .panel{
   width: min(var(--panelMaxW), 100%);
   border-radius: var(--r);
@@ -578,6 +615,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
 .panelBody{ padding: 12px 14px; }
 
 .h2{ font-weight: 900; letter-spacing:0.2px; font-size:18px; }
+
 .panelActions{
   padding: 12px 14px 14px 14px;
   display:flex;
@@ -620,6 +658,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   background: linear-gradient(90deg, var(--accent), var(--accent2));
   animation: loadMove 1.15s ease-in-out infinite alternate;
 }
+
 @keyframes loadMove{
   from{ transform: translateX(-35%); }
   to{ transform: translateX(35%); }
@@ -635,6 +674,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
 @media (max-width: 980px){
   .upgradeChoices{ grid-template-columns: 1fr; }
 }
+
 .upCard{
   border-radius: 16px;
   border:1px solid rgba(255,255,255,0.10);
@@ -644,6 +684,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   transition: transform .10s ease, border-color .10s ease;
 }
 .upCard:hover{ transform: translateY(-1px); border-color: rgba(255,255,255,0.14); }
+
 .upHead{ display:flex; gap:10px; align-items:flex-start; }
 .upIcon{
   width:42px; height:42px;
@@ -655,8 +696,11 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   justify-content:center;
 }
 .upTitle{ font-weight: 900; }
+
 .upSubRow{ margin-top:4px; display:flex; gap:8px; flex-wrap:wrap; }
-.badge{
+
+.badge,
+.upRarityBadge{
   font-size:12px;
   padding: 3px 8px;
   border-radius: 999px;
@@ -664,7 +708,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   background: rgba(255,255,255,0.05);
   color: rgba(255,255,255,0.80);
 }
-.upRarityBadge{ composes: badge; }
+
 .upDesc{ margin-top:10px; color: rgba(255,255,255,0.78); font-size:13px; line-height:1.35; }
 
 .upCard[data-rarity="legendary"]{ border-color: rgba(255,211,90,0.22); }
@@ -673,11 +717,22 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
 
 .upgradesActions{ padding-top: 10px; }
 
+/* Options */
 .options{
   max-height: min(68vh, 560px);
   overflow:auto;
   padding: 10px 14px 14px 14px;
+  overscroll-behavior: contain;
 }
+
+.options::-webkit-scrollbar{ width:10px; }
+.options::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.10);
+  border-radius: 999px;
+  border: 2px solid rgba(0,0,0,0.20);
+}
+.options::-webkit-scrollbar-track{ background: rgba(0,0,0,0.18); border-radius:999px; }
+
 .optGroupTitle{
   margin-top: 12px;
   display:flex;
@@ -698,7 +753,10 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
   border:1px solid rgba(255,255,255,0.08);
   background: rgba(0,0,0,0.14);
 }
-.optRow.danger{ border-color: rgba(255,59,89,0.18); background: rgba(255,59,89,0.06); }
+.optRow.danger{
+  border-color: rgba(255,59,89,0.18);
+  background: rgba(255,59,89,0.06);
+}
 .sliderRow input[type="range"]{ flex:1 1 auto; }
 
 /* Game over stats */
@@ -711,6 +769,7 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
 }
 .goScore{ font-size:42px; font-weight: 1000; letter-spacing:0.2px; }
 .goBest{ color: var(--muted); }
+
 .stats{
   padding: 10px 14px;
   display:flex;
@@ -740,8 +799,14 @@ input, select{ font-size:16px; } /* iOS anti-zoom */
     max-width: none;
     min-width: 0;
   }
-  .railCanvas{
-    min-height: 48vh;
-  }
+  .railCanvas{ min-height: 48vh; }
   .miniStats{ justify-content:flex-start; }
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce){
+  *{ scroll-behavior:auto !important; }
+  .upCard{ transition:none !important; }
+  .toast{ transition:none !important; }
+  .loadingBarFill{ animation:none !important; }
 }

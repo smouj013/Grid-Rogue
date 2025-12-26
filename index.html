@@ -1,3 +1,4 @@
+<!-- index.html — Grid Rogue v1.0.0 -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -13,7 +14,7 @@
 
   <title>Grid Rogue</title>
 
-  <script>window.APP_VERSION = "0.2.3";</script>
+  <script>window.APP_VERSION = "1.0.0";</script>
 
   <script>
     (function () {
@@ -26,13 +27,13 @@
             const regs = await navigator.serviceWorker.getRegistrations();
             await Promise.all(regs.map(r => r.unregister()));
           }
-        } catch (e) {}
+        } catch (_) {}
         try {
           if (window.caches && caches.keys) {
             const keys = await caches.keys();
             await Promise.all(keys.map(k => caches.delete(k)));
           }
-        } catch (e) {}
+        } catch (_) {}
       }
 
       if (qs.has("repair")) {
@@ -53,12 +54,12 @@
     rel="stylesheet"
   />
 
-  <link rel="manifest" href="./manifest.webmanifest?v=0.2.3" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.0.0" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <link rel="stylesheet" href="./styles.css?v=0.2.3" />
+  <link rel="stylesheet" href="./styles.css?v=1.0.0" />
 </head>
 
 <body>
@@ -107,7 +108,7 @@
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v0.2.3</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v1.0.0</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -135,14 +136,11 @@
     </header>
 
     <main class="stage" id="stage" role="main">
-      <!-- ✅ HUD flotante REAL (lo rellena app.js; aquí SOLO el contenedor) -->
       <div id="hudFloat" class="hudFloat" aria-label="Estado del jugador"></div>
 
       <div class="canvasWrap" id="canvasWrap">
         <div class="gameArea" id="gameArea">
-
           <div class="railFrame" id="railFrame" aria-label="Panel de juego">
-
             <aside class="railHud" id="railHud" aria-label="HUD">
               <div class="hud" id="hud">
                 <div class="combo">
@@ -155,11 +153,8 @@
                     </div>
                   </div>
 
-                  <div class="comboHint" id="comboHint">
-                    Completa la secuencia para subir el multiplicador.
-                  </div>
+                  <div class="comboHint" id="comboHint">Completa la secuencia para subir el multiplicador.</div>
 
-                  <!-- ✅ id coherente con app.js (anchor) -->
                   <div class="levelProg levelProgress" id="levelProgress">
                     <div class="levelRow">
                       <div class="left">
@@ -192,7 +187,6 @@
                 ></canvas>
               </div>
             </div>
-
           </div>
 
           <div class="dpad" id="dpad" hidden>
@@ -211,10 +205,8 @@
               </button>
             </div>
           </div>
-
         </div>
 
-        <!-- Overlays (igual que tenías) -->
         <section class="overlay" id="overlayLoading">
           <div class="panel loadingPanel">
             <div class="splash">
@@ -240,9 +232,7 @@
               <div class="loadingBarFill"></div>
             </div>
 
-            <div class="tiny muted" id="loadingHint">
-              Si tarda, se desbloquea solo (failsafe).
-            </div>
+            <div class="tiny muted" id="loadingHint">Si tarda, se desbloquea solo (failsafe).</div>
 
             <div class="panelActions panelActionsLeft">
               <button class="btn" id="btnEmergencyReload" type="button" hidden>Recargar</button>
@@ -374,9 +364,7 @@
                 <div class="tiny muted">Tu score</div>
                 <div class="goScore" id="goScoreBig">0</div>
               </div>
-              <div class="goBest">
-                Mejor <span class="v" id="goBestBig">0</span>
-              </div>
+              <div class="goBest">Mejor <span class="v" id="goBestBig">0</span></div>
             </div>
 
             <div class="stats" id="goStats"></div>
@@ -399,7 +387,6 @@
             </div>
 
             <div class="options" id="optionsBody">
-              <!-- igual que tenías -->
               <div class="optGroupTitle">
                 <span class="ms" aria-hidden="true">volume_up</span>
                 <span>Audio</span>
@@ -508,91 +495,57 @@
             </div>
           </div>
         </section>
-
       </div>
     </main>
   </div>
 
-  <!-- failsafe (igual que tenías) -->
   <script>
     (function () {
       const $ = (id) => document.getElementById(id);
 
       const overlayLoading = $("overlayLoading");
-      const overlayStart = $("overlayStart");
       const loadingSub = $("loadingSub");
+      const loadingHint = $("loadingHint");
       const btnReload = $("btnEmergencyReload");
       const btnRepair = $("btnEmergencyRepair");
 
-      function setOverlay(el, on) { if (el) el.hidden = !on; }
-      function isBooted() { return (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true); }
+      function booted() {
+        return (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true);
+      }
 
-      function showFailsafe() {
-        if (loadingSub) loadingSub.textContent = "Arranque atascado. Puedes recargar o reparar la PWA.";
+      function showEmergency() {
+        if (booted()) return;
+
+        try {
+          if (loadingSub) loadingSub.textContent = "No termina de cargar…";
+          if (loadingHint) loadingHint.textContent = "Usa Recargar o Reparar PWA (borra SW + caches).";
+        } catch (_) {}
+
         if (btnReload) btnReload.hidden = false;
         if (btnRepair) btnRepair.hidden = false;
-
-        setOverlay(overlayLoading, true);
-        setOverlay(overlayStart, false);
+        if (overlayLoading) overlayLoading.hidden = false;
       }
 
-      btnReload?.addEventListener("click", () => location.reload());
-      btnRepair?.addEventListener("click", async () => {
-        try {
-          if ("serviceWorker" in navigator) {
-            const regs = await navigator.serviceWorker.getRegistrations();
-            await Promise.all(regs.map(r => r.unregister()));
-          }
-          if (window.caches && caches.keys) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map(k => caches.delete(k)));
-          }
-        } catch (e) {}
-        location.reload();
-      });
+      setTimeout(showEmergency, 8000);
 
-      setTimeout(() => { if (!isBooted()) showFailsafe(); }, 7000);
-    })();
-  </script>
+      if (btnReload) btnReload.addEventListener("click", () => location.reload());
 
-  <script>
-    (function () {
-      const root = document.documentElement;
-
-      const ua = navigator.userAgent || "";
-      const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const isStandalone = !!(
-        (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
-        (isIOS && ("standalone" in navigator) && navigator.standalone)
-      );
-
-      const isMobile = !!(
-        (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) ||
-        /Android|iPhone|iPad|iPod/i.test(ua)
-      );
-
-      root.classList.toggle("is-standalone", isStandalone);
-      root.classList.toggle("is-browser", !isStandalone);
-      root.classList.toggle("is-mobile", isMobile);
-      root.classList.toggle("is-desktop", !isMobile);
-
-      const pillMode = document.getElementById("pillMode");
-      if (pillMode) {
-        const modeTxt = isStandalone ? "APP" : "WEB";
-        const devTxt = isMobile ? "MÓVIL" : "PC";
-        const pv = pillMode.querySelector(".pv");
-        if (pv) pv.textContent = `${modeTxt} • ${devTxt}`;
-        pillMode.hidden = false;
+      if (btnRepair) {
+        btnRepair.addEventListener("click", () => {
+          const u = new URL(location.href);
+          u.searchParams.set("repair", "1");
+          location.href = u.toString();
+        });
       }
     })();
   </script>
 
-  <script src="./utils.js?v=0.2.3" defer></script>
-  <script src="./localization.js?v=0.2.3" defer></script>
-  <script src="./auth.js?v=0.2.3" defer></script>
-  <script src="./audio_sys.js?v=0.2.3" defer></script>
-  <script src="./audio.js?v=0.2.3" defer></script>
-  <script src="./rendiment.js?v=0.2.3" defer></script>
-  <script src="./app.js?v=0.2.3" defer></script>
+  <script src="./rendiment.js?v=1.0.0" defer></script>
+  <script src="./utils.js?v=1.0.0" defer></script>
+  <script src="./localization.js?v=1.0.0" defer></script>
+  <script src="./audio_sys.js?v=1.0.0" defer></script>
+  <script src="./audio.js?v=1.0.0" defer></script>
+  <script src="./auth.js?v=1.0.0" defer></script>
+  <script src="./app.js?v=1.0.0" defer></script>
 </body>
 </html>

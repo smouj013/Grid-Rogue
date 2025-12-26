@@ -1,22 +1,22 @@
-/* sw.js — Grid Rogue (v0.2.3) — UPDATED
-   ✅ Robusto para GH Pages / subcarpetas (scope estable)
-   ✅ Precache core: index obligatorio + resto best-effort
-   ✅ Offline navegación: devuelve index.html
-   ✅ Core: stale-while-revalidate (key sin query en estáticos)
+/* sw.js — Grid Rogue (v1.0.0) — STABLE
+   ✅ Robusto para GitHub Pages / subcarpetas (scope estable)
+   ✅ Precache core: index.html obligatorio + resto best-effort (no rompe si falta un asset)
+   ✅ Offline navegación: fallback a index.html (APP_SHELL)
+   ✅ Core: stale-while-revalidate (key normalizada sin query en estáticos)
    ✅ Runtime: stale-while-revalidate suave
-   ✅ Audio: soporte Range (206) usando fetch del recurso completo y slice (iOS/Android)
+   ✅ Audio: soporte Range (206) generando 206 desde un fetch 200 (slice) para iOS/Android
    ✅ Limpieza de caches antiguos (gridrunner/gridrogue)
-   ✅ Evita caches de respuestas opacas / no-ok
+   ✅ No cachea respuestas opaque / no-ok
 */
 "use strict";
 
-const VERSION = "v0.2.3";
+const VERSION = "v1.0.0";
 
 const CACHE_PREFIX = "gridrogue-";
 const CORE_CACHE = `${CACHE_PREFIX}core-${VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-${VERSION}`;
 
-// Borra builds antiguos (incluye el proyecto viejo gridrunner- si existía)
+// Borra builds antiguos (incluye proyecto viejo gridrunner- si existía)
 const OLD_PREFIXES = ["gridrunner-", "gridrogue-"];
 
 // GH Pages / subcarpetas: scope absoluto (clave estable)
@@ -24,23 +24,22 @@ const SCOPE = self.registration.scope;
 const APP_SHELL = new URL("index.html", SCOPE).toString();
 
 // Core assets (sin query, porque stripSearch normaliza)
+// IMPORTANTE: index.html es obligatorio; el resto es best-effort.
 const CORE_ASSETS = [
   // App shell
   APP_SHELL,
   new URL("styles.css", SCOPE).toString(),
 
-  // App dividido
+  // Main
+  new URL("app.js", SCOPE).toString(),
+
+  // Opcionales (best-effort, si existen en tu build no fallan, si no, tampoco)
   new URL("utils.js", SCOPE).toString(),
   new URL("localization.js", SCOPE).toString(),
   new URL("audio_sys.js", SCOPE).toString(),
   new URL("audio.js", SCOPE).toString(),
   new URL("auth.js", SCOPE).toString(),
-
-  // Perf (antes de app.js en index.html)
   new URL("rendiment.js", SCOPE).toString(),
-
-  // Main
-  new URL("app.js", SCOPE).toString(),
 
   // Manifest
   new URL("manifest.webmanifest", SCOPE).toString(),
@@ -116,7 +115,6 @@ function isAudioPath(urlObj) {
 }
 
 function canCacheResponse(res) {
-  // Evita cachear opaque (no-cors) y respuestas malas
   if (!res) return false;
   if (!res.ok) return false;
   if (res.type === "opaque") return false;
@@ -142,8 +140,7 @@ function parseRange(rangeHeader, size) {
 }
 
 async function makeRangedResponse(fullResponse, rangeHeader) {
-  // Importante: fullResponse debe ser una respuesta COMPLETA (200),
-  // aquí la convertimos en 206 con slice de ArrayBuffer.
+  // fullResponse debe ser 200 completo; devolvemos 206 con slice de ArrayBuffer
   const buf = await fullResponse.arrayBuffer();
   const size = buf.byteLength;
 
@@ -169,12 +166,15 @@ async function makeRangedResponse(fullResponse, rangeHeader) {
 async function precacheCore() {
   const cache = await caches.open(CORE_CACHE);
 
-  // index.html obligatorio
-  const shellRes = await fetch(new Request(APP_SHELL, { cache: "reload" }));
+  // index.html obligatorio (si falla, aborta install)
+  const shellReq = new Request(APP_SHELL, { cache: "reload" });
+  const shellRes = await fetch(shellReq);
+
   if (!shellRes || !shellRes.ok) {
     throw new Error(`No se pudo precachear index.html (APP_SHELL). (${shellRes?.status || "?"})`);
   }
-  await cache.put(stripSearch(APP_SHELL), shellRes);
+
+  await cache.put(stripSearch(APP_SHELL), shellRes.clone());
 
   // resto best-effort
   await Promise.allSettled(
@@ -184,8 +184,10 @@ async function precacheCore() {
         try {
           const res = await fetch(new Request(url, { cache: "reload" }));
           if (!canCacheResponse(res)) throw new Error(`Precache failed: ${url} (${res?.status})`);
-          await cache.put(stripSearch(url), res);
-        } catch (_) {}
+          await cache.put(stripSearch(url), res.clone());
+        } catch (_) {
+          // best-effort: no rompemos instalación por assets opcionales
+        }
       })
   );
 }
@@ -228,142 +230,134 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   const msg = event.data;
-  if (msg && msg.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
+  if (msg && msg.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 // ───────────────────────── Fetch strategy ─────────────────────────
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== "GET") return;
+  if (!req || req.method !== "GET") return;
   if (!isSameOrigin(req.url)) return;
 
   const url = new URL(req.url, self.location.href);
   const isNav = isHtmlNavigation(req);
 
+  // Clave normalizada (evita duplicidades por ?v=...)
   const normalizedKey = shouldIgnoreSearch(url) ? stripSearch(req.url) : req.url;
   const looksCore = CORE_SET.has(stripSearch(req.url));
 
-  // Audio RANGE
+  // ── Audio RANGE (iOS/Android) ────────────────────────────────
   if (isAudioPath(url) && req.headers.has("range")) {
-    event.respondWith(
-      (async () => {
-        const key = stripSearch(req.url);
+    event.respondWith((async () => {
+      const key = stripSearch(req.url);
 
-        // 1) intenta caches (core -> runtime)
-        const core = await caches.open(CORE_CACHE);
-        let cached = await core.match(key);
+      // 1) intenta cache (core -> runtime)
+      const core = await caches.open(CORE_CACHE);
+      let cached = await core.match(key);
 
-        if (!cached) {
+      if (!cached) {
+        const runtime = await caches.open(RUNTIME_CACHE);
+        cached = await runtime.match(key);
+      }
+
+      if (cached) {
+        try {
+          return await makeRangedResponse(cached.clone(), req.headers.get("range"));
+        } catch (_) {
+          return cached;
+        }
+      }
+
+      // 2) si no hay cache, pedimos COMPLETO (sin Range) y luego cortamos
+      try {
+        const full = await fetch(new Request(key, { cache: "no-store" })); // sin Range header
+        if (!full || !full.ok) return fetch(req);
+
+        // guarda best-effort en runtime (clave sin query)
+        try {
           const runtime = await caches.open(RUNTIME_CACHE);
-          cached = await runtime.match(key);
-        }
+          if (canCacheResponse(full)) runtime.put(key, full.clone()).catch(() => {});
+        } catch (_) {}
 
-        if (cached) {
-          try {
-            return await makeRangedResponse(cached.clone(), req.headers.get("range"));
-          } catch (_) {
-            return cached;
-          }
-        }
-
-        // 2) si no hay cache, pedimos COMPLETO (sin Range) y luego cortamos
-        try {
-          const full = await fetch(new Request(key, { cache: "no-store" }));
-          if (!full || !full.ok) return fetch(req);
-
-          // guarda best-effort en runtime (clave sin query)
-          try {
-            const runtime = await caches.open(RUNTIME_CACHE);
-            if (canCacheResponse(full)) runtime.put(key, full.clone()).catch(() => {});
-          } catch (_) {}
-
-          return await makeRangedResponse(full, req.headers.get("range"));
-        } catch (_) {
-          return fetch(req);
-        }
-      })()
-    );
+        return await makeRangedResponse(full, req.headers.get("range"));
+      } catch (_) {
+        return fetch(req);
+      }
+    })());
     return;
   }
 
-  // Navegación (HTML) -> network-first + fallback a shell
+  // ── Navegación (HTML) -> network-first + fallback a APP_SHELL ──
   if (isNav) {
-    event.respondWith(
-      (async () => {
-        const core = await caches.open(CORE_CACHE);
+    event.respondWith((async () => {
+      const core = await caches.open(CORE_CACHE);
 
-        try {
-          const preload = await event.preloadResponse;
-          if (preload && preload.ok) {
-            core.put(stripSearch(APP_SHELL), preload.clone()).catch(() => {});
-            return preload;
-          }
-
-          const fresh = await fetch(req);
-          if (fresh && fresh.ok) {
-            core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
-            return fresh;
-          }
-
-          throw new Error("Nav fetch not ok");
-        } catch (_) {
-          const cached = await core.match(stripSearch(APP_SHELL));
-          return (
-            cached ||
-            new Response("Offline", {
-              status: 503,
-              headers: { "Content-Type": "text/plain; charset=utf-8" },
-            })
-          );
+      try {
+        const preload = await event.preloadResponse;
+        if (preload && preload.ok) {
+          core.put(stripSearch(APP_SHELL), preload.clone()).catch(() => {});
+          return preload;
         }
-      })()
-    );
-    return;
-  }
 
-  // Core assets: stale-while-revalidate (con stripSearch)
-  if (looksCore) {
-    event.respondWith(
-      (async () => {
-        const core = await caches.open(CORE_CACHE);
-        const key = stripSearch(req.url);
+        const fresh = await fetch(req);
+        if (fresh && fresh.ok) {
+          // Guardamos como shell para fallback offline (clave estable)
+          core.put(stripSearch(APP_SHELL), fresh.clone()).catch(() => {});
+          return fresh;
+        }
 
-        const cached = await core.match(key);
-
-        const refresh = fetch(req)
-          .then((res) => {
-            if (canCacheResponse(res)) core.put(key, res.clone()).catch(() => {});
-            return res;
+        throw new Error("Nav fetch not ok");
+      } catch (_) {
+        const cachedShell = await core.match(stripSearch(APP_SHELL));
+        return (
+          cachedShell ||
+          new Response("Offline", {
+            status: 503,
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
           })
-          .catch(() => null);
-
-        return cached || (await refresh) || new Response("", { status: 504 });
-      })()
-    );
+        );
+      }
+    })());
     return;
   }
 
-  // Runtime: stale-while-revalidate suave (cache si existe, pero siempre intenta refrescar)
-  event.respondWith(
-    (async () => {
-      const runtime = await caches.open(RUNTIME_CACHE);
-      const cached = await runtime.match(normalizedKey);
+  // ── Core assets: stale-while-revalidate (con stripSearch) ──────
+  if (looksCore) {
+    event.respondWith((async () => {
+      const core = await caches.open(CORE_CACHE);
+      const key = stripSearch(req.url);
+
+      const cached = await core.match(key);
 
       const refresh = fetch(req)
         .then((res) => {
-          if (canCacheResponse(res)) runtime.put(normalizedKey, res.clone()).catch(() => {});
+          if (canCacheResponse(res)) core.put(key, res.clone()).catch(() => {});
           return res;
         })
         .catch(() => null);
 
-      if (cached) {
-        refresh.catch(() => {});
-        return cached;
-      }
+      return cached || (await refresh) || new Response("", { status: 504 });
+    })());
+    return;
+  }
 
-      return (await refresh) || new Response("", { status: 504 });
-    })()
-  );
+  // ── Runtime: stale-while-revalidate suave ──────────────────────
+  event.respondWith((async () => {
+    const runtime = await caches.open(RUNTIME_CACHE);
+    const cached = await runtime.match(normalizedKey);
+
+    const refresh = fetch(req)
+      .then((res) => {
+        if (canCacheResponse(res)) runtime.put(normalizedKey, res.clone()).catch(() => {});
+        return res;
+      })
+      .catch(() => null);
+
+    if (cached) {
+      refresh.catch(() => {});
+      return cached;
+    }
+
+    return (await refresh) || new Response("", { status: 504 });
+  })());
 });

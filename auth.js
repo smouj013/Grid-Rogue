@@ -1,18 +1,22 @@
-/* auth.js — Grid Rogue v0.2.3 (UPDATED+HARDENED)
+/* auth.js — Grid Rogue v1.0.0 (STABLE+HARDENED)
    Perfiles locales + best score + prefs opcionales por perfil.
-   ✅ Mantiene API y migración desde gridrunner_* (sin perder datos)
-   ✅ Sanitización reforzada (ids/nombres/prefs)
-   ✅ Anti-corrupt: auto-repair si el estado guardado viene roto
-   ✅ canLS robusto + fallback en memoria si LS bloqueado (Safari privado / políticas)
-   ✅ Evita duplicados de nombre (case-insensitive) y de id
-   ✅ Export/Import con merge/replace seguro
+   ✅ API estable: window.Auth (list/create/rename/delete/setActive/best/prefs/export/import)
+   ✅ Migración: gridrunner_* + gridrogue_auth_v1 (sin perder datos)
+   ✅ Anti-corrupt: sanitiza/recorta/normaliza y auto-repara estado
+   ✅ Storage robusto: localStorage si se puede, fallback RAM si está bloqueado
+   ✅ Anti doble carga: guard global
 */
 (() => {
   "use strict";
 
-  const VERSION = "0.2.0";
+  const g = (typeof globalThis !== "undefined") ? globalThis : (typeof window !== "undefined" ? window : {});
+  const LOAD_GUARD = "__GRIDROGUE_AUTHJS_LOADED_V1000";
+  try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
-  const U = window.GRUtils || window.Utils || null;
+  const VERSION = "1.0.0";
+
+  // Utils opcionales (compat)
+  const U = (typeof window !== "undefined" && (window.GRUtils || window.Utils)) ? (window.GRUtils || window.Utils) : null;
 
   const now = (U && typeof U.now === "function") ? U.now : (() => Date.now());
 
@@ -40,7 +44,7 @@
       v = Number(v);
       if (!Number.isFinite(v)) v = a;
       v = v | 0;
-      return Math.max(a, Math.min(b, v));
+      return Math.max(a | 0, Math.min(b | 0, v));
     });
 
   const canLS =
@@ -56,7 +60,7 @@
       }
     });
 
-  // ───────────────────────── Storage layer (LS + fallback RAM) ─────────────────────────
+  // ───────────────────────── Storage (LS + fallback RAM) ─────────────────────────
   const __RAM = Object.create(null);
 
   function readLS(key) {
@@ -75,40 +79,56 @@
     }
   }
 
-  // ───────────────────────── Keys ─────────────────────────
+  // ───────────────────────── Keys (compat) ─────────────────────────
   const AUTH_KEY = "gridrogue_auth_v1";
-
   const AUTH_KEY_OLD = "gridrunner_auth_v1";
   const LEGACY_NAME_KEY = "gridrunner_name_v1";
   const LEGACY_BEST_KEY = "gridrunner_best_v1";
 
   // ───────────────────────── ID helpers ─────────────────────────
   const hasCrypto = () => {
-    try { return !!(globalThis.crypto && crypto.getRandomValues); } catch { return false; }
+    try { return !!(g.crypto && g.crypto.getRandomValues); } catch { return false; }
   };
 
   const uid = () => {
     if (hasCrypto()) {
       const buf = new Uint32Array(4);
-      crypto.getRandomValues(buf);
+      g.crypto.getRandomValues(buf);
       return "p_" + Array.from(buf).map(n => n.toString(16).padStart(8, "0")).join("_");
     }
     return "p_" + Math.random().toString(16).slice(2) + "_" + Math.random().toString(16).slice(2);
   };
 
-  function normalizeName(name) {
-    // Manténlo simple, pero robusto (sin chars invisibles)
-    const s = safeString(name)
-      .replace(/[\u0000-\u001f\u007f]/g, "")
-      .trim()
-      .slice(0, 16);
-    return s;
-  }
-
   function safeObj(v) {
     return (v && typeof v === "object") ? v : null;
   }
 
+  function normalizeName(name) {
+    return safeString(name)
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 16);
+  }
+
+  function uniqueNameAgainstSet(baseName, usedLowerSet) {
+    const base = normalizeName(baseName);
+    if (base.length < 2) return null;
+
+    const lower = base.toLowerCase();
+    if (!usedLowerSet.has(lower)) return base;
+
+    for (let i = 2; i <= 99; i++) {
+      const suf = ` (${i})`;
+      const maxLen = Math.max(2, 16 - suf.length);
+      const cand = (base.slice(0, maxLen) + suf).slice(0, 16);
+      const cLower = cand.toLowerCase();
+      if (!usedLowerSet.has(cLower)) return cand;
+    }
+    return (base.slice(0, 14) + " *").slice(0, 16);
+  }
+
+  // ───────────────────────── Sanitizers ─────────────────────────
   function sanitizePrefs(prefs) {
     const o = safeObj(prefs);
     if (!o) return null;
@@ -124,6 +144,7 @@
     // Controles
     if ("vibration" in o) out.vibration = !!o.vibration;
     if ("showDpad" in o) out.showDpad = !!o.showDpad;
+
     if ("mobileControls" in o) {
       const mc = safeString(o.mobileControls).trim().toLowerCase();
       out.mobileControls = (mc === "on" || mc === "off" || mc === "auto") ? mc : "auto";
@@ -150,14 +171,17 @@
     return Object.keys(out).length ? out : null;
   }
 
-  function sanitizeProfile(p) {
+  function sanitizeProfile(p, usedIds, usedNamesLower) {
     if (!p || typeof p !== "object") return null;
 
     let id = (typeof p.id === "string" && p.id.trim()) ? p.id.trim() : uid();
-    // Si el id viene súper largo/extraño, lo recortamos (evita keys gigantes por corrupción)
     id = safeString(id).replace(/\s+/g, "").slice(0, 80) || uid();
+    if (usedIds.has(id)) id = uid();
+    usedIds.add(id);
 
-    const name = normalizeName(p.name) || "Jugador";
+    const nm0 = normalizeName(p.name) || "Jugador";
+    const name = uniqueNameAgainstSet(nm0, usedNamesLower) || "Jugador";
+    usedNamesLower.add(name.toLowerCase());
 
     const createdAt = Number.isFinite(+p.createdAt) ? +p.createdAt : now();
     const lastLoginAt = Number.isFinite(+p.lastLoginAt) ? +p.lastLoginAt : createdAt;
@@ -165,91 +189,90 @@
     const best = Math.max(0, (p.best | 0));
     const prefs = sanitizePrefs(p.prefs);
 
-    return { id, name, createdAt, lastLoginAt, best, ...(prefs ? { prefs } : {}) };
+    const out = { id, name, createdAt, lastLoginAt, best };
+    if (prefs) out.prefs = prefs;
+    return out;
   }
 
   function sanitizeState(st) {
-    const rawProfiles = Array.isArray(st?.profiles) ? st.profiles : [];
+    const profilesRaw = Array.isArray(st && st.profiles) ? st.profiles : [];
+    const usedIds = new Set();
+    const usedNamesLower = new Set();
+
     const cleaned = [];
-    const seen = new Set();
+    const MAX_PROFILES = 32;
 
-    for (const p of rawProfiles) {
-      const sp = sanitizeProfile(p);
-      if (!sp) continue;
-
-      if (seen.has(sp.id)) sp.id = uid();
-      seen.add(sp.id);
-
-      cleaned.push(sp);
+    for (let i = 0; i < profilesRaw.length && cleaned.length < MAX_PROFILES; i++) {
+      const sp = sanitizeProfile(profilesRaw[i], usedIds, usedNamesLower);
+      if (sp) cleaned.push(sp);
     }
 
-    // Orden: recientes arriba
     cleaned.sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
 
     let activeId = (typeof st?.activeId === "string" ? st.activeId : null);
-    if (activeId && !cleaned.some(p => p.id === activeId)) {
-      activeId = cleaned[0]?.id || null;
-    }
+    if (activeId && !cleaned.some(p => p.id === activeId)) activeId = null;
+    if (!activeId && cleaned.length) activeId = cleaned[0].id;
 
-    return { v: clampInt(st?.v ?? 1, 1, 99), activeId, profiles: cleaned };
+    return {
+      v: clampInt(st?.v ?? 1, 1, 99),
+      activeId,
+      profiles: cleaned,
+    };
   }
 
+  // ───────────────────────── Load / Save / Migration ─────────────────────────
   function loadStateFromKey(key) {
     const raw = readLS(key);
     const st = raw ? safeParse(raw, null) : null;
-
-    if (!st || typeof st !== "object") return null;
-    if (!Array.isArray(st.profiles)) return null;
-
+    if (!st || typeof st !== "object" || !Array.isArray(st.profiles)) return null;
     return sanitizeState(st);
   }
 
   function loadState() {
-    const fresh = loadStateFromKey(AUTH_KEY);
-    if (fresh) return { st: fresh, loadedFrom: AUTH_KEY };
+    const stNew = loadStateFromKey(AUTH_KEY);
+    if (stNew) return { st: stNew, loadedFrom: AUTH_KEY };
 
-    const old = loadStateFromKey(AUTH_KEY_OLD);
-    if (old) return { st: old, loadedFrom: AUTH_KEY_OLD };
+    const stOld = loadStateFromKey(AUTH_KEY_OLD);
+    if (stOld) return { st: stOld, loadedFrom: AUTH_KEY_OLD };
 
     return { st: { v: 1, activeId: null, profiles: [] }, loadedFrom: null };
   }
 
   function saveState(st) {
-    // Aunque canLS falle, seguimos guardando en RAM (writeLS lo hace)
-    const json = safeStringify(st, "");
+    const clean = sanitizeState(st);
+    const json = safeStringify(clean, "");
     if (!json) return false;
 
     const okNew = writeLS(AUTH_KEY, json);
-    // Mantén compat (viejo key)
+    // compat: mantenemos espejo en key antiguo (no rompe builds viejos)
     writeLS(AUTH_KEY_OLD, json);
 
-    // Si LS está disponible, okNew suele ser true; si no, se queda en RAM
     return okNew || !canLS();
   }
 
   function ensureMigration(st, loadedFrom) {
-    // Si venimos del key viejo, guardamos al nuevo también
     if (loadedFrom === AUTH_KEY_OLD) saveState(st);
 
-    // Si ya hay perfiles, ok
     if (st.profiles.length > 0) return st;
 
-    // Migración legacy (name/best sueltos)
     const legacyName = normalizeName(readLS(LEGACY_NAME_KEY) || "");
     const legacyBest = parseInt(readLS(LEGACY_BEST_KEY) || "0", 10) || 0;
 
-    const name = legacyName.length >= 2 ? legacyName : "Jugador";
-    const id = uid();
+    const p = sanitizeProfile(
+      {
+        id: uid(),
+        name: legacyName.length >= 2 ? legacyName : "Jugador",
+        createdAt: now(),
+        lastLoginAt: now(),
+        best: Math.max(0, legacyBest | 0),
+      },
+      new Set(),
+      new Set()
+    );
 
-    st.profiles.push({
-      id,
-      name,
-      createdAt: now(),
-      lastLoginAt: now(),
-      best: Math.max(0, legacyBest | 0),
-    });
+    st.profiles.push(p);
+    st.activeId = p.id;
 
-    st.activeId = id;
     saveState(st);
     return st;
   }
@@ -258,34 +281,30 @@
   const loaded = loadState();
   const state = ensureMigration(loaded.st, loaded.loadedFrom);
 
-  // Auto-repair si viene corrupto (ej: activeId null con perfiles existentes)
+  // auto-repair extra
   if (!state.activeId && state.profiles.length) {
     state.activeId = state.profiles[0].id;
     saveState(state);
   }
 
-  // Helpers internos
+  // ───────────────────────── Internal helpers ─────────────────────────
   function cloneProfile(p) {
     return p ? { ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) } : null;
   }
-  function uniqueName(name, exceptId = null) {
-    const base = normalizeName(name);
-    if (base.length < 2) return null;
 
-    const lower = base.toLowerCase();
-    const dup = state.profiles.find(p => p.id !== exceptId && (p.name || "").toLowerCase() === lower);
-    if (!dup) return base;
-
-    // Añade sufijo simple " (2)" " (3)"...
-    for (let i = 2; i <= 99; i++) {
-      const cand = (base.slice(0, 16 - (` (${i})`.length)) + ` (${i})`).slice(0, 16);
-      const cLower = cand.toLowerCase();
-      if (!state.profiles.some(p => p.id !== exceptId && (p.name || "").toLowerCase() === cLower)) {
-        return cand;
-      }
+  function buildUsedNameSet(exceptId = null) {
+    const set = new Set();
+    for (const p of state.profiles) {
+      if (!p || typeof p !== "object") continue;
+      if (exceptId && p.id === exceptId) continue;
+      set.add((p.name || "").toLowerCase());
     }
-    // fallback extremo
-    return (base.slice(0, 14) + " *").slice(0, 16);
+    return set;
+  }
+
+  function uniqueName(name, exceptId = null) {
+    const used = buildUsedNameSet(exceptId);
+    return uniqueNameAgainstSet(name, used);
   }
 
   // ───────────────────────── Public API ─────────────────────────
@@ -308,7 +327,6 @@
     state.activeId = p.id;
     p.lastLoginAt = now();
     saveState(state);
-
     return cloneProfile(p);
   }
 
@@ -325,9 +343,14 @@
     if (!nm) return null;
 
     const id = uid();
-    const p = { id, name: nm, createdAt: now(), lastLoginAt: now(), best: 0 };
+    const p = sanitizeProfile(
+      { id, name: nm, createdAt: now(), lastLoginAt: now(), best: 0 },
+      new Set(state.profiles.map(x => x.id)),
+      buildUsedNameSet(null)
+    );
+
     state.profiles.push(p);
-    state.activeId = id;
+    state.activeId = p.id;
     saveState(state);
     return cloneProfile(p);
   }
@@ -342,7 +365,6 @@
     p.name = nm;
     p.lastLoginAt = now();
     saveState(state);
-
     return cloneProfile(p);
   }
 
@@ -356,7 +378,6 @@
     if (state.profiles.length === 0) {
       state.activeId = null;
     } else if (wasActive) {
-      // el más reciente
       state.profiles.sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
       state.activeId = state.profiles[0].id;
     }
@@ -455,21 +476,27 @@
     }
 
     const existingIds = new Set(state.profiles.map(p => p.id));
-    const existingNames = new Set(state.profiles.map(p => (p.name || "").toLowerCase()));
+    const usedNamesLower = buildUsedNameSet(null);
 
     for (const p of inc.profiles) {
       let id = p.id;
       if (existingIds.has(id)) id = uid();
       existingIds.add(id);
 
-      let name = p.name || "Jugador";
-      const lower = name.toLowerCase();
-      if (existingNames.has(lower)) {
-        name = uniqueName(name, null) || name;
-      }
-      existingNames.add(name.toLowerCase());
+      const name = uniqueNameAgainstSet(p.name || "Jugador", usedNamesLower) || "Jugador";
+      usedNamesLower.add(name.toLowerCase());
 
-      state.profiles.push({ ...p, id, name });
+      state.profiles.push({
+        id,
+        name,
+        createdAt: Number.isFinite(+p.createdAt) ? +p.createdAt : now(),
+        lastLoginAt: Number.isFinite(+p.lastLoginAt) ? +p.lastLoginAt : now(),
+        best: Math.max(0, (p.best | 0)),
+        ...(p.prefs ? { prefs: sanitizePrefs(p.prefs) || undefined } : {}),
+      });
+      // limpia undefined si lo hubiera
+      const last = state.profiles[state.profiles.length - 1];
+      if (last && last.prefs === undefined) delete last.prefs;
     }
 
     const merged = sanitizeState({
@@ -480,10 +507,7 @@
 
     state.v = merged.v;
     state.profiles = merged.profiles;
-
-    if (!state.activeId || !state.profiles.some(p => p.id === state.activeId)) {
-      state.activeId = merged.activeId || state.profiles[0]?.id || null;
-    }
+    state.activeId = merged.activeId || state.profiles[0]?.id || null;
 
     saveState(state);
     return { ok: true, mode: "merge", count: state.profiles.length };
@@ -505,8 +529,8 @@
     return true;
   }
 
-  // API estable
-  window.Auth = {
+  // ───────────────────────── Expose ─────────────────────────
+  const api = {
     VERSION,
 
     listProfiles,
@@ -530,4 +554,11 @@
     patchPrefsForActive,
     clearPrefsForActive,
   };
+
+  try {
+    if (typeof window !== "undefined") window.Auth = api;
+    else g.Auth = api;
+  } catch (_) {
+    try { g.Auth = api; } catch (_) {}
+  }
 })();

@@ -1,4 +1,4 @@
-/* app.js — Grid Rogue v0.2.3 (STABLE+FULLSCREEN + AUDIO + I18N)
+/* app.js — Grid Rogue v1.0.0 (STABLE+FULLSCREEN + AUDIO + I18N + PWA)
    ✅ Compatible con:
    - utils.js (window.GRUtils)
    - audio.js (window.AudioSys)
@@ -11,10 +11,10 @@
 
   // ───────────────────────── Guard anti doble carga ─────────────────────────
   const g = (typeof globalThis !== "undefined") ? globalThis : window;
-  const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V0200";
+  const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V1000";
   try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
-  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.0");
+  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "1.0.0");
 
   // Compat flags (failsafe/index antiguo) — no pisar si ya existen
   try {
@@ -65,13 +65,13 @@
     else el.textContent = String(v);
   });
 
-  const setState = U.setState || ((s) => { try { document.body.dataset.state = s; } catch {} });
+  const setState = U.setState || ((s) => { try { document.body.dataset.state = String(s); } catch {} });
 
   const I18n = (typeof window !== "undefined" && window.I18n) ? window.I18n : {
     setLang() {},
     getLang() { return "es"; },
     t(k, a) { return (a != null) ? `${k} ${a}` : k; },
-    languageOptions() { return []; },
+    languageOptions() { return [{ code: "auto", label: "Auto" }, { code: "es", label: "Español" }, { code: "en", label: "English" }]; },
     applyDataAttrs() {},
   };
 
@@ -113,7 +113,7 @@
   const SW_RELOAD_KEY_OLD = "gridrunner_sw_reload_once";
 
   function readLS(k) { try { return localStorage.getItem(k); } catch { return null; } }
-  function writeLS(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }
+  function writeLS(k, v) { try { localStorage.setItem(k, String(v)); return true; } catch { return false; } }
 
   function migrateKeyIfNeeded(newKey, oldKey) {
     const n = readLS(newKey);
@@ -515,7 +515,7 @@
   let btnOptions, btnPause, btnRestart, btnInstall;
 
   let overlayLoading, overlayPress, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
-  let btnPressStart, pressSub, pressHint, pressMeta;
+  let btnPressStart, pressMeta;
   let pillModeVal, railCanvasEl;
 
   let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
@@ -526,7 +526,6 @@
   let goStats, goScoreBig, goBestBig, btnBackToStart, btnRetry;
 
   let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal, btnRepairPWA;
-
   let optMusicOn, optSfxOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
 
   let optLang = null;
@@ -538,7 +537,7 @@
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
 
-  // HUD flotante (para que NO empuje layout del HUD)
+  // HUD flotante
   let hudFloat = null;
   let hudStatus = null;
   let hudHearts = null;
@@ -569,7 +568,7 @@
   // ───────────────────────── UI helpers ─────────────────────────
   function showToast(msg, ms = 900) {
     if (!toast) return;
-    toast.textContent = msg;
+    toast.textContent = String(msg ?? "");
     toast.hidden = false;
     toast.classList.add("show");
     toastT = ms;
@@ -606,11 +605,7 @@
 
   function escapeAttr(s) {
     const v = String(s ?? "");
-    return v
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    return v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   // ───────────────────────── HUD FLOAT LAYER ─────────────────────────
@@ -630,20 +625,17 @@
 
   function ensureHudFloatLayer() {
     ensureCriticalCSS();
-
     if (hudFloat && hudFloat.parentElement) return;
 
     const existing = $("hudFloat");
     if (existing) { hudFloat = existing; return; }
 
-    // Importante: host = STAGE para que el HUD flotante NO afecte a la maquetación del HUD real.
     const host = stage || document.body;
     if (!host) return;
 
     try {
       const cs = getComputedStyle(host);
       if (cs.position === "static") host.style.position = "relative";
-      // Evita que un overflow hidden “corte” los badges/vida
       if (cs.overflow === "hidden") host.style.overflow = "visible";
     } catch {}
 
@@ -676,7 +668,6 @@
   function positionHudStatus() {
     if (!hudStatus || !hudFloat) return;
 
-    // Referencia: stage (ideal), si no, fallback
     const ref = stage || document.body;
     const refRect = ref.getBoundingClientRect?.();
     if (!refRect) return;
@@ -697,9 +688,8 @@
       y = Math.round((a.bottom - refRect.top) + 6 + vvTop);
       w = Math.round(a.width);
 
-      if ((y + 52) > (refRect.height + vvTop)) {
-        y = Math.round((a.top - refRect.top) - 52 - 6 + vvTop);
-      }
+      if ((y + 52) > (refRect.height + vvTop)) y = Math.round((a.top - refRect.top) - 52 - 6 + vvTop);
+
       x = clampInt(x, 6, Math.max(6, Math.round(refRect.width - 6 - w)));
       y = clampInt(y, 6, Math.max(6, Math.round(refRect.height - 6 - 52)));
     }
@@ -825,18 +815,13 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     const items = [];
 
     if (shields > 0) items.push(makeBuffBadge({ kind: "shield", icon: "shield", count: shields, title: T("buff_shield", "Escudo") }));
-
-    if (magnet > 0 && magnetTime > 0.01) items.push(makeBuffBadge({
-      kind: "magnet", icon: "compass_calibration", count: magnet, time: magnetTime, title: T("buff_magnet", "Imán"),
-    }));
+    if (magnet > 0 && magnetTime > 0.01) items.push(makeBuffBadge({ kind: "magnet", icon: "compass_calibration", count: magnet, time: magnetTime, title: T("buff_magnet", "Imán") }));
 
     const boostCount = pickedCount.get("boost") || 0;
     if (boostCount > 0) items.push(makeBuffBadge({ kind: "boost", icon: "bolt", count: boostCount, title: T("buff_boost", "Puntos +") }));
 
     if (trapResist > 0) items.push(makeBuffBadge({ kind: "resist", icon: "verified_user", count: trapResist, title: T("buff_trap_resist", "Resistencia a trampas") }));
-
     if (zoneExtra > 0) items.push(makeBuffBadge({ kind: "zone", icon: "open_with", count: zoneExtra, title: T("buff_zone", "Zona +") }));
-
     if (rerolls > 0) items.push(makeBuffBadge({ kind: "reroll", icon: "casino", count: rerolls, title: T("buff_rerolls", "Rerolls") }));
 
     const hpExtra = Math.max(0, hpMax - HP_START);
@@ -875,16 +860,16 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   function setupLanguageUI() {
     optLang = $("optLang");
     if (optLang) return;
-
     if (!overlayOptions) return;
+
     try {
       const host =
         overlayOptions.querySelector?.("#optionsBody") ||
         overlayOptions.querySelector?.(".panel") ||
         overlayOptions.querySelector?.(".card") ||
         overlayOptions;
-
       if (!host) return;
+
       if (overlayOptions.querySelector?.("#optLang")) { optLang = $("optLang"); return; }
 
       const row = document.createElement("div");
@@ -942,7 +927,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
     const coarse = isCoarsePointer() || isMobileUA();
     if (dpad) dpad.hidden = !(coarse && settings.showDpad);
-      document.documentElement.classList.toggle("dpadOn", coarse && settings.showDpad);
+    document.documentElement.classList.toggle("dpadOn", coarse && settings.showDpad);
 
     I18n.applyDataAttrs(document);
     applyAudioSettingsNow();
@@ -971,8 +956,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       let roll = Math.random() * (wGood + wTrap + wBlock);
 
       if (roll < wGood) {
-        const g = Math.random();
-        out[c] = (g < 0.68) ? CellType.Coin : (g < 0.92) ? CellType.Gem : CellType.Bonus;
+        const gg = Math.random();
+        out[c] = (gg < 0.68) ? CellType.Coin : (gg < 0.92) ? CellType.Gem : CellType.Bonus;
       } else if (roll < wGood + wTrap) out[c] = CellType.Trap;
       else out[c] = CellType.Block;
     }
@@ -2101,7 +2086,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   // ───────────────────────── Input ─────────────────────────
   function isAnyBlockingOverlayOpen() {
     const open = (el) => el && el.hidden === false;
-    return open(overlayStart) || open(overlayOptions) || open(overlayUpgrades) || open(overlayPaused) || open(overlayGameOver) || open(overlayError) || open(overlayLoading);
+    return open(overlayStart) || open(overlayOptions) || open(overlayUpgrades) || open(overlayPaused) || open(overlayGameOver) || open(overlayError) || open(overlayLoading) || open(overlayPress);
   }
 
   function canControl() {
@@ -2203,15 +2188,14 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     updateStatusHUD();
   }
 
-  function showPressToStart(){
-    if (!overlayPress){
+  function showPressToStart() {
+    if (!overlayPress) {
       overlayShow(overlayStart);
       return;
     }
 
-    // Preparar texto de modo / dispositivo
-    const mode = (U && U.isStandalone && U.isStandalone()) ? "APP" : "WEB";
-    const device = (U && U.isMobileLike && U.isMobileLike()) ? "MÓVIL" : "PC";
+    const mode = (typeof matchMedia === "function" && matchMedia("(display-mode: standalone)").matches) || (navigator.standalone === true) ? "APP" : "WEB";
+    const device = isMobileLayout() ? "MÓVIL" : "PC";
     if (pillModeVal) pillModeVal.textContent = `${mode} • ${device}`;
     if (pressMeta) pressMeta.textContent = `Modo: ${mode} • ${device}`;
 
@@ -2223,33 +2207,27 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       if (done) return;
       done = true;
 
-      try{ sessionStorage.setItem("gridrogue_press_seen_v1", "1"); }catch(_){}
-      try{ AudioSys && AudioSys.unlock && AudioSys.unlock(true); }catch(_){}
+      try { sessionStorage.setItem("gridrogue_press_seen_v1", "1"); } catch (_) {}
+      try { AudioSys?.unlock?.(true); } catch (_) {}
 
       await overlayFadeOut(overlayPress, 160);
       overlayShow(overlayStart);
 
-      // Focus UX
-      try{ btnStart && btnStart.focus && btnStart.focus(); }catch(_){}
+      try { btnStart?.focus?.(); } catch (_) {}
     };
 
-    if (btnPressStart){
-      btnPressStart.onclick = proceed;
-    }
+    if (btnPressStart) btnPressStart.onclick = proceed;
 
     const onAny = (e) => {
-      // Evitar disparos cuando el usuario intenta seleccionar texto
       if (e && e.target && e.target.closest && e.target.closest("a,button,input,select,textarea")) {
-        // Si es el botón de empezar, dejar al click hacer su trabajo
         if (e.target === btnPressStart) return;
       }
       proceed();
     };
 
-    // Captura una sola vez, luego se limpia.
-    window.addEventListener("keydown", onAny, { once:true });
-    window.addEventListener("pointerdown", onAny, { once:true, passive:true });
-    window.addEventListener("touchstart", onAny, { once:true, passive:true });
+    window.addEventListener("keydown", onAny, { once: true });
+    window.addEventListener("pointerdown", onAny, { once: true, passive: true });
+    window.addEventListener("touchstart", onAny, { once: true, passive: true });
   }
 
   function hideOptions() {
@@ -2325,6 +2303,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     overlayHide(overlayOptions);
     overlayHide(overlayUpgrades);
     overlayHide(overlayError);
+    overlayHide(overlayPress);
 
     running = true;
     paused = false;
@@ -2386,7 +2365,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
     if (goStats) {
       goStats.innerHTML = `
-<div class="line"><span>${I18n.t("stats_reason")}</span><span>${reason}</span></div>
+<div class="line"><span>${I18n.t("stats_reason")}</span><span>${escapeAttr(reason)}</span></div>
 <div class="line"><span>${I18n.t("stats_level")}</span><span>${level}</span></div>
 <div class="line"><span>${I18n.t("stats_time")}</span><span>${Math.round(runTime)}s</span></div>
 <div class="line"><span>${I18n.t("stats_streak")}</span><span>${streak}</span></div>
@@ -2485,7 +2464,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   function isStandalone() {
     return (window.matchMedia?.("(display-mode: standalone)")?.matches) ||
       (window.navigator.standalone === true) ||
-      document.referrer.includes("android-app://");
+      (document.referrer || "").includes("android-app://");
   }
 
   function markUpdateAvailable(msg = null) {
@@ -2713,13 +2692,11 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     btnInstall = $("btnInstall");
 
     overlayLoading = $("overlayLoading");
-      overlayPress = $("overlayPress");
+    overlayPress = $("overlayPress");
     loadingSub = $("loadingSub");
     overlayStart = $("overlayStart");
 
     btnPressStart = $("btnPressStart");
-    pressSub = $("pressSub");
-    pressHint = $("pressHint");
     pressMeta = $("pressMeta");
     pillModeVal = $("pillModeVal");
     railCanvasEl = $("railCanvas");
@@ -2842,7 +2819,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
       btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); updateStatusHUD(); });
       btnQuitToStart?.addEventListener("click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused, 120); resetRun(true); });
-
       btnPausedRestart?.addEventListener("click", () => { AudioSys.sfx("ui"); resetRun(false); startRun(); });
 
       btnRetry?.addEventListener("click", () => { resetRun(false); startRun(); });
@@ -2855,6 +2831,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       optSprites?.addEventListener("change", () => { settings.useSprites = !!optSprites.checked; saveSettings(); pushPrefsToAuth(); });
       optVibration?.addEventListener("change", () => { settings.vibration = !!optVibration.checked; saveSettings(); pushPrefsToAuth(); });
       optDpad?.addEventListener("change", () => { settings.showDpad = !!optDpad.checked; applySettingsToUI(); saveSettings(); pushPrefsToAuth(); });
+
       optFx?.addEventListener("input", () => {
         settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
         if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
@@ -2864,6 +2841,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
       optMusicOn?.addEventListener("change", () => { AudioSys.unlock(); settings.musicOn = !!optMusicOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
       optSfxOn?.addEventListener("change", () => { AudioSys.unlock(); settings.sfxOn = !!optSfxOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+
       optMusicVol?.addEventListener("input", () => {
         AudioSys.unlock();
         settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.6"), 0, 1);
@@ -2872,6 +2850,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         saveSettings();
         pushPrefsToAuth();
       });
+
       optSfxVol?.addEventListener("input", () => {
         AudioSys.unlock();
         settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.9"), 0, 1);
@@ -2880,6 +2859,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         saveSettings();
         pushPrefsToAuth();
       });
+
       optMuteAll?.addEventListener("change", () => { AudioSys.unlock(); settings.muteAll = !!optMuteAll.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
 
       btnTestAudio?.addEventListener("click", async () => {
@@ -2944,6 +2924,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
             writeLS(NAME_KEY_OLD, playerName);
           }
         }
+
         updatePillsNow();
         await startRun();
       });
@@ -2969,19 +2950,17 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       setTimeout(async () => {
         await overlayFadeOut(overlayLoading, 180);
 
-        try{ U && U.applyViewportVars && U.applyViewportVars(); }catch(_){}
-        try{ U && U.applyEnvClasses && U.applyEnvClasses(); }catch(_){}
-
         setState("menu");
         if (brandSub) brandSub.textContent = I18n.t("app_ready");
 
-        const seen = (() => { try{ return sessionStorage.getItem("gridrogue_press_seen_v1") === "1"; }catch(_){ return false; } })();
+        const seen = (() => { try { return sessionStorage.getItem("gridrogue_press_seen_v1") === "1"; } catch { return false; } })();
         if (!seen && overlayPress) showPressToStart();
         else overlayShow(overlayStart);
 
         updatePillsNow();
       }, wait);
-document.addEventListener("visibilitychange", () => {
+
+      document.addEventListener("visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {
           pauseForOverlay(true);
           overlayShow(overlayPaused);

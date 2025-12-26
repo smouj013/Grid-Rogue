@@ -1,10 +1,10 @@
-/* rendiment.js — Grid Rogue v0.2.3 (UPDATED+HARDENED)
-   Performance/“rendiment” helpers (NO rompe nada existente).
+/* rendiment.js — Grid Rogue v1.0.0 (STABLE+HARDENED)
+   Helpers de rendimiento (NO rompe nada existente).
    - No modifica app.js automáticamente.
    - Expone window.GRPerf con métricas, medidores y utilidades opcionales.
-   - Funciona aunque falten APIs modernas (fallbacks seguros).
+   - Fallbacks seguros si faltan APIs (RAF/Perf/RIC/Memory, etc.).
 
-   ✅ Mejoras:
+   ✅ Incluye:
    - Guard ultra-robusto contra doble carga (incluye escenarios raros con SW/cache)
    - Auto-pause del sampling al ocultar pestaña (configurable, seguro)
    - Snapshot estable + percentiles (dtP95, fpsP5/fpsP95) para detectar stutter real
@@ -14,18 +14,17 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.2.0";
+  const FILE_VERSION = "1.0.0";
   const NS = "GRPerf";
 
-  // ───────────────────────── Guard robusto ─────────────────────────
-  // (si por cualquier motivo este script se inyecta 2 veces, salimos sin romper)
-  try {
-    const g = typeof globalThis !== "undefined" ? globalThis : window;
-    if (g && g[NS]) return;
-  } catch (_) {}
+  // ───────────────────────── Guard ultra robusto ─────────────────────────
+  const g = (typeof globalThis !== "undefined")
+    ? globalThis
+    : (typeof window !== "undefined" ? window : {});
 
-  // ───────────────────────── Safe env / Fallbacks ─────────────────────────
-  const g = typeof globalThis !== "undefined" ? globalThis : (typeof window !== "undefined" ? window : {});
+  try { if (g && g[NS]) return; } catch (_) {}
+
+  // ───────────────────────── Entorno / fallbacks ─────────────────────────
   const hasWindow = typeof window !== "undefined";
   const hasDocument = typeof document !== "undefined";
 
@@ -58,21 +57,71 @@
     return Math.max(a | 0, Math.min(b | 0, v));
   };
 
-  // ───────────────────────── Device heuristics (suave) ─────────────────────────
+  const safeFreeze = (obj) => {
+    try { return (typeof Object.freeze === "function") ? Object.freeze(obj) : obj; }
+    catch { return obj; }
+  };
+
+  // ───────────────────────── Map/Set fallback (suave) ─────────────────────────
+  const hasMap = typeof Map === "function";
+  const hasSet = typeof Set === "function";
+
+  const makeMap = () => {
+    if (hasMap) return new Map();
+    const o = Object.create(null);
+    return {
+      set(k, v) { o[String(k)] = v; },
+      get(k) { return o[String(k)]; },
+      has(k) { return Object.prototype.hasOwnProperty.call(o, String(k)); },
+      delete(k) { const kk = String(k); const ex = this.has(kk); if (ex) delete o[kk]; return ex; },
+      clear() { for (const k in o) delete o[k]; },
+      entries() { return Object.entries(o); }
+    };
+  };
+
+  const makeSet = () => {
+    if (hasSet) return new Set();
+    const a = [];
+    return {
+      add(v) { if (!a.includes(v)) a.push(v); },
+      delete(v) { const i = a.indexOf(v); if (i >= 0) { a.splice(i, 1); return true; } return false; },
+      has(v) { return a.includes(v); },
+      size: 0,
+      values() { return a.slice(); }
+    };
+  };
+
+  function setSize(s) {
+    try {
+      if (hasSet && s && typeof s.size === "number") return s.size;
+      if (s && typeof s.values === "function") return s.values().length;
+    } catch {}
+    return 0;
+  }
+
+  // ───────────────────────── Heurísticas de dispositivo (suave) ─────────────────────────
   function getDeviceHints() {
     const nav = (typeof navigator !== "undefined" ? navigator : null);
     const hc = clampInt((nav && nav.hardwareConcurrency) || 0, 0, 64);
     const dm = clampInt((nav && nav.deviceMemory) || 0, 0, 64); // Chrome only
     const ua = (nav && nav.userAgent) || "";
     const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
-    const coarse = (() => { try { return typeof matchMedia === "function" && matchMedia("(pointer:coarse)").matches; } catch { return false; } })();
-    const reducedMotion = (() => { try { return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
+
+    const coarse = (() => {
+      try { return typeof matchMedia === "function" && matchMedia("(pointer:coarse)").matches; }
+      catch { return false; }
+    })();
+
+    const reducedMotion = (() => {
+      try { return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches; }
+      catch { return false; }
+    })();
 
     const lowEnd = (mobile || coarse) && ((hc > 0 && hc <= 4) || (dm > 0 && dm <= 3));
     return { hardwareConcurrency: hc, deviceMemory: dm, mobile, coarse, reducedMotion, lowEnd };
   }
 
-  // ───────────────────────── Rolling stats ─────────────────────────
+  // ───────────────────────── Rolling stats (ring) ─────────────────────────
   function makeRing(n) {
     const size = clampInt(n, 8, 2000);
     const arr = new Array(size).fill(0);
@@ -119,9 +168,9 @@
     };
   }
 
-  // ───────────────────────── Core state ─────────────────────────
+  // ───────────────────────── Estado ─────────────────────────
   const state = {
-    version: VERSION,
+    version: FILE_VERSION,
 
     running: false,
 
@@ -151,11 +200,11 @@
     fpsRing: makeRing(90),
 
     // Marks / measures
-    marks: new Map(),
-    measures: new Map(),
+    marks: makeMap(),
+    measures: makeMap(),
 
     // Events
-    listeners: new Set(),
+    listeners: makeSet(),
 
     // Watchdog
     watchdogOn: false,
@@ -175,8 +224,9 @@
 
   function stableSnapshot() {
     const b = budgetMs();
-    return Object.freeze({
-      version: VERSION,
+    return safeFreeze({
+      fileVersion: FILE_VERSION,
+      appVersion: hasWindow && window.APP_VERSION ? String(window.APP_VERSION) : null,
       running: !!state.running,
 
       targetFps: state.targetFps,
@@ -202,11 +252,19 @@
   }
 
   function emit() {
-    if (!state.listeners.size) return;
+    const count = setSize(state.listeners);
+    if (!count) return;
+
     const snap = stableSnapshot();
-    for (const fn of state.listeners) {
-      try { fn(snap); } catch {}
+
+    if (hasSet) {
+      for (const fn of state.listeners) { try { fn(snap); } catch {} }
+      return;
     }
+
+    // fallback array-like
+    const arr = state.listeners.values();
+    for (let i = 0; i < arr.length; i++) { try { arr[i](snap); } catch {} }
   }
 
   // ───────────────────────── Sampling loop (solo métricas) ─────────────────────────
@@ -244,8 +302,7 @@
     state.dtP95Ms = state.dtRing.percentile(0.95);
 
     if (!state.lastEmitT) state.lastEmitT = t;
-    const emitSpan = t - state.lastEmitT;
-    if (emitSpan >= state.emitIntervalMs) {
+    if ((t - state.lastEmitT) >= state.emitIntervalMs) {
       state.lastEmitT = t;
       emit();
     }
@@ -297,12 +354,17 @@
   function measure(name, fromMark = null) {
     const n = String(name || "measure");
     const key = fromMark != null ? String(fromMark) : null;
+
     const startT = (key && state.marks.has(key)) ? state.marks.get(key) : now();
 
     return function endMeasure() {
       const dt = Math.max(0, now() - startT);
+
       let ring = state.measures.get(n);
-      if (!ring) { ring = makeRing(120); state.measures.set(n, ring); }
+      if (!ring) {
+        ring = makeRing(120);
+        state.measures.set(n, ring);
+      }
       ring.push(dt);
       return dt;
     };
@@ -322,7 +384,7 @@
     return Promise.resolve(p).finally(() => end());
   }
 
-  // ───────────────────────── Watchdog (detecta cuelgues) ─────────────────────────
+  // ───────────────────────── Watchdog (stall detection) ─────────────────────────
   function startWatchdog({ thresholdMs = 1500, intervalMs = 500, onStall = null } = {}) {
     stopWatchdog();
     state.watchdogOn = true;
@@ -333,13 +395,16 @@
 
     const tickDog = () => {
       if (!state.watchdogOn) return;
+
       const t = now();
       const gap = t - state.watchdogLast;
       state.watchdogLast = t;
 
       if (gap >= state.watchdogThresholdMs) {
-        try { onStall && onStall({ gapMs: gap, thresholdMs: state.watchdogThresholdMs }); } catch {}
+        try { if (typeof onStall === "function") onStall({ gapMs: gap, thresholdMs: state.watchdogThresholdMs }); }
+        catch {}
       }
+
       state.watchdogId = setTimeout(tickDog, every);
     };
 
@@ -355,16 +420,15 @@
   // ───────────────────────── Visibility helpers ─────────────────────────
   function onVisibilityChange(fn) {
     if (!hasDocument) return () => {};
-    const handler = () => {
-      try { fn && fn(document.hidden === true); } catch {}
-    };
+    const handler = () => { try { fn && fn(document.hidden === true); } catch {} };
     document.addEventListener("visibilitychange", handler, { passive: true });
     return () => document.removeEventListener("visibilitychange", handler);
   }
 
-  // Auto-pause sampling on hidden (NO toca el juego; solo métricas)
+  // Auto-pause sampling en hidden (NO toca el juego; solo métricas)
   onVisibilityChange((hidden) => {
     if (!state.autoPauseOnHidden) return;
+
     if (hidden) {
       state._wasRunningBeforeHidden = state.running;
       if (state.running) stop();
@@ -374,7 +438,7 @@
     }
   });
 
-  // ───────────────────────── Optional: simple loop wrapper ─────────────────────────
+  // ───────────────────────── Optional: loop wrapper ─────────────────────────
   // Fixed-step (step) + variable render (draw) con cap anti “spiral of death”.
   function createLoop(step, draw, {
     targetFps = 60,
@@ -384,6 +448,7 @@
     const target = clampInt(targetFps, 20, 240);
     const budget = 1000 / target;
     const capSteps = clampInt(maxStepsPerFrame, 1, 30);
+    const dtCap = clampInt(maxDtMs, 16, 250);
 
     let running = false;
     let last = 0;
@@ -393,7 +458,7 @@
     function frame(t) {
       if (!running) return;
 
-      const dt = clamp(t - (last || t), 0, clampInt(maxDtMs, 16, 250));
+      const dt = clamp(t - (last || t), 0, dtCap);
       last = t;
 
       acc += dt;
@@ -404,7 +469,8 @@
         try { step && step(budget); } catch {}
         acc -= budget;
       }
-      // si se “atascó”, recorta acumulación para que no explote
+
+      // Si se “atasca”, recorta acumulación para evitar la espiral
       if (steps >= capSteps && acc >= budget) acc = 0;
 
       try { draw && draw(dt); } catch {}
@@ -437,7 +503,7 @@
 
   // ───────────────────────── Public API ─────────────────────────
   const api = {
-    version: VERSION,
+    version: FILE_VERSION,
 
     getDeviceHints,
     getMemoryHint,
@@ -470,7 +536,6 @@
     isRunning() { return !!state.running; },
 
     getMetrics() {
-      // snapshot “live” (sin freeze) para llamadas internas
       return {
         ...stableSnapshot(),
         memory: getMemoryHint(),
@@ -480,7 +545,9 @@
     onMetrics(fn) {
       if (typeof fn !== "function") return () => {};
       state.listeners.add(fn);
-      return () => state.listeners.delete(fn);
+
+      // Set real o fallback
+      return () => { try { state.listeners.delete(fn); } catch {} };
     },
 
     mark,
@@ -489,10 +556,11 @@
     timeAsync,
 
     getMeasure(name) {
-      const ring = state.measures.get(String(name || ""));
+      const n = String(name || "");
+      const ring = state.measures.get(n);
       if (!ring) return null;
       return {
-        name: String(name),
+        name: n,
         avgMs: ring.avg(),
         minMs: ring.min(),
         maxMs: ring.max(),
@@ -503,21 +571,39 @@
 
     listMeasures() {
       const out = [];
-      for (const [k, ring] of state.measures.entries()) {
-        out.push({
-          name: k,
-          avgMs: ring.avg(),
-          minMs: ring.min(),
-          maxMs: ring.max(),
-          p95Ms: ring.percentile(0.95),
-          samples: ring.values().length
-        });
+      const entries = state.measures.entries();
+
+      if (hasMap) {
+        for (const [k, ring] of entries) {
+          out.push({
+            name: k,
+            avgMs: ring.avg(),
+            minMs: ring.min(),
+            maxMs: ring.max(),
+            p95Ms: ring.percentile(0.95),
+            samples: ring.values().length,
+          });
+        }
+      } else {
+        for (let i = 0; i < entries.length; i++) {
+          const k = entries[i][0];
+          const ring = entries[i][1];
+          out.push({
+            name: k,
+            avgMs: ring.avg(),
+            minMs: ring.min(),
+            maxMs: ring.max(),
+            p95Ms: ring.percentile(0.95),
+            samples: ring.values().length,
+          });
+        }
       }
+
       out.sort((a, b) => (b.p95Ms - a.p95Ms) || (b.avgMs - a.avgMs));
       return out;
     },
 
-    clearMeasures() { state.measures.clear(); },
+    clearMeasures() { try { state.measures.clear(); } catch {} },
 
     idle: (cb, opt) => ric(cb, opt),
     cancelIdle: (id) => cic(id),
@@ -530,17 +616,15 @@
     createLoop,
   };
 
-  // Expose (sin romper si algo raro pasa)
+  // Expose sin romper si algo raro pasa
   try {
     Object.defineProperty(g, NS, { value: api, writable: false, configurable: false });
   } catch {
     try { g[NS] = api; } catch {}
   }
 
-  // Alias opcional (por si en algún build lo llamas distinto)
+  // Alias opcional
   if (hasWindow) {
-    try {
-      if (!window.Rendiment) window.Rendiment = api;
-    } catch {}
+    try { if (!window.Rendiment) window.Rendiment = api; } catch {}
   }
 })();
