@@ -499,21 +499,25 @@
     </main>
   </div>
 
+  <!-- ✅ FAILSAFE GLOBAL (NO depende de app.js):
+       - Emergencia de Loading (ya lo tenías)
+       - FIX del Error overlay “pillado” tras update (close/reload/ESC/click fuera) -->
   <script>
     (function () {
       const $ = (id) => document.getElementById(id);
 
+      // ───────────────────────── Loading failsafe (igual, pero robusto) ─────────────────────────
       const overlayLoading = $("overlayLoading");
       const loadingSub = $("loadingSub");
       const loadingHint = $("loadingHint");
-      const btnReload = $("btnEmergencyReload");
-      const btnRepair = $("btnEmergencyRepair");
+      const btnEmergencyReload = $("btnEmergencyReload");
+      const btnEmergencyRepair = $("btnEmergencyRepair");
 
       function booted() {
         return (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true);
       }
 
-      function showEmergency() {
+      function showEmergencyLoading() {
         if (booted()) return;
 
         try {
@@ -521,25 +525,98 @@
           if (loadingHint) loadingHint.textContent = "Usa Recargar o Reparar PWA (borra SW + caches).";
         } catch (_) {}
 
-        if (btnReload) btnReload.hidden = false;
-        if (btnRepair) btnRepair.hidden = false;
+        if (btnEmergencyReload) btnEmergencyReload.hidden = false;
+        if (btnEmergencyRepair) btnEmergencyRepair.hidden = false;
+
+        // Mantén el overlay visible para que se vean los botones
         if (overlayLoading) overlayLoading.hidden = false;
       }
 
-      setTimeout(showEmergency, 8000);
+      setTimeout(showEmergencyLoading, 8000);
 
-      if (btnReload) btnReload.addEventListener("click", () => location.reload());
+      if (btnEmergencyReload) {
+        btnEmergencyReload.addEventListener("click", () => location.reload());
+      }
 
-      if (btnRepair) {
-        btnRepair.addEventListener("click", () => {
+      if (btnEmergencyRepair) {
+        btnEmergencyRepair.addEventListener("click", () => {
           const u = new URL(location.href);
           u.searchParams.set("repair", "1");
           location.href = u.toString();
         });
       }
+
+      // ───────────────────────── Error overlay failsafe (FIX congelado) ─────────────────────────
+      const overlayError = $("overlayError");
+      const btnErrClose = $("btnErrClose");
+      const btnErrReload = $("btnErrReload");
+      const errMsg = $("errMsg");
+
+      function hardUnlockUI() {
+        // Por si algo dejó la UI bloqueada tras error/update
+        try { document.documentElement.style.removeProperty("overflow"); } catch (_) {}
+        try { document.body.style.removeProperty("overflow"); } catch (_) {}
+        try { document.documentElement.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
+        try { document.body.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
+        try { overlayError && overlayError.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
+      }
+
+      function hideErrorOverlay() {
+        if (!overlayError) return;
+        hardUnlockUI();
+        overlayError.hidden = true;
+        overlayError.setAttribute("aria-hidden", "true");
+        // “mata” visualmente aunque el CSS/estado esté raro
+        overlayError.style.display = "none";
+      }
+
+      function showErrorOverlay(message) {
+        if (!overlayError) return;
+        hardUnlockUI();
+        overlayError.hidden = false;
+        overlayError.removeAttribute("aria-hidden");
+        overlayError.style.display = "";
+        if (errMsg && message != null) {
+          try { errMsg.textContent = String(message); } catch (_) {}
+        }
+      }
+
+      // Listeners en capture para ganar a stopPropagation de otros scripts
+      if (btnErrClose) {
+        btnErrClose.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          hideErrorOverlay();
+        }, true);
+      }
+
+      if (btnErrReload) {
+        btnErrReload.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          location.reload();
+        }, true);
+      }
+
+      // Click fuera del panel => cierra
+      if (overlayError) {
+        overlayError.addEventListener("click", (e) => {
+          if (e.target === overlayError) hideErrorOverlay();
+        }, true);
+      }
+
+      // ESC => cierra
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") hideErrorOverlay();
+      }, true);
+
+      // Helper debug por consola (por si un loop lo reabre)
+      window.__GR_SAFE_HIDE_ERROR = hideErrorOverlay;
+      window.__GR_SAFE_SHOW_ERROR = showErrorOverlay;
     })();
   </script>
 
+  <!-- ✅ Orden recomendado (defer mantiene el orden y no bloquea render) -->
   <script src="./rendiment.js?v=1.0.0" defer></script>
   <script src="./utils.js?v=1.0.0" defer></script>
   <script src="./localization.js?v=1.0.0" defer></script>
