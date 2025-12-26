@@ -1,2258 +1,3000 @@
-/* app.js — Grid Rogue v1.0.0 (PRO HUD + MODOS + 60 UPGRADES)
-   ✅ Header minimal (solo Menú + Pausa)
-   ✅ HUD sin solapamientos
-   ✅ Stage oculto hasta Start
-   ✅ Menú PRO con tabs + perfiles con stats
-   ✅ Modos: endless + arcade/story (rondas con timer+objetivo)
-   ✅ 60 upgrades (50+ reales) con rarezas + rerolls + catálogo
-   ✅ Robusto: no rompe si faltan módulos opcionales (Auth / AudioSys / GRUtils)
+/* app.js — Grid Rogue v0.2.3 (STABLE+FULLSCREEN + AUDIO + I18N)
+   ✅ Compatible con:
+   - utils.js (window.GRUtils)
+   - audio.js (window.AudioSys)
+   - localization.js (window.I18n)
+   - auth.js (window.Auth) si existe
+   - rendiment.js (window.GRPerf) si existe (opcional)
 */
 (() => {
   "use strict";
 
   // ───────────────────────── Guard anti doble carga ─────────────────────────
   const g = (typeof globalThis !== "undefined") ? globalThis : window;
-  const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V1000";
-  try { if (g[LOAD_GUARD]) return; g[LOAD_GUARD] = true; } catch (_) {}
+  const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V0200";
+  try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
-  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "1.0.0");
+  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "0.2.0");
+
+  // Compat flags (failsafe/index antiguo) — no pisar si ya existen
+  try {
+    if (typeof window.__GRIDRUNNER_BOOTED === "undefined") window.__GRIDRUNNER_BOOTED = false;
+    if (typeof window.__GRIDROGUE_BOOTED === "undefined") window.__GRIDROGUE_BOOTED = false;
+  } catch (_) {}
+
+  // ───────────────────────── Perf helpers (fallback) ─────────────────────────
+  const pNow = (() => {
+    try { if (typeof performance !== "undefined" && typeof performance.now === "function") return () => performance.now(); } catch {}
+    return () => Date.now();
+  })();
+
+  const GRPerf = (typeof window !== "undefined" && window.GRPerf) ? window.GRPerf : null;
+  const perfEndBoot = (() => {
+    try {
+      if (!GRPerf) return null;
+      GRPerf.setConfig?.({ targetFps: 60, autoPauseOnHidden: true, emitIntervalMs: 500 });
+      return GRPerf.measure?.("boot_total");
+    } catch { return null; }
+  })();
 
   // ───────────────────────── Imports (globals) ─────────────────────────
   const U = (typeof window !== "undefined" && window.GRUtils) ? window.GRUtils : {};
-  const Auth = (typeof window !== "undefined" && window.Auth) ? window.Auth : null;
 
-  const $ = U.$ || ((id) => document.getElementById(id));
-  const qs = U.qs || ((sel, root = document) => root.querySelector(sel));
-  const qsa = U.qsa || ((sel, root = document) => Array.from(root.querySelectorAll(sel)));
-  const on = U.on || ((el, ev, fn, opts) => el && el.addEventListener(ev, fn, opts));
   const clamp = U.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
-  const clampInt = U.clampInt || ((v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v | 0)) : (a | 0)));
+  const clampInt = U.clampInt || ((v, a, b) => {
+    v = Number(v);
+    if (!Number.isFinite(v)) v = a;
+    v = v | 0;
+    return Math.max(a, Math.min(b, v));
+  });
+  const lerp = U.lerp || ((a, b, t) => a + (b - a) * t);
   const randi = U.randi || ((a, b) => Math.floor(a + Math.random() * (b - a + 1)));
   const chance = U.chance || ((p) => Math.random() < p);
-  const fmtScore = U.fmtScore || ((n) => String(n | 0));
-  const fmtSeconds = U.fmtSeconds || ((s) => String(Math.max(0, Math.floor(s || 0))));
-  const overlayShow = U.overlayShow || ((el) => { if (el) el.hidden = false; });
-  const overlayHide = U.overlayHide || ((el) => { if (el) el.hidden = true; });
+  const safeParse = U.safeParse || ((raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } });
+  const $ = U.$ || ((id) => document.getElementById(id));
+
+  const overlayShow = U.overlayShow || ((el) => { if (!el) return; el.hidden = false; });
+  const overlayHide = U.overlayHide || ((el) => { if (!el) return; el.hidden = true; });
   const overlayFadeOut = U.overlayFadeOut || ((el) => Promise.resolve(overlayHide(el)));
-  const lsGet = U.lsGet || ((k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } });
-  const lsSet = U.lsSet || ((k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } });
-  const toast = U.toast || ((m) => { try { console.log("[GridRogue]", m); } catch { } });
-  const isMobile = U.isMobile || (() => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
-  const setVHVar = U.setVHVar || (() => { });
 
-  const haveSetHP = typeof U.setHP === "function";
-  const haveSetBuffs = typeof U.setBuffs === "function";
-  const setHP = U.setHP || (() => { });
-  const setBuffs = U.setBuffs || (() => { });
+  // NO romper pills con iconos: si existe .pv, solo actualiza eso.
+  const setPill = U.setPill || ((el, v) => {
+    if (!el) return;
+    const pv = el.querySelector?.(".pv");
+    if (pv) pv.textContent = String(v);
+    else el.textContent = String(v);
+  });
 
-  // AudioSys opcional
+  const setState = U.setState || ((s) => { try { document.body.dataset.state = s; } catch {} });
+
+  const I18n = (typeof window !== "undefined" && window.I18n) ? window.I18n : {
+    setLang() {},
+    getLang() { return "es"; },
+    t(k, a) { return (a != null) ? `${k} ${a}` : k; },
+    languageOptions() { return []; },
+    applyDataAttrs() {},
+  };
+
+  function T(key, fallback = null, arg = null) {
+    try {
+      const s = I18n.t(key, arg);
+      if (typeof s === "string" && s !== key) return s;
+    } catch {}
+    if (fallback == null) return key;
+    if (arg == null) return String(fallback);
+    return String(fallback).replace("{0}", String(arg));
+  }
+
   const AudioSys = (typeof window !== "undefined" && window.AudioSys) ? window.AudioSys : {
     unlock: async () => true,
     sfx: async () => false,
-    startMusic: async () => { },
-    stopMusic: () => { },
-    setMute: () => { },
-    setMusicOn: () => { },
-    setSfxOn: () => { },
-    setVolumes: () => { },
+    startMusic: async () => {},
+    stopMusic: () => {},
+    duckMusic: () => {},
+    setMute: () => {},
+    setMusicOn: () => {},
+    setSfxOn: () => {},
+    setVolumes: () => {},
+    getState: () => ({}),
   };
 
-  // ───────────────────────── Keys ─────────────────────────
-  const SETTINGS_KEY = "gridrogue_settings_v2";
-  const RUNS_KEY = "gridrogue_runs_v2";
+  // ───────────────────────── Storage keys ─────────────────────────
+  const BEST_KEY       = "gridrogue_best_v1";
+  const NAME_KEY       = "gridrogue_name_v1";
+  const SETTINGS_KEY   = "gridrogue_settings_v1";
+  const RUNS_KEY       = "gridrogue_runs_v1";
+
+  const BEST_KEY_OLD     = "gridrunner_best_v1";
+  const NAME_KEY_OLD     = "gridrunner_name_v1";
+  const SETTINGS_KEY_OLD = "gridrunner_settings_v1";
+  const RUNS_KEY_OLD     = "gridrunner_runs_v1";
+
+  const SW_RELOAD_KEY = "gridrogue_sw_reload_once";
+  const SW_RELOAD_KEY_OLD = "gridrunner_sw_reload_once";
+
+  function readLS(k) { try { return localStorage.getItem(k); } catch { return null; } }
+  function writeLS(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }
+
+  function migrateKeyIfNeeded(newKey, oldKey) {
+    const n = readLS(newKey);
+    if (n != null) return n;
+    const o = readLS(oldKey);
+    if (o != null) { writeLS(newKey, o); return o; }
+    return null;
+  }
+
+  // ───────────────────────── Device / Layout ─────────────────────────
+  function isCoarsePointer() { try { return matchMedia("(pointer:coarse)").matches; } catch { return false; } }
+  function isPortrait() { try { return matchMedia("(orientation: portrait)").matches; } catch { return (innerHeight >= innerWidth); } }
+  function isMobileUA() { const ua = navigator.userAgent || ""; return /Mobi|Android|iPhone|iPad|iPod/i.test(ua); }
+  function isMobileLayout() { return (isCoarsePointer() || isMobileUA()) && isPortrait(); }
+  function desiredRows() { return isMobileLayout() ? 16 : 24; }
 
   // ───────────────────────── Settings ─────────────────────────
-  const settings = {
-    useSprites: true,
+  const defaultSettings = () => ({
+    useSprites: false,
     vibration: true,
     showDpad: true,
-    reduceMotion: false,
     fx: 1.0,
     musicOn: true,
     sfxOn: true,
-    muteAll: false,
-    musicVol: 0.55,
+    musicVol: 0.60,
     sfxVol: 0.90,
-  };
+    muteAll: false,
+    lang: "auto",
+  });
 
-  function loadSettings() {
-    const s = lsGet(SETTINGS_KEY, null);
-    if (!s || typeof s !== "object") return;
-    if ("useSprites" in s) settings.useSprites = !!s.useSprites;
-    if ("vibration" in s) settings.vibration = !!s.vibration;
-    if ("showDpad" in s) settings.showDpad = !!s.showDpad;
-    if ("reduceMotion" in s) settings.reduceMotion = !!s.reduceMotion;
-    if ("fx" in s) settings.fx = clamp(Number(s.fx) || settings.fx, 0.4, 1.25);
-    if ("musicOn" in s) settings.musicOn = !!s.musicOn;
-    if ("sfxOn" in s) settings.sfxOn = !!s.sfxOn;
-    if ("muteAll" in s) settings.muteAll = !!s.muteAll;
-    if ("musicVol" in s) settings.musicVol = clamp(Number(s.musicVol) || settings.musicVol, 0, 1);
-    if ("sfxVol" in s) settings.sfxVol = clamp(Number(s.sfxVol) || settings.sfxVol, 0, 1);
+  let settings = (() => {
+    const raw = migrateKeyIfNeeded(SETTINGS_KEY, SETTINGS_KEY_OLD);
+    const s = raw ? safeParse(raw, null) : null;
+    const base = defaultSettings();
+    if (!s || typeof s !== "object") return base;
+    return {
+      ...base,
+      ...s,
+      fx: clamp(Number(s.fx ?? 1.0) || 1.0, 0.4, 1.25),
+      musicOn: (s.musicOn ?? base.musicOn) !== false,
+      sfxOn: (s.sfxOn ?? base.sfxOn) !== false,
+      musicVol: clamp(Number(s.musicVol ?? base.musicVol) || base.musicVol, 0, 1),
+      sfxVol: clamp(Number(s.sfxVol ?? base.sfxVol) || base.sfxVol, 0, 1),
+      muteAll: !!(s.muteAll ?? base.muteAll),
+      lang: (typeof s.lang === "string" ? s.lang : base.lang),
+    };
+  })();
+
+  function saveSettings() {
+    try {
+      const json = JSON.stringify(settings);
+      writeLS(SETTINGS_KEY, json);
+      writeLS(SETTINGS_KEY_OLD, json);
+    } catch {}
   }
 
-  function applyAudioSettings() {
+  function vibrate(ms) {
+    if (!settings.vibration) return;
+    if (!("vibrate" in navigator)) return;
+    try { navigator.vibrate(ms); } catch {}
+  }
+
+  I18n.setLang(settings.lang);
+
+  function applyAudioSettingsNow() {
     try {
       AudioSys.setMute(!!settings.muteAll);
-      AudioSys.setMusicOn(!!settings.musicOn && !settings.muteAll);
-      AudioSys.setSfxOn(!!settings.sfxOn && !settings.muteAll);
-      AudioSys.setVolumes(settings.musicVol, settings.sfxVol);
-    } catch (_) { }
+      AudioSys.setMusicOn(!!settings.musicOn);
+      AudioSys.setSfxOn(!!settings.sfxOn);
+      AudioSys.setVolumes({ music: settings.musicVol, sfx: settings.sfxVol });
+    } catch {}
+  }
+
+  // ───────────────────────── Viewport helpers (anti-scroll) ─────────────────────────
+  function updateVhUnit() {
+    try {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty("--vh", `${vh}px`);
+    } catch {}
+  }
+
+  function lockPageScroll() {
+    try {
+      document.documentElement.style.overscrollBehavior = "none";
+      document.documentElement.style.overflow = "hidden";
+
+      const y = window.scrollY || 0;
+      document.body.style.overflow = "hidden";
+      document.body.style.position = "fixed";
+      document.body.style.top = `-${y}px`;
+      document.body.style.left = "0";
+      document.body.style.right = "0";
+      document.body.style.width = "100%";
+      document.body.style.touchAction = "manipulation";
+    } catch {}
+  }
+
+  function installAntiScrollGuards() {
+    const isScrollableInOptions = (target, event) => {
+      try {
+        if (!overlayOptions || overlayOptions.hidden) return false;
+        if (!target) return false;
+        if (!overlayOptions.contains(target)) return false;
+
+        const tag = (target.tagName || "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return true;
+
+        const path = (event && typeof event.composedPath === "function") ? event.composedPath() : null;
+        const iter = (path && path.length) ? path : null;
+
+        const canScrollEl = (el) => {
+          if (!el || el === document || el === window) return false;
+          if (el === overlayOptions) return false;
+          if (!el.getBoundingClientRect) return false;
+          const st = getComputedStyle(el);
+          const oy = st.overflowY;
+          if ((oy !== "auto" && oy !== "scroll") || (el.scrollHeight <= el.clientHeight + 2)) return false;
+          return true;
+        };
+
+        if (iter) {
+          for (const el of iter) {
+            if (el === overlayOptions) break;
+            if (canScrollEl(el)) return true;
+          }
+        } else {
+          let el = target;
+          while (el && el !== overlayOptions) {
+            if (canScrollEl(el)) return true;
+            el = el.parentElement;
+          }
+        }
+
+        const body =
+          overlayOptions.querySelector?.("#optionsBody") ||
+          overlayOptions.querySelector?.(".options") ||
+          overlayOptions;
+        return !!(body && (target === body || target.closest?.("#optionsBody") || target.closest?.(".options")));
+      } catch { return false; }
+    };
+
+    const preventIfNeeded = (e) => {
+      if (!e.cancelable) return;
+      if (isScrollableInOptions(e.target, e)) return;
+      e.preventDefault();
+    };
+
+    document.addEventListener("wheel", preventIfNeeded, { passive: false });
+    document.addEventListener("touchmove", preventIfNeeded, { passive: false });
+  }
+
+  // ───────────────────────── Auth ─────────────────────────
+  const Auth = (typeof window !== "undefined" && window.Auth) ? window.Auth : null;
+  let activeProfileId = null;
+
+  let playerName = (migrateKeyIfNeeded(NAME_KEY, NAME_KEY_OLD) || "").trim().slice(0, 16);
+  let best = parseInt(migrateKeyIfNeeded(BEST_KEY, BEST_KEY_OLD) || "0", 10) || 0;
+  if (playerName.length < 2) playerName = I18n.t("defaultPlayer");
+
+  function syncFromAuth() {
+    try {
+      if (!Auth) return;
+      const p = Auth.getActiveProfile?.();
+      if (!p) return;
+
+      activeProfileId = p.id;
+      playerName = (p.name || I18n.t("defaultPlayer")).trim().slice(0, 16) || I18n.t("defaultPlayer");
+      best = (Auth.getBestForActive?.() ?? best) | 0;
+
+      writeLS(NAME_KEY, playerName);
+      writeLS(NAME_KEY_OLD, playerName);
+      writeLS(BEST_KEY, String(best));
+      writeLS(BEST_KEY_OLD, String(best));
+
+      const prefs = Auth.getPrefsForActive?.();
+      if (prefs && typeof prefs === "object") {
+        if ("useSprites" in prefs) settings.useSprites = !!prefs.useSprites;
+        if ("vibration" in prefs) settings.vibration = !!prefs.vibration;
+        if ("showDpad" in prefs) settings.showDpad = !!prefs.showDpad;
+        if ("fx" in prefs) settings.fx = clamp(Number(prefs.fx ?? settings.fx) || settings.fx, 0.4, 1.25);
+
+        if ("musicOn" in prefs) settings.musicOn = !!prefs.musicOn;
+        if ("sfxOn" in prefs) settings.sfxOn = !!prefs.sfxOn;
+        if ("musicVol" in prefs) settings.musicVol = clamp(Number(prefs.musicVol ?? settings.musicVol) || settings.musicVol, 0, 1);
+        if ("sfxVol" in prefs) settings.sfxVol = clamp(Number(prefs.sfxVol ?? settings.sfxVol) || settings.sfxVol, 0, 1);
+        if ("muteAll" in prefs) settings.muteAll = !!prefs.muteAll;
+
+        if ("lang" in prefs && typeof prefs.lang === "string") settings.lang = prefs.lang;
+
+        saveSettings();
+      }
+    } catch {}
   }
 
   function pushPrefsToAuth() {
     try {
       if (!Auth) return;
-      Auth.patchPrefsForActive?.({
+      Auth.setPrefsForActive?.({
         useSprites: !!settings.useSprites,
         vibration: !!settings.vibration,
         showDpad: !!settings.showDpad,
-        reduceMotion: !!settings.reduceMotion,
         fx: settings.fx,
         musicOn: !!settings.musicOn,
         sfxOn: !!settings.sfxOn,
-        muteAll: !!settings.muteAll,
         musicVol: settings.musicVol,
         sfxVol: settings.sfxVol,
+        muteAll: !!settings.muteAll,
+        lang: String(settings.lang || "auto"),
       });
-    } catch (_) { }
+    } catch {}
   }
 
-  function saveSettings() {
-    lsSet(SETTINGS_KEY, { ...settings });
-    pushPrefsToAuth();
-    applyAudioSettings();
-    applyDpadVisibility();
-  }
-
-  function vibrate(ms = 10) {
-    if (!settings.vibration) return;
-    try { navigator.vibrate?.(ms); } catch (_) { }
-  }
-
-  // ───────────────────────── DOM ─────────────────────────
-  const stage = $("stage");
-  const btnHome = $("btnHome");
-  const btnPause = $("btnPause");
-  const homeDot = $("homeDot");
-
-  const overlayLoading = $("overlayLoading");
-  const overlayPress = $("overlayPress");
-  const btnPressStart = $("btnPressStart");
-
-  const overlayMenu = $("overlayMenu");
-  const btnCloseMenu = $("btnCloseMenu");
-  const btnInstall = $("btnInstall");
-
-  const overlayUpgrades = $("overlayUpgrades");
-  const upgradeChoices = $("upgradeChoices");
-  const btnContinue = $("btnContinue");
-  const btnReroll = $("btnReroll");
-  const rerollCount = $("rerollCount");
-  const upTitle = $("upTitle");
-  const upSub = $("upSub");
-
-  const overlayPaused = $("overlayPaused");
-  const btnUnpause = $("btnUnpause");
-  const btnOpenMenuFromPause = $("btnOpenMenuFromPause");
-
-  const overlayGameOver = $("overlayGameOver");
-  const goReason = $("goReason");
-  const goScore = $("goScore");
-  const goBest = $("goBest");
-  const goStats = $("goStats");
-  const btnPlayAgain = $("btnPlayAgain");
-  const btnBackToMenu = $("btnBackToMenu");
-
-  const overlayError = $("overlayError");
-  const errMsg = $("errMsg");
-  const btnReload = $("btnReload");
-  const btnRepair = $("btnRepair");
-
-  // Menu Tabs
-  const tabs = qsa(".tab", overlayMenu);
-  const pages = qsa(".tabPage", overlayMenu);
-  const catalog = $("catalog");
-  const btnOpenCatalog = $("btnOpenCatalog");
-  const btnCloseCatalog = $("btnCloseCatalog");
-  const catalogList = $("catalogList");
-
-  // Play
-  const btnStartEndless = $("btnStartEndless");
-  const btnStartArcade = $("btnStartArcade");
-  const btnStartStory = $("btnStartStory");
-  const btnResumeIfRunning = $("btnResumeIfRunning");
-  const btnHardReset = $("btnHardReset");
-
-  // Profiles
-  const profileSelect = $("profileSelect");
-  const btnNewProfile = $("btnNewProfile");
-  const newProfileWrap = $("newProfileWrap");
-  const newProfileName = $("newProfileName");
-  const btnCreateProfile = $("btnCreateProfile");
-  const btnCancelCreateProfile = $("btnCancelCreateProfile");
-  const btnRenameProfile = $("btnRenameProfile");
-  const btnDeleteProfile = $("btnDeleteProfile");
-  const profileStats = $("profileStats");
-
-  // Options
-  const optUseSprites = $("optUseSprites");
-  const optVibration = $("optVibration");
-  const optShowDpad = $("optShowDpad");
-  const optReduceMotion = $("optReduceMotion");
-  const optFx = $("optFx");
-  const optMusicOn = $("optMusicOn");
-  const optSfxOn = $("optSfxOn");
-  const optMuteAll = $("optMuteAll");
-  const optMusicVol = $("optMusicVol");
-  const optSfxVol = $("optSfxVol");
-  const btnTestSfx = $("btnTestSfx");
-  const btnTestMusic = $("btnTestMusic");
-  const btnRepairPwa = $("btnRepairPwa");
-
-  // Records
-  const recordsList = $("recordsList");
-  const btnClearRecords = $("btnClearRecords");
-
-  // HUD
-  const hudProfile = $("hudProfile");
-  const hudMode = $("hudMode");
-  const hudScore = $("hudScore");
-  const hudBestVal = $("hudBest");
-  const hudLevel = $("hudLevel");
-  const hudSpeed = $("hudSpeed");
-  const hudStageWrap = $("hudStageWrap");
-  const hudTimerWrap = $("hudTimerWrap");
-  const hudTargetWrap = $("hudTargetWrap");
-  const hudStageScoreWrap = $("hudStageScoreWrap");
-  const hudStage = $("hudStage");
-  const hudTimer = $("hudTimer");
-  const hudTarget = $("hudTarget");
-  const hudStageScore = $("hudStageScore");
-  const hpRow = $("hpRow");
-  const buffRow = $("buffRow");
-
-  const comboSeqEl = $("comboSeq");
-  const comboTimerVal = $("comboTimerVal");
-  const levelProgFill = $("levelProgFill");
-  const levelProgText = $("levelProgText");
-  const levelProgPct = $("levelProgPct");
-
-  // Canvas
-  const gameCanvas = $("gameCanvas");
-  const fxCanvas = $("fxCanvas");
-  const ctx = gameCanvas ? gameCanvas.getContext("2d", { alpha: false }) : null;
-  const fctx = fxCanvas ? fxCanvas.getContext("2d") : null;
-
-  // Dpad
-  const dpad = $("dpad");
-  const dpadBtns = qsa(".dbtn", dpad);
-
-  // Emergency
-  const btnEmergencyReload = $("btnEmergencyReload");
-  const btnEmergencyRepair = $("btnEmergencyRepair");
-
-  function showError(msg) {
-    try {
-      if (errMsg) errMsg.textContent = String(msg || "Error desconocido");
-      if (overlayError) overlayShow(overlayError);
-      console.error("[GridRogue Error]", msg);
-    } catch (_) { }
-  }
-
-  // ───────────────────────── Game Constants ─────────────────────────
-  const COLS = 8;
-  const BASE_ROWS_DESKTOP = 24;
-  const BASE_ROWS_MOBILE = 16;
-
-  const Cell = Object.freeze({
-    Empty: 0,
-    Coin: 1,
-    Gem: 2,
-    Bonus: 3,
-    Trap: 4,
-    Block: 5,
-  });
-
-  const CellName = {
-    [Cell.Empty]: "Vacío",
-    [Cell.Coin]: "Moneda",
-    [Cell.Gem]: "Gema",
-    [Cell.Bonus]: "Bonus",
-    [Cell.Trap]: "Trampa",
-    [Cell.Block]: "Muro",
-  };
-
-  const CellIcon = {
-    [Cell.Coin]: "paid",
-    [Cell.Gem]: "diamond",
-    [Cell.Bonus]: "stars",
-    [Cell.Trap]: "warning",
-    [Cell.Block]: "block",
-  };
-
-  const CellColor = {
-    [Cell.Empty]: "#0c0c14",
-    [Cell.Coin]: "#f4c34a",
-    [Cell.Gem]: "#7ae0ff",
-    [Cell.Bonus]: "#d685ff",
-    [Cell.Trap]: "#ff5d7a",
-    [Cell.Block]: "#7c849a",
-  };
-
-  // Sprites (si existen)
-  const SPRITES = {
-    [Cell.Coin]: "./assets/sprites/tile_coin.svg",
-    [Cell.Gem]: "./assets/sprites/tile_gem.svg",
-    [Cell.Bonus]: "./assets/sprites/tile_bonus.svg",
-    [Cell.Trap]: "./assets/sprites/tile_trap.svg",
-    [Cell.Block]: "./assets/sprites/tile_block.svg",
-  };
-  const spriteImg = new Map();
-
-  function loadSprites() {
-    spriteImg.clear();
-    for (const [k, path] of Object.entries(SPRITES)) {
+  // ───────────────────────── Sprites optional ─────────────────────────
+  const sprites = { ready: false, map: new Map() };
+  function spriteUrl(name) { return new URL(`./assets/sprites/${name}`, location.href).toString(); }
+  function loadImage(url) {
+    return new Promise((res, rej) => {
       const img = new Image();
       img.decoding = "async";
-      img.src = path;
-      spriteImg.set(Number(k), img);
-    }
-  }
-
-  // ───────────────────────── Mode / Campaign ─────────────────────────
-  const Mode = Object.freeze({ ENDLESS: "endless", ARCADE: "arcade", STORY: "story" });
-
-  const STORY_STAGES = [
-    { name: "Callejón Rojo", time: 38, target: 650, mod: { trap: +0.02 } },
-    { name: "Bloques Sur", time: 38, target: 800, mod: { block: +0.02 } },
-    { name: "Muelle Negro", time: 36, target: 980, mod: { gem: +0.02 } },
-    { name: "Vieja Ciudad", time: 36, target: 1150, mod: { bonus: +0.02 } },
-    { name: "Distrito Norte", time: 34, target: 1350, mod: { trap: +0.03 } },
-    { name: "El Puente", time: 34, target: 1600, mod: { block: +0.03 } },
-    { name: "Río Frío", time: 32, target: 1900, mod: { trap: +0.03, bonus: +0.01 } },
-    { name: "Mercado", time: 32, target: 2250, mod: { gem: +0.03 } },
-    { name: "Puerto", time: 30, target: 2700, mod: { trap: +0.04 } },
-    { name: "Centro", time: 30, target: 3200, mod: { block: +0.04 } },
-    { name: "La Torre", time: 28, target: 3800, mod: { trap: +0.04, gem: +0.02 } },
-    { name: "Final", time: 28, target: 4500, mod: { trap: +0.05, block: +0.03 } },
-  ];
-
-  function arcadeStageConfig(roundIndex) {
-    const r = Math.max(0, roundIndex | 0);
-    const time = clamp(40 - r * 0.8, 22, 40);
-    const target = Math.floor(700 * Math.pow(1.18, r));
-    const mod = {
-      trap: clamp(0.02 + r * 0.002, 0.02, 0.09),
-      block: clamp(0.02 + r * 0.0015, 0.02, 0.07),
-      gem: clamp(0.01 + r * 0.001, 0.01, 0.06),
-      bonus: clamp(0.01 + r * 0.001, 0.01, 0.06),
-    };
-    return { name: `Ronda ${r + 1}`, time, target, mod };
-  }
-
-  // ───────────────────────── Upgrades ─────────────────────────
-  const Rarity = Object.freeze({ Common: "common", Rare: "rare", Epic: "epic", Legendary: "legendary" });
-  const RARITY_LABEL = { common: "Común", rare: "Rara", epic: "Épica", legendary: "Legendaria" };
-  const RARITY_WEIGHT = { common: 60, rare: 25, epic: 12, legendary: 3 };
-
-  function Upg(id, name, desc, icon, rarity, max, apply) {
-    return { id, name, desc, icon, rarity, max, apply };
-  }
-
-  function createRunMods() {
-    return {
-      scoreMult: 1.0,
-      coinMult: 1.0,
-      gemMult: 1.0,
-      bonusMult: 1.0,
-
-      baseCoin: 20,
-      baseGem: 65,
-      baseBonus: 150,
-
-      critChance: 0.0,
-      critMult: 1.8,
-
-      magnetRange: 0,
-      magnetAlways: false,
-
-      shields: 0,
-      shieldMax: 0,
-      shieldRegenSteps: 0,
-      shieldRegenCounter: 0,
-
-      hp: 10,
-      hpMax: 10,
-      regenEverySteps: 0,
-      regenCounter: 0,
-
-      trapDamage: 1,
-      trapResist: 0.0,       // 0..0.8
-      blockBreakChance: 0.0, // 0..0.8
-      ghostChance: 0.0,      // 0..0.45 (evitar hit)
-
-      dodgeCharges: 0,       // ignora hit seguro
-
-      comboTime: 6.5,
-      comboBonusMult: 1.0,
-      comboHeal: 0,
-      comboShield: 0,
-      comboReroll: 0,
-      comboExtendOnCorrect: 0.0,
-
-      rerolls: 0,
-
-      stageTimeBonusOnCoin: 0.0,
-      stageTimeBonusOnGem: 0.0,
-      stageTimeBonusOnBonus: 0.0,
-      targetReduction: 0.0,
-
-      stepScore: 0,
-      streakMultPerStep: 0.0,
-      streak: 0,
-
-      convertTrapChance: 0.0,
-      convertBlockChance: 0.0,
-
-      chainChance: 0.0,
-      echoChance: 0.0,
-
-      previewRows: 0,
-      zoneExtra: 0,
-      zoneTight: 0,
-
-      reviveCharges: 0,
-      lowHpRage: false,
-      rageMult: 1.0,
-      rageSpeed: 1.0,
-
-      coinShieldChance: 0.0,
-      coinHealChance: 0.0,
-      bonusHeal: 0,
-      wallBreakScore: 0,
-
-      hooks: {
-        onCollect: [],
-        onHit: [],
-        onStep: [],
-        onStageStart: [],
-        onStageClear: [],
-      },
-
-      buffs: Object.create(null),
-    };
-  }
-
-  function addBuff(mods, id, icon, kind, seconds, count = 1) {
-    const b = mods.buffs[id] || { id, icon, kind, t: 0, count: 0 };
-    b.t = Math.max(b.t, Number(seconds) || 0);
-    b.count = Math.max(b.count, count | 0);
-    mods.buffs[id] = b;
-  }
-
-  function tickBuffs(mods, dt) {
-    for (const k of Object.keys(mods.buffs)) {
-      const b = mods.buffs[k];
-      b.t -= dt;
-      if (b.t <= 0) delete mods.buffs[k];
-    }
-  }
-
-  function buffsToUI(mods) {
-    const arr = [];
-    for (const k of Object.keys(mods.buffs)) {
-      const b = mods.buffs[k];
-      arr.push({
-        icon: b.icon || "bolt",
-        kind: b.kind || "misc",
-        text: `${fmtSeconds(b.t)}s`,
-        count: b.count || 1,
-      });
-    }
-    arr.sort((a, b) => (a.kind || "").localeCompare(b.kind || ""));
-    return arr;
-  }
-
-  // 60 upgrades
-  const UPGRADES = [
-    // Economía / valores
-    Upg("coin_plus", "Monedas +", "+20% valor de monedas.", "paid", Rarity.Common, 8, (m) => { m.coinMult *= 1.20; }),
-    Upg("gem_plus", "Gemas +", "+20% valor de gemas.", "diamond", Rarity.Common, 8, (m) => { m.gemMult *= 1.20; }),
-    Upg("bonus_plus", "Bonus +", "+20% valor de bonus.", "stars", Rarity.Common, 8, (m) => { m.bonusMult *= 1.20; }),
-    Upg("score_mult", "Amplificador", "+10% score global.", "bolt", Rarity.Common, 10, (m) => { m.scoreMult *= 1.10; }),
-
-    Upg("coin_forge", "Casa de Moneda", "+6 valor base de moneda.", "payments", Rarity.Common, 6, (m) => { m.baseCoin += 6; }),
-    Upg("gem_forge", "Tallador", "+18 valor base de gema.", "diamond", Rarity.Rare, 5, (m) => { m.baseGem += 18; }),
-    Upg("bonus_forge", "Cartel de Bonus", "+55 valor base de bonus.", "stars", Rarity.Rare, 5, (m) => { m.baseBonus += 55; }),
-
-    // Crítico
-    Upg("crit_eye", "Ojo Crítico", "+6% crítico.", "visibility", Rarity.Rare, 6, (m) => { m.critChance = clamp(m.critChance + 0.06, 0, 0.60); }),
-    Upg("crit_core", "Núcleo Crítico", "+0.25x a multiplicador crítico.", "flare", Rarity.Rare, 6, (m) => { m.critMult = clamp(m.critMult + 0.25, 1.6, 4.0); }),
-    Upg("crit_rush", "Racha Crítica", "Tras gema: +10% crítico durante 4s.", "flash_on", Rarity.Epic, 3, (m) => {
-      let t = 0;
-      m.hooks.onCollect.push((ev) => { if (ev.finalCell === Cell.Gem) t = Math.max(t, 4.0); });
-      m.hooks.onStep.push((ev) => { t = Math.max(0, t - ev.dt); });
-      m.hooks.onCollect.push((ev) => {
-        if (t > 0) {
-          ev._critBoost = 0.10;
-        }
-      });
-      m.hooks.onStep.push((ev) => {
-        if (t > 0) addBuff(m, "crr", "flash_on", "boost", t, 1);
-      });
-    }),
-
-    // Multiplicadores especiales / eventos
-    Upg("double_dip", "Doble Cobro", "10% de duplicar el valor al recoger.", "call_split", Rarity.Rare, 6, (m) => {
-      m.hooks.onCollect.push((ev) => { if (chance(0.10)) ev.addScore *= 2; });
-    }),
-    Upg("echo_pick", "Eco", "A veces el loot “resuena”: score extra.", "autorenew", Rarity.Rare, 6, (m) => { m.echoChance = clamp(m.echoChance + 0.12, 0, 0.65); }),
-    Upg("chain", "Cadena", "Chance de “chain”: +20% score extra.", "hub", Rarity.Rare, 8, (m) => { m.chainChance = clamp(m.chainChance + 0.12, 0, 0.80); }),
-
-    // Imán
-    Upg("magnet_range", "Imán", "+1 rango de imán.", "magnet", Rarity.Common, 6, (m) => { m.magnetRange += 1; addBuff(m, "mag", "magnet", "magnet", 6.0, 1); }),
-    Upg("magnet_over", "Overdrive Magnético", "Imán: recoge también diagonal (mejor).", "magnet", Rarity.Rare, 2, (m) => {
-      // flag por closure: al tener este upgrade, usamos Chebyshev en vez de Manhattan (ver magnet)
-      m._magCheby = true;
-      addBuff(m, "mgo", "magnet", "magnet", 10.0, 1);
-    }),
-    Upg("magnet_core", "Núcleo Magnético", "Imán siempre activo.", "magnet", Rarity.Epic, 1, (m) => { m.magnetAlways = true; addBuff(m, "magperma", "magnet", "magnet", 9999, 1); }),
-    Upg("vacuum_line", "Aspiradora", "Cada 10 steps recoge la fila del jugador.", "compress", Rarity.Epic, 2, (m) => {
-      m.hooks.onStep.push((ev) => { if ((ev.stepCount % 10) === 0) ev.flags.vacuum = true; });
-    }),
-
-    // Vida / Escudos
-    Upg("hp_forge", "Forja de Vida", "+2 vida máxima.", "favorite", Rarity.Rare, 5, (m) => { m.hpMax += 2; m.hp = Math.min(m.hpMax, m.hp + 2); }),
-    Upg("regen", "Regeneración", "Cura 1 cada X steps (mejora al stackear).", "healing", Rarity.Rare, 4, (m) => { m.regenEverySteps = m.regenEverySteps ? Math.max(4, m.regenEverySteps - 1) : 9; }),
-    Upg("shield_pack", "Escudo", "+2 escudos (máx +2).", "shield", Rarity.Rare, 6, (m) => { m.shieldMax += 2; m.shields = Math.min(m.shieldMax, m.shields + 2); addBuff(m, "sh", "shield", "shield", 8, 1); }),
-    Upg("shield_regen", "Recarga de Escudo", "Recarga 1 escudo cada X steps.", "battery_charging_full", Rarity.Epic, 3, (m) => { m.shieldRegenSteps = m.shieldRegenSteps ? Math.max(6, m.shieldRegenSteps - 2) : 12; }),
-    Upg("revive", "Segunda Oportunidad", "Revive 1 vez con 3 vida.", "restart_alt", Rarity.Legendary, 1, (m) => { m.reviveCharges += 1; addBuff(m, "rev", "restart_alt", "hp", 9999, m.reviveCharges); }),
-
-    Upg("coin_shield", "Moneda Blindada", "Moneda: 12% de ganar +1 escudo.", "shield", Rarity.Rare, 6, (m) => { m.coinShieldChance = clamp(m.coinShieldChance + 0.12, 0, 0.70); }),
-    Upg("coin_heal", "Moneda Sana", "Moneda: 10% de curar +1.", "favorite", Rarity.Rare, 6, (m) => { m.coinHealChance = clamp(m.coinHealChance + 0.10, 0, 0.60); }),
-    Upg("bonus_heal", "Bonus Vital", "Bonus cura +1 (stackea).", "health_metrics", Rarity.Epic, 4, (m) => { m.bonusHeal += 1; }),
-
-    Upg("dodge", "Evasión", "Ganas 1 carga: ignora el próximo hit.", "blur_on", Rarity.Epic, 3, (m) => {
-      m.dodgeCharges += 1;
-      addBuff(m, "dg", "blur_on", "resist", 9999, m.dodgeCharges);
-    }),
-
-    // Daño / resistencia
-    Upg("resist", "Aislante", "Reduce daño de trampas 25%.", "health_and_safety", Rarity.Rare, 4, (m) => { m.trapResist = clamp(m.trapResist + 0.25, 0, 0.80); addBuff(m, "res", "health_and_safety", "resist", 10, 1); }),
-    Upg("ghost", "Paso Fantasma", "8% de ignorar hits (trampa/muro).", "blur_on", Rarity.Epic, 5, (m) => { m.ghostChance = clamp(m.ghostChance + 0.08, 0, 0.45); }),
-    Upg("breaker", "Demolicionista", "+12% romper muros.", "construction", Rarity.Rare, 6, (m) => { m.blockBreakChance = clamp(m.blockBreakChance + 0.12, 0, 0.80); }),
-    Upg("wall_pay", "Soborno", "Al romper un muro: +100 score.", "request_quote", Rarity.Rare, 6, (m) => { m.wallBreakScore += 100; }),
-
-    // Combo
-    Upg("combo_time", "Reloj de Combo", "+1.2s ventana de combo.", "hourglass_top", Rarity.Common, 6, (m) => { m.comboTime += 1.2; }),
-    Upg("combo_bonus", "Maestría", "+20% bonus de combo.", "bolt", Rarity.Rare, 8, (m) => { m.comboBonusMult *= 1.20; }),
-    Upg("combo_heal", "Combo Vital", "Completar combo cura +1.", "favorite", Rarity.Epic, 4, (m) => { m.comboHeal += 1; }),
-    Upg("combo_shield", "Combo Escudo", "Completar combo da +1 escudo.", "shield", Rarity.Epic, 4, (m) => { m.comboShield += 1; }),
-    Upg("combo_reroll", "Combo Re-roll", "Completar combo: +1 re-roll.", "casino", Rarity.Epic, 3, (m) => { m.comboReroll += 1; }),
-    Upg("combo_extend", "Combo Extendido", "Acierto de combo: +0.35s extra.", "add_alarm", Rarity.Rare, 6, (m) => { m.comboExtendOnCorrect += 0.35; }),
-
-    // Arcade/Historia: tiempo/objetivo
-    Upg("time_coin", "Crono-Moneda", "+0.20s por moneda (rondas).", "timer", Rarity.Rare, 6, (m) => { m.stageTimeBonusOnCoin += 0.20; }),
-    Upg("time_gem", "Crono-Gema", "+0.35s por gema (rondas).", "timer", Rarity.Epic, 6, (m) => { m.stageTimeBonusOnGem += 0.35; }),
-    Upg("time_bonus", "Crono-Bonus", "+0.55s por bonus (rondas).", "timer", Rarity.Epic, 4, (m) => { m.stageTimeBonusOnBonus += 0.55; }),
-    Upg("target_cut", "Recorte de Objetivo", "-6% objetivo por stack (rondas).", "content_cut", Rarity.Epic, 5, (m) => { m.targetReduction = clamp(m.targetReduction + 0.06, 0, 0.35); }),
-    Upg("target_shave", "Rasurado", "-3% objetivo por stack (rondas).", "cut", Rarity.Rare, 8, (m) => { m.targetReduction = clamp(m.targetReduction + 0.03, 0, 0.35); }),
-
-    // Spawn manipulaciones / conversiones
-    Upg("alchemist", "Alquimista", "5% convertir moneda→gema al recoger.", "science", Rarity.Rare, 6, (m) => { m.hooks.onCollect.push((ev) => { if (ev.cell === Cell.Coin && chance(0.05)) ev.forceCell = Cell.Gem; }); }),
-    Upg("gem_to_bonus", "Tallado Dorado", "6% convertir gema→bonus al recoger.", "auto_awesome", Rarity.Epic, 4, (m) => { m.hooks.onCollect.push((ev) => { if (ev.cell === Cell.Gem && chance(0.06)) ev.forceCell = Cell.Bonus; }); }),
-    Upg("trap_to_coin", "Desarme", "6% convertir trampa en moneda al generar.", "swap_horiz", Rarity.Rare, 7, (m) => { m.convertTrapChance = clamp(m.convertTrapChance + 0.06, 0, 0.50); }),
-    Upg("block_to_bonus", "Grafitero", "6% convertir muro en bonus al generar.", "palette", Rarity.Rare, 7, (m) => { m.convertBlockChance = clamp(m.convertBlockChance + 0.06, 0, 0.50); }),
-
-    // Streak / step score
-    Upg("step_tip", "Propina", "+3 score por step.", "steps", Rarity.Common, 10, (m) => { m.stepScore += 3; }),
-    Upg("streak", "Racha", "Cada step sin daño: +1% score (resetea al hit).", "speed", Rarity.Epic, 4, (m) => { m.streakMultPerStep = clamp(m.streakMultPerStep + 0.01, 0, 0.06); }),
-    Upg("steps_big", "Kms", "+6 score por step.", "directions_walk", Rarity.Rare, 7, (m) => { m.stepScore += 6; }),
-
-    // Preview / zona
-    Upg("preview", "Predicción", "Muestra 1 fila futura.", "preview", Rarity.Rare, 2, (m) => { m.previewRows = Math.max(m.previewRows, 1); }),
-    Upg("preview_plus", "Predicción +", "Muestra 2 filas futuras.", "preview", Rarity.Epic, 1, (m) => { m.previewRows = Math.max(m.previewRows, 2); }),
-    Upg("zone_plus", "Zona Ampliada", "+1 fila de movimiento.", "unfold_more", Rarity.Rare, 3, (m) => { m.zoneExtra += 1; }),
-    Upg("zone_tight", "Zona Compacta", "-1 fila de movimiento, pero +12% score.", "unfold_less", Rarity.Epic, 2, (m) => { m.zoneTight += 1; m.scoreMult *= 1.12; }),
-
-    // Rage
-    Upg("rage", "Adrenalina", "Con vida baja: +20% score y +10% velocidad.", "local_fire_department", Rarity.Epic, 1, (m) => { m.lowHpRage = true; m.rageMult = 1.20; m.rageSpeed = 1.10; }),
-    Upg("risk", "Riesgo", "+18% score pero +1 daño de trampa.", "skull", Rarity.Epic, 2, (m) => { m.scoreMult *= 1.18; m.trapDamage += 1; }),
-
-    // Rerolls
-    Upg("reroll", "Re-roll", "+1 re-roll.", "casino", Rarity.Common, 8, (m) => { m.rerolls += 1; addBuff(m, "rr", "casino", "reroll", 8, m.rerolls); }),
-    Upg("reroll_stage", "Batería", "Al completar ronda: +1 re-roll.", "battery_full", Rarity.Epic, 2, (m) => { m.hooks.onStageClear.push((ev) => { ev.awardReroll = (ev.awardReroll || 0) + 1; }); }),
-
-    // Legendary spice
-    Upg("golden_run", "Ruta Dorada", "Monedas +60%, Gemas +35%, pero +trampas.", "workspace_premium", Rarity.Legendary, 1, (m) => {
-      m.coinMult *= 1.60;
-      m.gemMult *= 1.35;
-      m.hooks.onStageStart.push((ev) => { ev.extraTrap += 0.03; });
-    }),
-    Upg("guardian", "Guardián", "Empiezas con +4 escudos y recarga más rápida.", "shield", Rarity.Legendary, 1, (m) => {
-      m.shieldMax += 4;
-      m.shields = Math.min(m.shieldMax, m.shields + 4);
-      m.shieldRegenSteps = m.shieldRegenSteps ? Math.max(5, m.shieldRegenSteps - 3) : 9;
-    }),
-    Upg("lucky_start", "Inicio Bendito", "+1 re-roll y +2 escudos al empezar run.", "emoji_events", Rarity.Legendary, 1, (m) => {
-      m.rerolls += 1;
-      m.shieldMax += 2;
-      m.shields = Math.min(m.shieldMax, m.shields + 2);
-      addBuff(m, "ls", "emoji_events", "boost", 9999, 1);
-    }),
-
-    // Extra “nuevos”
-    Upg("bonus_bloom", "Flor de Bonus", "+bonus spawn en rondas.", "auto_awesome", Rarity.Rare, 6, (m) => { m.hooks.onStageStart.push((ev) => { ev.extraBonus += 0.01; }); }),
-    Upg("gem_finder", "Buscagemas", "+gem spawn en rondas.", "travel_explore", Rarity.Rare, 6, (m) => { m.hooks.onStageStart.push((ev) => { ev.extraGem += 0.01; }); }),
-    Upg("trap_slow", "Gel", "Hit: ralentiza el tick 0.6s.", "ac_unit", Rarity.Epic, 2, (m) => { m.hooks.onHit.push((ev) => { ev.slowFor = Math.max(ev.slowFor || 0, 0.6); }); }),
-    Upg("panic_boost", "Pánico", "Al recibir hit: +15% score 3s.", "bolt", Rarity.Rare, 4, (m) => {
-      m.hooks.onHit.push((ev) => {
-        ev.grantBoost = Math.max(ev.grantBoost || 0, 3.0);
-      });
-    }),
-    Upg("healgems", "Gemas Curativas", "Recoger gema cura 1 (cd 6s).", "health_metrics", Rarity.Epic, 2, (m) => {
-      let cd = 0;
-      m.hooks.onCollect.push((ev) => {
-        if (ev.finalCell !== Cell.Gem) return;
-        if (cd > 0) return;
-        cd = 6.0;
-        ev.heal = (ev.heal || 0) + 1;
-      });
-      m.hooks.onStep.push((ev) => { cd = Math.max(0, cd - ev.dt); });
-    }),
-  ];
-
-  function createUpgradeState() {
-    const st = Object.create(null);
-    for (const u of UPGRADES) st[u.id] = 0;
-    return st;
-  }
-
-  function canPickUpgrade(u, upState) {
-    const cur = upState[u.id] | 0;
-    return cur < (u.max | 0);
-  }
-
-  function weightedPick(list) {
-    let sum = 0;
-    for (const it of list) sum += (RARITY_WEIGHT[it.rarity] || 1);
-    let r = Math.random() * sum;
-    for (const it of list) {
-      r -= (RARITY_WEIGHT[it.rarity] || 1);
-      if (r <= 0) return it;
-    }
-    return list[list.length - 1] || null;
-  }
-
-  function rollUpgradeChoices(upState, count = 3) {
-    const pool = UPGRADES.filter(u => canPickUpgrade(u, upState));
-    const picks = [];
-    const used = new Set();
-    for (let i = 0; i < count; i++) {
-      const avail = pool.filter(u => !used.has(u.id));
-      if (!avail.length) break;
-      const pick = weightedPick(avail);
-      if (!pick) break;
-      used.add(pick.id);
-      picks.push(pick);
-    }
-    return picks;
-  }
-
-  // ───────────────────────── Game State ─────────────────────────
-  let rows = isMobile() ? BASE_ROWS_MOBILE : BASE_ROWS_DESKTOP;
-  let grid = [];
-  let zoneH = 6;
-  let zoneY0 = 0;
-
-  let running = false;
-  let paused = false;
-  let inUpgrade = false;
-
-  let mode = Mode.ENDLESS;
-
-  let player = { x: Math.floor(COLS / 2), yInZone: 2 };
-
-  let score = 0;
-  let best = 0;
-  let level = 1;
-  let xp = 0;
-  let xpNext = 350;
-
-  // arcade/story
-  let roundIndex = 0;
-  let stageTime = 0;
-  let stageTimeLeft = 0;
-  let stageTarget = 0;
-  let stageScore = 0;
-  let stageName = "";
-  let stageMods = { trap: 0.02, block: 0.02, gem: 0.01, bonus: 0.01 };
-
-  // tick
-  let tickBase = 0.42;
-  let tickMul = 1.0;
-  let tickAcc = 0;
-  let stepCount = 0;
-  let slowTimer = 0;
-
-  // combo
-  let comboSeq = [];
-  let comboIdx = 0;
-  let comboTimer = 0;
-  let comboMult = 1.0;
-
-  // upgrades
-  let mods = createRunMods();
-  let upState = createUpgradeState();
-  let pendingChoices = [];
-  let pendingPick = null;
-  let pendingReason = "level";
-
-  // profile
-  let playerName = "Jugador";
-
-  // install prompt
-  let deferredPrompt = null;
-
-  // fx particles
-  const FX = [];
-  function fxSpawn(type, x, y, col) {
-    if (!fctx) return;
-    FX.push({
-      type,
-      x, y,
-      vx: (Math.random() * 2 - 1) * 80,
-      vy: (Math.random() * -1) * 120,
-      life: 0.55,
-      t: 0.55,
-      col: col || "#fff",
-      s: 1 + Math.random() * 0.8
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error("img missing"));
+      img.src = url;
     });
   }
 
-  // ───────────────────────── Layout ─────────────────────────
-  function recomputeZone() {
-    const base = 6;
-    const extra = (mods.zoneExtra | 0);
-    const tight = (mods.zoneTight | 0);
-    zoneH = clampInt(base + extra - tight, 3, 10);
-    zoneY0 = (rows - zoneH) - 2;
-    player.yInZone = clampInt(player.yInZone, 0, zoneH - 1);
-  }
-
-  function genRow(density, stageMod) {
-    const r = new Array(COLS);
-    for (let x = 0; x < COLS; x++) {
-      const roll = Math.random();
-      if (roll > density) { r[x] = Cell.Empty; continue; }
-
-      let wCoin = 0.58;
-      let wGem = 0.18 + (stageMod?.gem || 0);
-      let wBonus = 0.10 + (stageMod?.bonus || 0);
-      let wTrap = 0.10 + (stageMod?.trap || 0);
-      let wBlock = 0.04 + (stageMod?.block || 0);
-
-      const sum = wCoin + wGem + wBonus + wTrap + wBlock;
-      wCoin /= sum; wGem /= sum; wBonus /= sum; wTrap /= sum; wBlock /= sum;
-
-      let p = Math.random();
-      let cell = Cell.Coin;
-      if ((p -= wCoin) <= 0) cell = Cell.Coin;
-      else if ((p -= wGem) <= 0) cell = Cell.Gem;
-      else if ((p -= wBonus) <= 0) cell = Cell.Bonus;
-      else if ((p -= wTrap) <= 0) cell = Cell.Trap;
-      else cell = Cell.Block;
-
-      if (cell === Cell.Trap && mods.convertTrapChance > 0 && chance(mods.convertTrapChance)) cell = Cell.Coin;
-      if (cell === Cell.Block && mods.convertBlockChance > 0 && chance(mods.convertBlockChance)) cell = Cell.Bonus;
-
-      r[x] = cell;
+  async function tryLoadFirst(key, files) {
+    for (const file of files) {
+      try { const img = await loadImage(spriteUrl(file)); sprites.map.set(key, img); return true; } catch {}
     }
-    return r;
+    return false;
   }
 
-  function resetGrid() {
-    grid = [];
-    for (let y = 0; y < rows; y++) {
-      const dens = clamp(0.18 + (y / rows) * 0.22, 0.12, 0.45);
-      grid.push(genRow(dens, stageMods));
-    }
-  }
+  async function preloadSpritesWithTimeout(timeoutMs = 900) {
+    const candidates = [
+      ["coin",  ["tile_coin.svg",  "tile_coin.png"]],
+      ["gem",   ["tile_gem.svg",   "tile_gem.png"]],
+      ["bonus", ["tile_bonus.svg", "tile_bonus.png"]],
+      ["trap",  ["tile_trap.svg",  "tile_trap.png"]],
+      ["block", ["tile_block.svg", "tile_block.png"]],
+      ["player", ["tile_player.svg", "tile_player.png", "tile_hero.svg", "tile_hero.png"]],
+    ];
 
-  function applyDpadVisibility() {
-    const show = !!settings.showDpad && isMobile();
-    if (dpad) dpad.hidden = !show;
-  }
-
-  // ───────────────────────── UI Helpers ─────────────────────────
-  function setTab(name) {
-    for (const t of tabs) t.classList.toggle("active", t.dataset.tab === name);
-    for (const p of pages) p.hidden = (p.dataset.page !== name);
-    if (catalog) catalog.hidden = true;
-  }
-
-  function openMenu() {
-    if (running && !inUpgrade) paused = true;
-    overlayShow(overlayMenu);
-    if (btnResumeIfRunning) btnResumeIfRunning.disabled = !running || inUpgrade;
-    renderProfilesUI();
-    renderRecordsUI();
-    renderOptionsUI();
-  }
-
-  function closeMenu() {
-    overlayHide(overlayMenu);
-    if (running && !inUpgrade) paused = false;
-  }
-
-  function updateHeaderDot(isUpdate) {
-    if (!homeDot) return;
-    homeDot.hidden = !isUpdate;
-  }
-
-  function hpFallback(el, hp, hpMax, shields) {
-    if (!el) return;
-    const h = clampInt(hp, 0, 999);
-    const hm = clampInt(hpMax, 1, 999);
-    const sh = clampInt(shields, 0, 999);
-    let html = "";
-    html += `<span class="pill mono">HP ${h}/${hm}</span>`;
-    if (sh > 0) html += ` <span class="pill mono">🛡 ${sh}</span>`;
-    el.innerHTML = html;
-  }
-
-  function buffsFallback(el, arr) {
-    if (!el) return;
-    if (!arr || !arr.length) { el.innerHTML = ""; return; }
-    el.innerHTML = arr.map(b => `<span class="pill mono">${b.icon} ${b.text}${b.count > 1 ? "×" + b.count : ""}</span>`).join(" ");
-  }
-
-  function updateHUD() {
-    if (!hudProfile) return;
-
-    hudProfile.textContent = playerName;
-    hudMode.textContent =
-      mode === Mode.ENDLESS ? "Infinito" :
-        mode === Mode.ARCADE ? "Arcade" : "Historia";
-
-    hudScore.textContent = fmtScore(score);
-    hudBestVal.textContent = fmtScore(best);
-    hudLevel.textContent = String(level | 0);
-
-    hudSpeed.textContent = tickMul.toFixed(2) + "x";
-
-    const isStages = (mode !== Mode.ENDLESS);
-    if (hudStageWrap) hudStageWrap.hidden = !isStages;
-    if (hudTimerWrap) hudTimerWrap.hidden = !isStages;
-    if (hudTargetWrap) hudTargetWrap.hidden = !isStages;
-    if (hudStageScoreWrap) hudStageScoreWrap.hidden = !isStages;
-
-    if (isStages) {
-      if (hudStage) hudStage.textContent = `${roundIndex + 1} • ${stageName}`;
-      if (hudTimer) hudTimer.textContent = fmtSeconds(stageTimeLeft);
-      if (hudTarget) hudTarget.textContent = fmtScore(stageTarget);
-      if (hudStageScore) hudStageScore.textContent = fmtScore(stageScore);
-    }
-
-    const buffsArr = buffsToUI(mods);
-    if (haveSetHP) setHP(hpRow, mods.hp, mods.hpMax, mods.shields);
-    else hpFallback(hpRow, mods.hp, mods.hpMax, mods.shields);
-
-    if (haveSetBuffs) setBuffs(buffRow, buffsArr);
-    else buffsFallback(buffRow, buffsArr);
-
-    if (comboTimerVal) comboTimerVal.textContent = `${fmtSeconds(comboTimer)}s`;
-    renderComboSeq();
-
-    // progress
-    if (levelProgFill && levelProgText && levelProgPct) {
-      if (mode === Mode.ENDLESS) {
-        const pct = clamp(xp / Math.max(1, xpNext), 0, 1);
-        levelProgFill.style.width = `${(pct * 100).toFixed(1)}%`;
-        levelProgText.textContent = `${fmtScore(xp | 0)} / ${fmtScore(xpNext | 0)}`;
-        levelProgPct.textContent = `${Math.floor(pct * 100)}%`;
-      } else {
-        const pct = clamp(stageScore / Math.max(1, stageTarget), 0, 1);
-        levelProgFill.style.width = `${(pct * 100).toFixed(1)}%`;
-        levelProgText.textContent = `${fmtScore(stageScore | 0)} / ${fmtScore(stageTarget | 0)}`;
-        levelProgPct.textContent = `${Math.floor(pct * 100)}%`;
-      }
-    }
-  }
-
-  function renderComboSeq() {
-    if (!comboSeqEl) return;
-    comboSeqEl.innerHTML = "";
-    for (let i = 0; i < comboSeq.length; i++) {
-      const c = comboSeq[i];
-      const done = i < comboIdx;
-      const el = document.createElement("div");
-      el.className = "comboToken" + (done ? " done" : "");
-      el.innerHTML = `<span class="ms">${CellIcon[c] || "bolt"}</span><span>${CellName[c] || "?"}</span>`;
-      comboSeqEl.appendChild(el);
-    }
-  }
-
-  function renderCatalog() {
-    if (!catalogList) return;
-    catalogList.innerHTML = "";
-    const sorted = UPGRADES.slice().sort((a, b) => {
-      const ra = RARITY_WEIGHT[a.rarity] || 0;
-      const rb = RARITY_WEIGHT[b.rarity] || 0;
-      if (ra !== rb) return rb - ra;
-      return a.name.localeCompare(b.name);
-    });
-    for (const u of sorted) {
-      const div = document.createElement("div");
-      div.className = "catalogItem";
-      div.innerHTML = `<div class="t"><span class="ms">${u.icon}</span> ${u.name} <span class="pill mono">${RARITY_LABEL[u.rarity]}</span></div><div class="d">${u.desc}</div>`;
-      catalogList.appendChild(div);
-    }
-  }
-
-  // ───────────────────────── Profiles ─────────────────────────
-  function ensureProfile() {
-    if (!Auth) {
-      playerName = "Jugador";
-      best = 0;
-      return;
-    }
-    const p = Auth.getActiveProfile?.();
-    if (!p) Auth.createProfile?.("Jugador");
-    const pp = Auth.getActiveProfile?.();
-    playerName = (pp?.name || "Jugador").slice(0, 16);
-    best = (Auth.getBestForActive?.() || 0) | 0;
-  }
-
-  function statLine(k, v) {
-    const div = document.createElement("div");
-    div.className = "statsLine";
-    div.innerHTML = `<div class="k">${k}</div><div class="v mono">${v}</div>`;
-    return div;
-  }
-
-  function renderProfileStats() {
-    if (!Auth || !profileStats) return;
-    const st = Auth.getStatsForActive?.() || {};
-    const p = Auth.getActiveProfile?.();
-    profileStats.innerHTML = "";
-    profileStats.appendChild(statLine("Perfil", p?.name || "Jugador"));
-    profileStats.appendChild(statLine("Runs", String(st.runsTotal | 0)));
-    profileStats.appendChild(statLine("Tiempo jugado", `${Math.floor((st.playTimeSec || 0) / 60)} min`));
-    profileStats.appendChild(statLine("Best overall", fmtScore(st.bestOverall | 0)));
-    profileStats.appendChild(statLine("Best infinito", fmtScore(st.bestEndless | 0)));
-    profileStats.appendChild(statLine("Best arcade", fmtScore(st.bestArcade | 0)));
-    profileStats.appendChild(statLine("Best historia", fmtScore(st.bestStory | 0)));
-    profileStats.appendChild(statLine("Mayor ronda arcade", String(st.highestArcadeRound | 0)));
-    profileStats.appendChild(statLine("Mayor stage historia", String(st.highestStoryStage | 0)));
-  }
-
-  function renderProfilesUI() {
-    if (!Auth || !profileSelect) {
-      if (profileSelect) profileSelect.innerHTML = `<option>Auth no disponible</option>`;
-      if (profileStats) profileStats.innerHTML = "";
-      return;
-    }
-    const list = Auth.listProfiles?.() || [];
-    const active = Auth.getActiveProfile?.();
-
-    profileSelect.innerHTML = "";
-    for (const p of list) {
-      const opt = document.createElement("option");
-      opt.value = p.id;
-      opt.textContent = p.name;
-      if (active && p.id === active.id) opt.selected = true;
-      profileSelect.appendChild(opt);
-    }
-    renderProfileStats();
-  }
-
-  // ───────────────────────── Records ─────────────────────────
-  function getRuns() {
-    const arr = lsGet(RUNS_KEY, []);
-    return Array.isArray(arr) ? arr : [];
-  }
-  function pushRun(run) {
-    const arr = getRuns();
-    arr.unshift(run);
-    while (arr.length > 30) arr.pop();
-    lsSet(RUNS_KEY, arr);
-  }
-  function renderRecordsUI() {
-    if (!recordsList) return;
-    const arr = getRuns();
-    recordsList.innerHTML = "";
-    if (!arr.length) {
-      recordsList.innerHTML = `<div class="tiny muted">No hay runs aún.</div>`;
-      return;
-    }
-    for (const r of arr) {
-      const div = document.createElement("div");
-      div.className = "statsLine";
-      const when = new Date(r.at || Date.now());
-      div.innerHTML = `<div class="k">${when.toLocaleString()} • ${r.mode}</div><div class="v mono">${fmtScore(r.score | 0)}</div>`;
-      recordsList.appendChild(div);
-    }
-  }
-
-  // ───────────────────────── Options ─────────────────────────
-  function renderOptionsUI() {
-    if (!optUseSprites) return;
-    optUseSprites.checked = !!settings.useSprites;
-    optVibration.checked = !!settings.vibration;
-    optShowDpad.checked = !!settings.showDpad;
-    optReduceMotion.checked = !!settings.reduceMotion;
-    if (optFx) optFx.value = String(settings.fx);
-    if (optMusicOn) optMusicOn.checked = !!settings.musicOn;
-    if (optSfxOn) optSfxOn.checked = !!settings.sfxOn;
-    if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
-    if (optMusicVol) optMusicVol.value = String(settings.musicVol);
-    if (optSfxVol) optSfxVol.value = String(settings.sfxVol);
-  }
-
-  // ───────────────────────── Run lifecycle ─────────────────────────
-  function newCombo() {
-    const pool = [Cell.Coin, Cell.Gem, Cell.Bonus];
-    comboSeq = [pool[randi(0, 2)], pool[randi(0, 2)], pool[randi(0, 2)]];
-    comboIdx = 0;
-    comboTimer = mods.comboTime;
-  }
-
-  function resetRunCommon() {
-    score = 0;
-    level = 1;
-    xp = 0;
-    xpNext = 350;
-
-    tickBase = 0.42;
-    tickMul = 1.0;
-    tickAcc = 0;
-    stepCount = 0;
-    slowTimer = 0;
-
-    mods = createRunMods();
-    mods.hpMax = 10;
-    mods.hp = mods.hpMax;
-
-    upState = createUpgradeState();
-    inUpgrade = false;
-
-    comboMult = 1.0;
-    newCombo();
-
-    rows = isMobile() ? BASE_ROWS_MOBILE : BASE_ROWS_DESKTOP;
-    resetGrid();
-    recomputeZone();
-
-    player.x = Math.floor(COLS / 2);
-    player.yInZone = Math.floor(zoneH / 2);
-
-    loadSprites();
-    updateHUD();
-  }
-
-  function setupStageForMode() {
-    if (mode === Mode.ENDLESS) {
-      stageTime = 0; stageTimeLeft = 0; stageTarget = 0; stageScore = 0; stageName = "—";
-      stageMods = { trap: 0.02, block: 0.02, gem: 0.01, bonus: 0.01 };
-      return;
-    }
-    if (mode === Mode.ARCADE) {
-      const cfg = arcadeStageConfig(roundIndex);
-      stageTime = cfg.time;
-      stageTimeLeft = cfg.time;
-      stageTarget = Math.floor(cfg.target * (1 - mods.targetReduction));
-      stageScore = 0;
-      stageName = cfg.name;
-      stageMods = cfg.mod;
-      return;
-    }
-    const idx = clampInt(roundIndex, 0, STORY_STAGES.length - 1);
-    const cfg = STORY_STAGES[idx];
-    stageTime = cfg.time;
-    stageTimeLeft = cfg.time;
-    stageTarget = Math.floor(cfg.target * (1 - mods.targetReduction));
-    stageScore = 0;
-    stageName = cfg.name;
-    stageMods = cfg.mod;
-  }
-
-  function startRun(selectedMode) {
-    mode = selectedMode;
-    roundIndex = 0;
-
-    resetRunCommon();
-    setupStageForMode();
-
-    if (mode !== Mode.ENDLESS) {
-      const ev = { extraTrap: 0, extraBlock: 0, extraGem: 0, extraBonus: 0 };
-      for (const fn of mods.hooks.onStageStart) { try { fn(ev); } catch (_) { } }
-      stageMods = {
-        trap: (stageMods.trap || 0) + (ev.extraTrap || 0),
-        block: (stageMods.block || 0) + (ev.extraBlock || 0),
-        gem: (stageMods.gem || 0) + (ev.extraGem || 0),
-        bonus: (stageMods.bonus || 0) + (ev.extraBonus || 0),
-      };
-    }
-
-    running = true;
-    paused = false;
-
-    if (btnPause) btnPause.disabled = false;
-    if (btnResumeIfRunning) btnResumeIfRunning.disabled = false;
-
-    if (stage) stage.classList.remove("isHidden");
-
-    closeMenu();
-    overlayHide(overlayPress);
-    overlayHide(overlayLoading);
-
-    applyAudioSettings();
-    try { AudioSys.startMusic?.(); } catch (_) { }
-
-    toast(mode === Mode.ENDLESS ? "Infinito" : (mode === Mode.ARCADE ? "Arcade" : "Historia"));
-  }
-
-  function endRun(reason) {
-    running = false;
-    paused = false;
-    inUpgrade = false;
-
-    if (btnPause) btnPause.disabled = true;
-    if (btnResumeIfRunning) btnResumeIfRunning.disabled = true;
-
-    try { AudioSys.stopMusic?.(); } catch (_) { }
-
-    const finalScore = score | 0;
-    best = Math.max(best | 0, finalScore);
-
+    const timeout = new Promise((res) => setTimeout(res, timeoutMs, "timeout"));
     try {
-      Auth?.setBestForActive?.(best);
-      const st = Auth?.getStatsForActive?.() || {};
-      const patch = { ...st };
+      const tasks = candidates.map(([k, list]) => tryLoadFirst(k, list));
+      await Promise.race([Promise.all(tasks), timeout]);
+      sprites.ready = sprites.map.size > 0;
+    } catch { sprites.ready = sprites.map.size > 0; }
+  }
 
-      patch.runsTotal = (st.runsTotal | 0) + 1;
-      patch.playTimeSec = (st.playTimeSec | 0) + Math.floor((stepCount * tickBase) / 1.0);
-      patch.bestOverall = Math.max(st.bestOverall | 0, finalScore);
+  // ───────────────────────── Game constants ─────────────────────────
+  const COLS = 8;
+  let ROWS = desiredRows();
 
-      if (mode === Mode.ENDLESS) patch.bestEndless = Math.max(st.bestEndless | 0, finalScore);
-      if (mode === Mode.ARCADE) {
-        patch.bestArcade = Math.max(st.bestArcade | 0, finalScore);
-        patch.highestArcadeRound = Math.max(st.highestArcadeRound | 0, (roundIndex + 1) | 0);
-      }
-      if (mode === Mode.STORY) {
-        patch.bestStory = Math.max(st.bestStory | 0, finalScore);
-        patch.highestStoryStage = Math.max(st.highestStoryStage | 0, (roundIndex + 1) | 0);
-      }
+  const CellType = Object.freeze({ Empty: 0, Coin: 1, Gem: 2, Bonus: 3, Trap: 4, Block: 5 });
 
-      patch.lastRunAt = Date.now();
-      patch.lastMode = mode;
-      patch.lastScore = finalScore;
+  const CELL_COLORS = {
+    [CellType.Empty]: "rgba(0,0,0,0)",
+    [CellType.Coin]: "#2ef2a0",
+    [CellType.Gem]:  "#6ab0ff",
+    [CellType.Bonus]:"#ffd35a",
+    [CellType.Trap]: "#ff6b3d",
+    [CellType.Block]:"#7f8aa8",
+  };
 
-      Auth?.patchStatsForActive?.(patch);
-    } catch (_) { }
+  function canvasAR() { return COLS / ROWS; }
 
-    pushRun({ at: Date.now(), mode, score: finalScore });
+  function applyRowsIfNeeded({ forceReset = false } = {}) {
+    const want = desiredRows();
+    if (want === ROWS) return false;
+    ROWS = want;
 
-    if (goReason) goReason.textContent = String(reason || "—");
-    if (goScore) goScore.textContent = fmtScore(finalScore);
-    if (goBest) goBest.innerHTML = `Best: <span class="v">${fmtScore(best)}</span>`;
-
-    if (goStats) {
-      goStats.innerHTML = "";
-      const lines = [
-        ["Modo", mode === Mode.ENDLESS ? "Infinito" : (mode === Mode.ARCADE ? "Arcade" : "Historia")],
-        ["Nivel", String(level | 0)],
-        ["Steps", String(stepCount | 0)],
-        ["Ronda/Stage", (mode === Mode.ENDLESS) ? "—" : String(roundIndex + 1)],
-      ];
-      for (const [k, v] of lines) {
-        const div = document.createElement("div");
-        div.className = "line statsLine";
-        div.innerHTML = `<span>${k}</span><span class="mono">${v}</span>`;
-        goStats.appendChild(div);
+    if (forceReset) {
+      resetRun(true);
+    } else {
+      if (running && !gameOver) resetRun(true);
+      else {
+        recomputeZone();
+        makeGrid();
+        rerollCombo();
       }
     }
-
-    overlayShow(overlayGameOver);
-    updateHUD();
-  }
-
-  function hardResetRun() {
-    running = false;
-    paused = false;
-    inUpgrade = false;
-    if (btnPause) btnPause.disabled = true;
-    if (btnResumeIfRunning) btnResumeIfRunning.disabled = true;
-    try { AudioSys.stopMusic?.(); } catch (_) { }
-    if (stage) stage.classList.add("isHidden");
-    toast("Run reseteada");
-    updateHUD();
-  }
-
-  // ───────────────────────── Upgrade Flow ─────────────────────────
-  function openUpgrade(reason) {
-    if (!running) return;
-    inUpgrade = true;
-    paused = true;
-    pendingReason = reason || "level";
-
-    pendingChoices = rollUpgradeChoices(upState, 4);
-    pendingPick = null;
-
-    if (upgradeChoices) upgradeChoices.innerHTML = "";
-    for (const u of pendingChoices) {
-      const card = document.createElement("div");
-      card.className = "upCard";
-      card.innerHTML = `
-        <div class="upHead">
-          <div class="upIcon"><span class="ms">${u.icon}</span></div>
-          <div>
-            <div class="upName">${u.name}</div>
-            <div class="tiny muted">${u.id}</div>
-          </div>
-          <div class="upRarity">${RARITY_LABEL[u.rarity] || "Común"}</div>
-        </div>
-        <div class="upDesc">${u.desc}</div>
-      `;
-      card.addEventListener("click", () => {
-        qsa(".upCard", upgradeChoices).forEach(x => x.style.outline = "none");
-        card.style.outline = "2px solid rgba(122,167,255,.55)";
-        pendingPick = u;
-        vibrate(8);
-        try { AudioSys.sfx?.("upgrade"); } catch (_) { }
-      });
-      upgradeChoices?.appendChild(card);
-    }
-
-    if (btnReroll) btnReroll.disabled = !(mods.rerolls > 0);
-    if (rerollCount) rerollCount.textContent = String(mods.rerolls | 0);
-
-    if (upTitle) upTitle.textContent = (reason === "stage") ? "Ronda completada: elige mejora" : "Subes de nivel: elige mejora";
-    if (upSub) upSub.textContent = "Elige 1 • Puedes re-roll si tienes";
-
-    overlayShow(overlayUpgrades);
-    updateHUD();
-  }
-
-  function applyUpgrade(u) {
-    if (!u) return false;
-    if (!canPickUpgrade(u, upState)) return false;
-
-    upState[u.id] = (upState[u.id] | 0) + 1;
-    try { u.apply(mods, upState[u.id] | 0); } catch (_) { }
-
-    if (mods.reviveCharges > 0) addBuff(mods, "rev", "restart_alt", "hp", 9999, mods.reviveCharges);
-    if (mods.dodgeCharges > 0) addBuff(mods, "dg", "blur_on", "resist", 9999, mods.dodgeCharges);
-
-    toast(`+ ${u.name}`);
     return true;
   }
 
-  function rerollUpgrades() {
-    if (mods.rerolls <= 0) return;
-    mods.rerolls -= 1;
-    if (btnReroll) btnReroll.disabled = !(mods.rerolls > 0);
-    if (rerollCount) rerollCount.textContent = String(mods.rerolls | 0);
+  // ───────────────────────── Runtime state ─────────────────────────
+  let running = false, paused = false, gameOver = false, inLevelUp = false;
+  let score = 0, streak = 0, mult = 1.0, level = 1;
 
-    pendingChoices = rollUpgradeChoices(upState, 4);
-    pendingPick = null;
+  let levelStartScore = 0;
+  let nextLevelAt = 220;
 
-    if (upgradeChoices) upgradeChoices.innerHTML = "";
-    for (const u of pendingChoices) {
-      const card = document.createElement("div");
-      card.className = "upCard";
-      card.innerHTML = `
-        <div class="upHead">
-          <div class="upIcon"><span class="ms">${u.icon}</span></div>
-          <div>
-            <div class="upName">${u.name}</div>
-            <div class="tiny muted">${u.id}</div>
-          </div>
-          <div class="upRarity">${RARITY_LABEL[u.rarity] || "Común"}</div>
-        </div>
-        <div class="upDesc">${u.desc}</div>
-      `;
-      card.addEventListener("click", () => {
-        qsa(".upCard", upgradeChoices).forEach(x => x.style.outline = "none");
-        card.style.outline = "2px solid rgba(122,167,255,.55)";
-        pendingPick = u;
-        vibrate(8);
-        try { AudioSys.sfx?.("reroll"); } catch (_) { }
+  let grid = [];
+  let consumed = [];
+  let gridReady = false;
+
+  let dpr = 1;
+  let cssCanvasW = 0, cssCanvasH = 0;
+
+  let cellPx = 18;
+  let gridW = 0, gridH = 0;
+  let offX = 0, offY = 0;
+
+  let scrollPx = 0;
+  let runTime = 0;
+
+  let zoneBase = 3;
+  let zoneExtra = 0;
+  let zoneH = 3;
+  let zoneY0 = 0;
+
+  let targetCol = 3;
+  let targetRow = 1;
+  let colF = 3;
+  let rowF = 1;
+
+  const HP_START = 10;
+  const HP_CAP = 24;
+  let hpMax = HP_START;
+  let hp = HP_START;
+
+  let shields = 0;
+
+  let magnet = 0;
+  let magnetTime = 0;
+
+  let scoreBoost = 0;
+  let trapResist = 0;
+  let rerolls = 0;
+
+  let coinValue = 10;
+  let gemValue = 30;
+  let bonusValue = 60;
+
+  const COMBO_POOL = [
+    [CellType.Coin, CellType.Coin, CellType.Gem],
+    [CellType.Gem, CellType.Coin, CellType.Bonus],
+    [CellType.Coin, CellType.Gem, CellType.Gem],
+    [CellType.Bonus, CellType.Coin, CellType.Gem],
+    [CellType.Coin, CellType.Coin, CellType.Coin, CellType.Bonus],
+  ];
+  let combo = [];
+  let comboIdx = 0;
+  let comboTimeMax = 6.0;
+  let comboTime = 6.0;
+
+  let toastT = 0;
+  let playerPulse = 0;
+  let zonePulse = 0;
+
+  let shakeT = 0;
+  let shakePow = 0;
+
+  let hitFlashT = 0;
+  let hitFlashMax = 1;
+  let hitFlashColor = "#ff2b4d";
+
+  const particles = [];
+  const floatTexts = [];
+
+  const bgStars = [];
+  function initBgStars() {
+    bgStars.length = 0;
+    const n = clampInt(Math.round(42 + (cssCanvasW * cssCanvasH) / 18000), 40, 140);
+    for (let i = 0; i < n; i++) {
+      bgStars.push({
+        x: Math.random() * Math.max(1, cssCanvasW),
+        y: Math.random() * Math.max(1, cssCanvasH),
+        s: 0.6 + Math.random() * 1.8,
+        a: 0.04 + Math.random() * 0.18,
+        vy: 6 + Math.random() * 22,
+        tw: 0.8 + Math.random() * 1.8,
+        t: Math.random() * 10,
       });
-      upgradeChoices?.appendChild(card);
+    }
+  }
+  function tickBgStars(dtMs) {
+    if (!bgStars.length) return;
+    const dt = dtMs / 1000;
+    for (const st of bgStars) {
+      st.t += dt * st.tw;
+      st.y += st.vy * dt;
+      if (st.y > cssCanvasH + 4) {
+        st.y = -4;
+        st.x = Math.random() * Math.max(1, cssCanvasW);
+        st.vy = 6 + Math.random() * 22;
+        st.a = 0.04 + Math.random() * 0.18;
+        st.s = 0.6 + Math.random() * 1.8;
+        st.tw = 0.8 + Math.random() * 1.8;
+      }
+    }
+  }
+
+  // ───────────────────────── DOM refs ─────────────────────────
+  let stage, canvasWrap, gameArea, hud, canvas, ctx;
+  let brandSub;
+
+  let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion;
+  let btnOptions, btnPause, btnRestart, btnInstall;
+
+  let overlayLoading, overlayPress, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
+  let btnPressStart, pressSub, pressHint, pressMeta;
+  let pillModeVal, railCanvasEl;
+
+  let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
+  let btnResume, btnQuitToStart, btnPausedRestart;
+
+  let upTitle, upSub, upgradeChoices, btnReroll, btnSkipUpgrade;
+
+  let goStats, goScoreBig, goBestBig, btnBackToStart, btnRetry;
+
+  let btnCloseOptions, optSprites, optVibration, optDpad, optFx, optFxValue, btnClearLocal, btnRepairPWA;
+
+  let optMusicOn, optSfxOn, optMusicVol, optMusicVolValue, optSfxVol, optSfxVolValue, optMuteAll, btnTestAudio;
+
+  let optLang = null;
+
+  let errMsg, btnErrClose, btnErrReload;
+
+  let comboSeq, comboTimerVal, comboHint, toast;
+  let levelProgFill, levelProgText, levelProgPct;
+
+  let dpad, btnUp, btnDown, btnLeft, btnRight;
+
+  // HUD flotante (para que NO empuje layout del HUD)
+  let hudFloat = null;
+  let hudStatus = null;
+  let hudHearts = null;
+  let hudBuffs = null;
+  let _hudPosRAF = 0;
+  let _hudRO = null;
+  let _hudAnchorRO = null;
+
+  // ───────────────────────── Error handling global ─────────────────────────
+  let fatalStop = false;
+
+  function showFatal(err) {
+    try {
+      fatalStop = true;
+      console.error(err);
+      try { overlayHide(overlayLoading); } catch {}
+      const msg =
+        (err && err.message) ? err.message :
+        (typeof err === "string" ? err : "Error desconocido");
+      if (errMsg) errMsg.textContent = msg;
+      if (overlayError) overlayShow(overlayError);
+      if (!overlayError) alert(msg);
+    } catch {}
+  }
+  window.addEventListener("error", (e) => showFatal(e?.error || new Error(e?.message || "Error")));
+  window.addEventListener("unhandledrejection", (e) => showFatal(e?.reason || new Error("Promise rejection")));
+
+  // ───────────────────────── UI helpers ─────────────────────────
+  function showToast(msg, ms = 900) {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.hidden = false;
+    toast.classList.add("show");
+    toastT = ms;
+  }
+  function hideToast() {
+    if (!toast) return;
+    toast.classList.remove("show");
+    setTimeout(() => { toast.hidden = true; }, 180);
+    toastT = 0;
+  }
+  function setOfflinePill() { if (pillOffline) pillOffline.hidden = navigator.onLine; }
+
+  function speedRowsPerSec() {
+    const t = runTime;
+    const base = 1.05;
+    const byTime = 0.026 * t;
+    const byLevel = 0.075 * (level - 1);
+    return clamp(base + byTime + byLevel, 0.9, 6.0);
+  }
+
+  function updateLevelProgressUI() {
+    const denom = Math.max(1, (nextLevelAt - levelStartScore));
+    const v = clamp((score - levelStartScore) / denom, 0, 1);
+    if (levelProgFill) levelProgFill.style.width = `${Math.round(v * 100)}%`;
+    if (levelProgText) levelProgText.textContent = `Lv ${level} • ${Math.max(0, score - levelStartScore)}/${Math.max(1, nextLevelAt - levelStartScore)}`;
+    if (levelProgPct) levelProgPct.textContent = `${Math.round(v * 100)}%`;
+  }
+
+  function fmtTimeShort(sec) {
+    sec = Math.max(0, Number(sec) || 0);
+    if (sec >= 99.5) return "99s";
+    return `${Math.ceil(sec)}s`;
+  }
+
+  function escapeAttr(s) {
+    const v = String(s ?? "");
+    return v
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  // ───────────────────────── HUD FLOAT LAYER ─────────────────────────
+  function ensureCriticalCSS() {
+    if (document.getElementById("grCriticalCss")) return;
+    try {
+      const st = document.createElement("style");
+      st.id = "grCriticalCss";
+      st.textContent = `
+#hudFloat{position:absolute;inset:0;pointer-events:none;z-index:40;overflow:visible}
+#hudStatus{position:absolute;left:0;top:0;transform:translate(0,0);pointer-events:none;will-change:transform}
+.upFxCanvas{position:absolute;inset:0;pointer-events:none}
+      `.trim();
+      document.head.appendChild(st);
+    } catch {}
+  }
+
+  function ensureHudFloatLayer() {
+    ensureCriticalCSS();
+
+    if (hudFloat && hudFloat.parentElement) return;
+
+    const existing = $("hudFloat");
+    if (existing) { hudFloat = existing; return; }
+
+    // Importante: host = STAGE para que el HUD flotante NO afecte a la maquetación del HUD real.
+    const host = stage || document.body;
+    if (!host) return;
+
+    try {
+      const cs = getComputedStyle(host);
+      if (cs.position === "static") host.style.position = "relative";
+      // Evita que un overflow hidden “corte” los badges/vida
+      if (cs.overflow === "hidden") host.style.overflow = "visible";
+    } catch {}
+
+    try {
+      const f = document.createElement("div");
+      f.id = "hudFloat";
+      f.className = "hudFloat";
+      host.appendChild(f);
+      hudFloat = f;
+    } catch {}
+  }
+
+  function getLevelProgressAnchor() {
+    return $("levelProgress") ||
+      levelProgText?.closest?.("#levelProgress") ||
+      levelProgFill?.closest?.("#levelProgress") ||
+      levelProgText?.closest?.(".levelProgress") ||
+      levelProgFill?.closest?.(".levelProgress") ||
+      null;
+  }
+
+  function scheduleHudStatusPosition() {
+    if (_hudPosRAF) return;
+    _hudPosRAF = requestAnimationFrame(() => {
+      _hudPosRAF = 0;
+      positionHudStatus();
+    });
+  }
+
+  function positionHudStatus() {
+    if (!hudStatus || !hudFloat) return;
+
+    // Referencia: stage (ideal), si no, fallback
+    const ref = stage || document.body;
+    const refRect = ref.getBoundingClientRect?.();
+    if (!refRect) return;
+
+    const vv = window.visualViewport || null;
+    const vvTop = vv ? Math.max(0, vv.offsetTop || 0) : 0;
+    const vvLeft = vv ? Math.max(0, vv.offsetLeft || 0) : 0;
+
+    const anchor = getLevelProgressAnchor();
+
+    let x = Math.max(0, Math.round(refRect.width - 260));
+    let y = 8 + vvTop;
+    let w = 260;
+
+    if (anchor?.getBoundingClientRect) {
+      const a = anchor.getBoundingClientRect();
+      x = Math.round((a.left - refRect.left) + vvLeft);
+      y = Math.round((a.bottom - refRect.top) + 6 + vvTop);
+      w = Math.round(a.width);
+
+      if ((y + 52) > (refRect.height + vvTop)) {
+        y = Math.round((a.top - refRect.top) - 52 - 6 + vvTop);
+      }
+      x = clampInt(x, 6, Math.max(6, Math.round(refRect.width - 6 - w)));
+      y = clampInt(y, 6, Math.max(6, Math.round(refRect.height - 6 - 52)));
     }
 
-    try { AudioSys.sfx?.("reroll"); } catch (_) { }
+    hudStatus.style.left = "0px";
+    hudStatus.style.top = "0px";
+    hudStatus.style.width = `${Math.max(220, w)}px`;
+    hudStatus.style.transform = `translate(${x}px, ${y}px)`;
   }
 
-  function closeUpgradeAndContinue() {
-    if (pendingPick) applyUpgrade(pendingPick);
-    overlayHide(overlayUpgrades);
-    inUpgrade = false;
-    paused = false;
-
-    if (pendingReason === "stage") nextStage();
-    recomputeZone();
-    updateHUD();
+  function shouldShowHudStatus() {
+    if (!running) return false;
+    if (overlayUpgrades && !overlayUpgrades.hidden) return false;
+    if (overlayOptions && !overlayOptions.hidden) return false;
+    if (overlayGameOver && !overlayGameOver.hidden) return false;
+    if (overlayLoading && !overlayLoading.hidden) return false;
+    if (overlayError && !overlayError.hidden) return false;
+    return true;
   }
 
-  // ───────────────────────── Stage Flow ─────────────────────────
-  function stageClear() {
-    const timeBonus = Math.floor(stageTimeLeft * 8);
-    score += timeBonus;
-    addBuff(mods, "tb", "timer", "boost", 6, 1);
+  function ensureHudStatusUI() {
+    ensureHudFloatLayer();
+    if (!hudFloat) return;
 
-    const ev = { awardReroll: 0 };
-    for (const fn of mods.hooks.onStageClear) { try { fn(ev); } catch (_) { } }
-    if (ev.awardReroll) mods.rerolls += (ev.awardReroll | 0);
-
-    level += 1;
-    openUpgrade("stage");
-  }
-
-  function nextStage() {
-    if (mode === Mode.ENDLESS) return;
-
-    roundIndex += 1;
-
-    if (mode === Mode.STORY && roundIndex >= STORY_STAGES.length) {
-      endRun("Historia completada ✅");
+    const existing = $("hudStatus");
+    if (existing) {
+      hudStatus = existing;
+      hudHearts = $("hudHearts");
+      hudBuffs = $("hudBuffs");
+      if (!hudStatus.parentElement) hudFloat.appendChild(hudStatus);
       return;
     }
 
-    setupStageForMode();
+    if (hudStatus && hudStatus.parentElement) return;
 
-    const ev = { extraTrap: 0, extraBlock: 0, extraGem: 0, extraBonus: 0 };
-    for (const fn of mods.hooks.onStageStart) { try { fn(ev); } catch (_) { } }
-    stageMods = {
-      trap: (stageMods.trap || 0) + (ev.extraTrap || 0),
-      block: (stageMods.block || 0) + (ev.extraBlock || 0),
-      gem: (stageMods.gem || 0) + (ev.extraGem || 0),
-      bonus: (stageMods.bonus || 0) + (ev.extraBonus || 0),
-    };
+    try {
+      const wrap = document.createElement("div");
+      wrap.id = "hudStatus";
+      wrap.className = "statusBar";
+      wrap.style.pointerEvents = "none";
 
-    toast(`Siguiente: ${stageName}`);
+      const hearts = document.createElement("div");
+      hearts.id = "hudHearts";
+      hearts.className = "hpWrap";
+
+      const buffs = document.createElement("div");
+      buffs.id = "hudBuffs";
+      buffs.className = "buffBar";
+
+      wrap.appendChild(hearts);
+      wrap.appendChild(buffs);
+
+      hudFloat.appendChild(wrap);
+
+      hudStatus = wrap;
+      hudHearts = hearts;
+      hudBuffs = buffs;
+    } catch {}
+  }
+
+  function installHudObservers() {
+    try {
+      if (window.ResizeObserver) {
+        if (!_hudRO && (stage || hud)) {
+          _hudRO = new ResizeObserver(() => scheduleHudStatusPosition());
+          _hudRO.observe(stage || hud);
+        }
+
+        const anchor = getLevelProgressAnchor();
+        if (!_hudAnchorRO && anchor) {
+          _hudAnchorRO = new ResizeObserver(() => scheduleHudStatusPosition());
+          _hudAnchorRO.observe(anchor);
+        }
+      }
+
+      window.visualViewport?.addEventListener?.("resize", scheduleHudStatusPosition, { passive: true });
+      window.visualViewport?.addEventListener?.("scroll", scheduleHudStatusPosition, { passive: true });
+
+      document.fonts?.ready?.then?.(() => scheduleHudStatusPosition()).catch?.(() => {});
+    } catch {}
+  }
+
+  function updateHeartsUI() {
+    if (!hudHearts) return;
+
+    const maxShow = isMobileLayout() ? 10 : 14;
+    const showN = Math.min(hpMax, maxShow);
+    const extra = Math.max(0, hpMax - showN);
+
+    const hearts = [];
+    for (let i = 0; i < showN; i++) {
+      const full = i < hp;
+      hearts.push(`<span class="ms heart ${full ? "full" : "empty"}">favorite</span>`);
+    }
+
+    hudHearts.innerHTML = `
+<span class="ms hpIcon">favorite</span>
+<span class="hpHearts">${hearts.join("")}</span>
+${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
+<span class="hpText mono">(${hp}/${hpMax})</span>
+    `.trim();
+
+    hudHearts.title = T("hud_hp_title", "Vida: {0}", `${hp}/${hpMax}`);
+  }
+
+  function makeBuffBadge({ kind, icon, count = 0, time = 0, title = "" }) {
+    const showCount = Number(count) > 1;
+    const showTime = Number(time) > 0;
+    return `
+<div class="buffBadge" data-kind="${escapeAttr(kind)}" title="${escapeAttr(title)}">
+  <span class="ms bIcon">${escapeAttr(icon)}</span>
+  ${showTime ? `<span class="bTime mono">${escapeAttr(fmtTimeShort(time))}</span>` : ``}
+  ${showCount ? `<span class="bCount mono">${count | 0}</span>` : ``}
+</div>
+    `.trim();
+  }
+
+  const pickedCount = new Map();
+
+  function updateBuffsUI() {
+    if (!hudBuffs) return;
+
+    const items = [];
+
+    if (shields > 0) items.push(makeBuffBadge({ kind: "shield", icon: "shield", count: shields, title: T("buff_shield", "Escudo") }));
+
+    if (magnet > 0 && magnetTime > 0.01) items.push(makeBuffBadge({
+      kind: "magnet", icon: "compass_calibration", count: magnet, time: magnetTime, title: T("buff_magnet", "Imán"),
+    }));
+
+    const boostCount = pickedCount.get("boost") || 0;
+    if (boostCount > 0) items.push(makeBuffBadge({ kind: "boost", icon: "bolt", count: boostCount, title: T("buff_boost", "Puntos +") }));
+
+    if (trapResist > 0) items.push(makeBuffBadge({ kind: "resist", icon: "verified_user", count: trapResist, title: T("buff_trap_resist", "Resistencia a trampas") }));
+
+    if (zoneExtra > 0) items.push(makeBuffBadge({ kind: "zone", icon: "open_with", count: zoneExtra, title: T("buff_zone", "Zona +") }));
+
+    if (rerolls > 0) items.push(makeBuffBadge({ kind: "reroll", icon: "casino", count: rerolls, title: T("buff_rerolls", "Rerolls") }));
+
+    const hpExtra = Math.max(0, hpMax - HP_START);
+    if (hpExtra > 0) items.push(makeBuffBadge({ kind: "hp", icon: "favorite", count: hpExtra + 1, title: T("buff_hp", "Vida máxima") }));
+
+    hudBuffs.innerHTML = items.join("");
+  }
+
+  function updateStatusHUD() {
+    ensureHudStatusUI();
+    if (hudStatus) {
+      hudStatus.hidden = !shouldShowHudStatus();
+      hudStatus.classList.toggle("compact", isMobileLayout());
+      hudStatus.style.pointerEvents = "none";
+    }
+    updateHeartsUI();
+    updateBuffsUI();
+    scheduleHudStatusPosition();
+  }
+
+  // Pills a 10Hz
+  let pillAccMs = 0;
+  function updatePillsNow() {
+    setPill(pillScore, score | 0);
+    setPill(pillBest, best | 0);
+    setPill(pillStreak, streak | 0);
+    setPill(pillMult, mult.toFixed(2));
+    setPill(pillLevel, `Lv ${level}`);
+    setPill(pillSpeed, `${speedRowsPerSec().toFixed(1)}x`);
+    setPill(pillPlayer, playerName || I18n.t("defaultPlayer"));
+    setOfflinePill();
+    updateLevelProgressUI();
+    updateStatusHUD();
+  }
+
+  function setupLanguageUI() {
+    optLang = $("optLang");
+    if (optLang) return;
+
+    if (!overlayOptions) return;
+    try {
+      const host =
+        overlayOptions.querySelector?.("#optionsBody") ||
+        overlayOptions.querySelector?.(".panel") ||
+        overlayOptions.querySelector?.(".card") ||
+        overlayOptions;
+
+      if (!host) return;
+      if (overlayOptions.querySelector?.("#optLang")) { optLang = $("optLang"); return; }
+
+      const row = document.createElement("div");
+      row.id = "optLangRow";
+      row.className = "optRow";
+
+      const lab = document.createElement("label");
+      lab.htmlFor = "optLang";
+      lab.className = "optLabel";
+      lab.textContent = I18n.t("opt_language");
+
+      const sel = document.createElement("select");
+      sel.id = "optLang";
+      sel.className = "select";
+
+      row.appendChild(lab);
+      row.appendChild(sel);
+
+      host.appendChild(row);
+      optLang = sel;
+    } catch {}
+  }
+
+  function fillLanguageOptions() {
+    if (!optLang) return;
+    const opts = I18n.languageOptions();
+    optLang.innerHTML = "";
+    for (const o of opts) {
+      const op = document.createElement("option");
+      op.value = o.code;
+      op.textContent = o.label;
+      optLang.appendChild(op);
+    }
+  }
+
+  function applySettingsToUI() {
+    if (optSprites) optSprites.checked = !!settings.useSprites;
+    if (optVibration) optVibration.checked = !!settings.vibration;
+    if (optDpad) optDpad.checked = !!settings.showDpad;
+    if (optFx) optFx.value = String(settings.fx);
+    if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
+
+    if (optMusicOn) optMusicOn.checked = !!settings.musicOn;
+    if (optSfxOn) optSfxOn.checked = !!settings.sfxOn;
+    if (optMusicVol) optMusicVol.value = String(settings.musicVol);
+    if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
+    if (optSfxVol) optSfxVol.value = String(settings.sfxVol);
+    if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
+    if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
+
+    if (optLang) {
+      fillLanguageOptions();
+      optLang.value = String(settings.lang || "auto");
+    }
+
+    const coarse = isCoarsePointer() || isMobileUA();
+    if (dpad) dpad.hidden = !(coarse && settings.showDpad);
+      document.documentElement.classList.toggle("dpadOn", coarse && settings.showDpad);
+
+    I18n.applyDataAttrs(document);
+    applyAudioSettingsNow();
+    updateStatusHUD();
+    resize();
+  }
+
+  // ───────────────────────── Grid ─────────────────────────
+  function recomputeZone() {
+    zoneH = clampInt(zoneBase + zoneExtra, 3, 9);
+    zoneY0 = (ROWS - zoneH) - 2;
+    zoneY0 = clampInt(zoneY0, 0, ROWS - zoneH);
+
+    targetRow = clampInt(targetRow, 0, zoneH - 1);
+    rowF = clamp(Number(rowF) || 0, 0, zoneH - 1);
+  }
+
+  function genRow() {
+    const density = clamp(0.28 + (level - 1) * 0.005, 0.18, 0.52);
+    const out = new Array(COLS).fill(CellType.Empty);
+
+    for (let c = 0; c < COLS; c++) {
+      if (!chance(density)) continue;
+
+      const wGood = 0.64, wTrap = 0.18, wBlock = 0.18;
+      let roll = Math.random() * (wGood + wTrap + wBlock);
+
+      if (roll < wGood) {
+        const g = Math.random();
+        out[c] = (g < 0.68) ? CellType.Coin : (g < 0.92) ? CellType.Gem : CellType.Bonus;
+      } else if (roll < wGood + wTrap) out[c] = CellType.Trap;
+      else out[c] = CellType.Block;
+    }
+
+    const blocks = out.reduce((a, v) => a + (v === CellType.Block ? 1 : 0), 0);
+    if (blocks >= Math.max(4, Math.floor(COLS * 0.6))) {
+      for (let c = 0; c < COLS; c++) {
+        if (out[c] === CellType.Block && chance(0.55)) out[c] = CellType.Empty;
+      }
+    }
+    return out;
+  }
+
+  function makeGrid() {
+    grid = new Array(ROWS);
+    consumed = new Array(ROWS);
+    for (let r = 0; r < ROWS; r++) {
+      grid[r] = genRow();
+      consumed[r] = new Array(COLS).fill(false);
+    }
+    gridReady = true;
+  }
+
+  function ensureGridValid() {
+    if (!Array.isArray(grid) || grid.length !== ROWS) return false;
+    if (!Array.isArray(consumed) || consumed.length !== ROWS) return false;
+    for (let r = 0; r < ROWS; r++) {
+      if (!Array.isArray(grid[r]) || grid[r].length !== COLS) return false;
+      if (!Array.isArray(consumed[r]) || consumed[r].length !== COLS) return false;
+    }
+    return true;
+  }
+
+  function shiftRows() {
+    for (let r = ROWS - 1; r >= 1; r--) {
+      grid[r] = grid[r - 1];
+      consumed[r] = consumed[r - 1];
+    }
+    grid[0] = genRow();
+    consumed[0] = new Array(COLS).fill(false);
+  }
+
+  function playerAbsRow() {
+    const rf = Number.isFinite(rowF) ? rowF : 0;
+    const rr = zoneY0 + Math.round(rf);
+    return clampInt(rr, 0, ROWS - 1);
+  }
+
+  function safeCellType(r, c) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    const row = grid[r];
+    if (!row) return CellType.Empty;
+    const t = row[c];
+    return Number.isFinite(t) ? t : CellType.Empty;
+  }
+
+  function safeConsumed(r, c) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    const row = consumed[r];
+    if (!row) return false;
+    return !!row[c];
+  }
+
+  function setConsumed(r, c, v) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    if (!consumed[r]) consumed[r] = new Array(COLS).fill(false);
+    consumed[r][c] = !!v;
+  }
+
+  function setCellEmpty(r, c) {
+    r = clampInt(r, 0, ROWS - 1);
+    c = clampInt(c, 0, COLS - 1);
+    if (!grid[r]) grid[r] = genRow();
+    grid[r][c] = CellType.Empty;
   }
 
   // ───────────────────────── Gameplay ─────────────────────────
-  function cellValue(cell) {
-    if (cell === Cell.Coin) return Math.floor(mods.baseCoin * mods.coinMult);
-    if (cell === Cell.Gem) return Math.floor(mods.baseGem * mods.gemMult);
-    if (cell === Cell.Bonus) return Math.floor(mods.baseBonus * mods.bonusMult);
+  function scoreFor(type) {
+    if (type === CellType.Coin) return coinValue;
+    if (type === CellType.Gem) return gemValue;
+    if (type === CellType.Bonus) return bonusValue;
+    if (type === CellType.Trap) {
+      const base = 25;
+      const reduced = base * (1 - 0.10 * trapResist);
+      return -Math.round(reduced);
+    }
     return 0;
   }
 
-  function applyCollect(cell, x = -1, y = -1) {
-    if (cell === Cell.Empty) return;
-
-    const ev = {
-      cell,
-      x, y,
-      forceCell: null,
-      finalCell: cell,
-      addScore: cellValue(cell),
-      heal: 0,
-      _critBoost: 0,
-      _boostSec: 0,
-    };
-    const before = ev.addScore;
-
-    for (const fn of mods.hooks.onCollect) { try { fn(ev); } catch (_) { } }
-
-    ev.finalCell = (ev.forceCell != null) ? ev.forceCell : ev.cell;
-
-    // si cambió el tipo y nadie tocó addScore, recalculamos
-    if (ev.finalCell !== ev.cell && ev.addScore === before) {
-      ev.addScore = cellValue(ev.finalCell);
-    }
-
-    let add = ev.addScore;
-    // streak mult
-    if (mods.streakMultPerStep > 0 && mods.streak > 0) {
-      const streakMult = 1 + clamp(mods.streak * mods.streakMultPerStep, 0, 0.80);
-      add = Math.floor(add * streakMult);
-    }
-
-    // boost temporal desde hooks de hit
-    if (mods._scoreBoostTimer && mods._scoreBoostTimer > 0) {
-      add = Math.floor(add * 1.15);
-    }
-
-    add = Math.floor(add * mods.scoreMult * comboMult);
-
-    // chain / echo
-    if (mods.chainChance > 0 && chance(Math.min(0.95, mods.chainChance))) {
-      add += Math.floor(add * 0.20);
-      addBuff(mods, "ch", "hub", "boost", 1.6, 1);
-    }
-    if (mods.echoChance > 0 && chance(Math.min(0.95, mods.echoChance))) {
-      add += Math.floor(add * 0.35);
-      addBuff(mods, "ec", "autorenew", "boost", 1.6, 1);
-    }
-
-    // crítico (incluye boost temporal)
-    const critChanceEff = clamp(mods.critChance + (ev._critBoost || 0), 0, 0.85);
-    if (critChanceEff > 0 && chance(critChanceEff)) {
-      add = Math.floor(add * mods.critMult);
-      addBuff(mods, "cr", "flare", "boost", 1.2, 1);
-    }
-
-    score += add;
-
-    if (mode !== Mode.ENDLESS) {
-      stageScore += add;
-      if (ev.finalCell === Cell.Coin && mods.stageTimeBonusOnCoin > 0) stageTimeLeft += mods.stageTimeBonusOnCoin;
-      if (ev.finalCell === Cell.Gem && mods.stageTimeBonusOnGem > 0) stageTimeLeft += mods.stageTimeBonusOnGem;
-      if (ev.finalCell === Cell.Bonus && mods.stageTimeBonusOnBonus > 0) stageTimeLeft += mods.stageTimeBonusOnBonus;
-    } else {
-      xp += Math.floor(add * 0.30);
-    }
-
-    // combo
-    if (ev.finalCell === comboSeq[comboIdx]) {
-      comboIdx += 1;
-      comboTimer = mods.comboTime + (mods.comboExtendOnCorrect || 0);
-      if (comboIdx >= comboSeq.length) {
-        const bonus = Math.floor(220 * mods.comboBonusMult * comboMult);
-        score += bonus;
-        if (mode !== Mode.ENDLESS) stageScore += bonus;
-        else xp += Math.floor(bonus * 0.25);
-
-        comboMult = clamp(comboMult + 0.15, 1.0, 4.0);
-        addBuff(mods, "cmb", "bolt", "boost", 4.0, Math.max(1, Math.floor(comboMult)));
-
-        if (mods.comboHeal > 0) mods.hp = Math.min(mods.hpMax, mods.hp + mods.comboHeal);
-        if (mods.comboShield > 0) {
-          mods.shieldMax = Math.max(mods.shieldMax, mods.shields + mods.comboShield);
-          mods.shields = Math.min(mods.shieldMax, mods.shields + mods.comboShield);
-        }
-        if (mods.comboReroll > 0) {
-          mods.rerolls += mods.comboReroll;
-          addBuff(mods, "rr", "casino", "reroll", 4.0, mods.rerolls);
-        }
-
-        newCombo();
-      }
-    } else {
-      comboIdx = 0;
-      comboMult = 1.0;
-      comboTimer = mods.comboTime;
-    }
-
-    // cura por hooks
-    if (ev.heal) mods.hp = Math.min(mods.hpMax, mods.hp + (ev.heal | 0));
-
-    // extras por tipo
-    if (ev.finalCell === Cell.Coin) {
-      if (mods.coinShieldChance > 0 && chance(mods.coinShieldChance)) {
-        mods.shieldMax = Math.max(mods.shieldMax, mods.shields + 1);
-        mods.shields = Math.min(mods.shieldMax, mods.shields + 1);
-        addBuff(mods, "csh", "shield", "shield", 1.2, 1);
-      }
-      if (mods.coinHealChance > 0 && chance(mods.coinHealChance)) {
-        mods.hp = Math.min(mods.hpMax, mods.hp + 1);
-        addBuff(mods, "chl", "favorite", "hp", 1.2, 1);
-      }
-    }
-    if (ev.finalCell === Cell.Bonus && mods.bonusHeal > 0) {
-      mods.hp = Math.min(mods.hpMax, mods.hp + mods.bonusHeal);
-      addBuff(mods, "bhl", "health_metrics", "hp", 1.2, mods.bonusHeal);
-    }
-
-    // FX + SFX
-    const col = CellColor[ev.finalCell] || "#fff";
-    fxSpawn("pop", pxOf(x) + CELL * 0.5, pyOf(y) + CELL * 0.5, col);
-
-    try {
-      if (ev.finalCell === Cell.Coin) AudioSys.sfx?.("coin");
-      else if (ev.finalCell === Cell.Gem) AudioSys.sfx?.("gem");
-      else if (ev.finalCell === Cell.Bonus) AudioSys.sfx?.("bonus");
-    } catch (_) { }
+  function shake(ms, powPx) {
+    shakeT = Math.max(shakeT, ms);
+    shakePow = Math.max(shakePow, powPx);
   }
 
-  function applyHit(kind) {
-    // dodge charge
-    if (mods.dodgeCharges > 0) {
-      mods.dodgeCharges -= 1;
-      addBuff(mods, "dg", "blur_on", "resist", 1.2, 1);
-      try { AudioSys.sfx?.("pick"); } catch (_) { }
-      return;
+  function flash(color = "#ff2b4d", ms = 220) {
+    hitFlashColor = color;
+    hitFlashT = Math.max(hitFlashT, ms);
+    hitFlashMax = Math.max(1, ms);
+  }
+
+  function spawnFloatText(x, y, text, color, stroke = "rgba(0,0,0,0.55)") {
+    floatTexts.push({ x, y, vy: -18 - 22 * settings.fx, life: 720, max: 720, text, color, stroke });
+    if (floatTexts.length > 80) floatTexts.splice(0, floatTexts.length - 80);
+  }
+
+  function spawnPop(x, y, color, intensity = 1) {
+    const n = clampInt(Math.round(12 * intensity * settings.fx), 8, 30);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (0.35 + Math.random() * 1.20) * (26 + 34 * settings.fx) * intensity;
+      particles.push({
+        kind: "dot",
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 260 + Math.random() * 220,
+        max: 460,
+        rad: (1.2 + Math.random() * 2.8) * settings.fx,
+        color
+      });
+    }
+    if (particles.length > 900) particles.splice(0, particles.length - 900);
+  }
+
+  function spawnSparks(x, y, color, intensity = 1) {
+    const n = clampInt(Math.round(10 * intensity * settings.fx), 6, 24);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (0.55 + Math.random() * 1.25) * (34 + 44 * settings.fx) * intensity;
+      particles.push({
+        kind: "spark", x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 220 + Math.random() * 180,
+        max: 420,
+        w: Math.max(1.4, (1.6 + Math.random() * 1.4) * settings.fx),
+        h: Math.max(4.0, (6.0 + Math.random() * 7.0) * settings.fx),
+        rot: a + (Math.random() * 0.6 - 0.3),
+        vr: (Math.random() * 5.0 - 2.5),
+        color
+      });
+    }
+    if (particles.length > 900) particles.splice(0, particles.length - 900);
+  }
+
+  function spawnEatFX(t, x, y) {
+    const col = CELL_COLORS[t] || "rgba(255,255,255,0.85)";
+    const boostJuice = clamp(1 + scoreBoost * 0.85, 1, 1.85);
+    const multJuice = clamp(1 + (mult - 1) * 0.20, 1, 1.65);
+    const intensity = boostJuice * multJuice;
+
+    if (t === CellType.Coin) { spawnPop(x, y, col, 0.85 * intensity); spawnSparks(x, y, "rgba(255,255,255,0.92)", 0.65 * intensity); shake(55, 1.2); return; }
+    if (t === CellType.Gem)  { spawnPop(x, y, col, 0.95 * intensity); spawnSparks(x, y, "rgba(170,210,255,0.95)", 0.85 * intensity); shake(60, 1.35); return; }
+    if (t === CellType.Bonus){ spawnPop(x, y, col, 1.15 * intensity); spawnSparks(x, y, "rgba(255,245,200,0.95)", 1.0 * intensity); shake(75, 1.6); return; }
+  }
+
+  function loseHp(amount, x = null, y = null) {
+    const prev = hp;
+    hp = clampInt(hp - (amount | 0), 0, hpMax);
+    if (x != null && y != null) spawnFloatText(x, y, `-${amount}♥`, "rgba(255,120,120,0.95)");
+    updateStatusHUD();
+    if (hp <= 0 && prev > 0) {
+      AudioSys.sfx("gameover");
+      gameOverNow(T("reason_no_hp", "Sin vida"));
+    }
+  }
+
+  function applyTrapHit(x = null, y = null) {
+    playerPulse = 1;
+    zonePulse = 1;
+
+    const v = scoreFor(CellType.Trap);
+    const add = Math.round(v * mult * (1 + scoreBoost));
+    score = Math.max(0, score + add);
+
+    loseHp(1, x, y);
+    if (gameOver) return;
+
+    streak = 0;
+    mult = clamp(mult * 0.92, 1.0, 4.0);
+
+    vibrate(18);
+    failCombo();
+
+    showToast(T("toast_trap_hp", "¡Trampa! -1♥"), 700);
+    flash("#ff6b3d", 220);
+    shake(220, 7);
+    AudioSys.sfx("trap");
+  }
+
+  function applyCollect(t, checkCombo = true, x = null, y = null) {
+    if (t === CellType.Trap) { applyTrapHit(x, y); return; }
+
+    playerPulse = 1;
+    zonePulse = 1;
+
+    const v = scoreFor(t);
+    const add = Math.round(v * mult * (1 + scoreBoost));
+    score = Math.max(0, score + add);
+
+    streak++;
+    vibrate(10);
+
+    if (t === CellType.Coin) AudioSys.sfx("coin");
+    else if (t === CellType.Gem) AudioSys.sfx("gem");
+    else if (t === CellType.Bonus) AudioSys.sfx("bonus");
+
+    if (checkCombo) {
+      if (combo[comboIdx] === t) {
+        comboIdx++;
+        comboTime = comboTimeMax;
+        if (comboIdx >= combo.length) {
+          mult = clamp(mult + 0.15, 1.0, 4.0);
+          showToast(I18n.t("toast_combo_mult"), 900);
+          shake(140, 3.2);
+          flash("#6ab0ff", 140);
+          rerollCombo();
+        } else renderComboUI();
+      } else failCombo();
     }
 
-    // ghost
-    if (mods.ghostChance > 0 && chance(mods.ghostChance)) {
-      addBuff(mods, "gh", "blur_on", "resist", 1.2, 1);
-      return;
+    if (!inLevelUp && score >= nextLevelAt) openUpgrade();
+  }
+
+  function applyMagnetAround(r, c) {
+    if (magnet <= 0 || magnetTime <= 0) return;
+    const rad = clampInt(magnet, 1, 3);
+
+    for (let rr = r - rad; rr <= r + rad; rr++) {
+      if (rr < 0 || rr >= ROWS) continue;
+      for (let cc = c - rad; cc <= c + rad; cc++) {
+        if (cc < 0 || cc >= COLS) continue;
+
+        if (safeConsumed(rr, cc)) continue;
+        const t = safeCellType(rr, cc);
+
+        if (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus) {
+          setConsumed(rr, cc, true);
+          setCellEmpty(rr, cc);
+
+          const x = offX + cc * cellPx + cellPx * 0.5;
+          const y = offY + rr * cellPx + cellPx * 0.5 + scrollPx;
+
+          spawnEatFX(t, x, y);
+
+          const before = score;
+          applyCollect(t, false, x, y);
+          const delta = score - before;
+          if (delta !== 0) spawnFloatText(
+            x, y,
+            (delta > 0 ? `+${delta}` : `${delta}`),
+            delta > 0 ? "rgba(255,255,255,0.92)" : "rgba(255,120,120,0.95)"
+          );
+        }
+      }
     }
+  }
 
-    // hooks onHit
-    const ev = { kind, slowFor: 0, grantBoost: 0 };
-    for (const fn of mods.hooks.onHit) { try { fn(ev); } catch (_) { } }
-    if (ev.slowFor) slowTimer = Math.max(slowTimer, ev.slowFor);
-    if (ev.grantBoost) {
-      mods._scoreBoostTimer = Math.max(mods._scoreBoostTimer || 0, ev.grantBoost);
-      addBuff(mods, "pb", "bolt", "boost", ev.grantBoost, 1);
-    }
+  function stepAdvance() {
+    if (!ensureGridValid()) { makeGrid(); recomputeZone(); }
+    shiftRows();
+    score += 1;
 
-    let dmg = mods.trapDamage;
-    dmg = Math.max(0, Math.floor(dmg * (1 - clamp(mods.trapResist, 0, 0.85))));
-    dmg = Math.max(1, dmg);
+    const r = playerAbsRow();
+    const c = clampInt(Math.round(Number.isFinite(colF) ? colF : targetCol), 0, COLS - 1);
 
-    if (mods.shields > 0) {
-      mods.shields = Math.max(0, mods.shields - 1);
-      addBuff(mods, "shh", "shield", "shield", 1.5, 1);
-      try { AudioSys.sfx?.("block"); } catch (_) { }
-      return;
-    }
+    applyMagnetAround(r, c);
 
-    mods.hp -= dmg;
-    addBuff(mods, "hit", "warning", "resist", 1.5, 1);
-    try { AudioSys.sfx?.(kind === "block" ? "block" : "trap"); } catch (_) { }
+    const t = safeCellType(r, c);
 
-    mods.streak = 0;
+    if (!safeConsumed(r, c) && t !== CellType.Empty) {
+      setConsumed(r, c, true);
+      setCellEmpty(r, c);
 
-    if (mods.lowHpRage && mods.hp <= 3) addBuff(mods, "rg", "local_fire_department", "boost", 2.0, 1);
+      const x = offX + c * cellPx + cellPx * 0.5;
+      const y = offY + r * cellPx + cellPx * 0.5 + scrollPx;
 
-    if (mods.hp <= 0) {
-      if (mods.reviveCharges > 0) {
-        mods.reviveCharges -= 1;
-        mods.hp = Math.min(mods.hpMax, 3);
-        addBuff(mods, "rev", "restart_alt", "hp", 4.0, 1);
+      if (t === CellType.Block) {
+        flash("#ff2b4d", 280);
+        shake(260, 10);
+
+        spawnPop(x, y, CELL_COLORS[t], 1.25);
+        spawnSparks(x, y, "rgba(255,140,160,0.95)", 1.0);
+        spawnFloatText(x, y, "KO", "rgba(255,120,120,0.95)");
+
+        if (shields > 0) {
+          shields--;
+          showToast(I18n.t("toast_shield_saved"), 900);
+          vibrate(24);
+          shake(190, 6);
+          flash("#6ab0ff", 140);
+          AudioSys.sfx("pick");
+          updateStatusHUD();
+        } else {
+          AudioSys.sfx("ko");
+          gameOverNow("KO");
+        }
         return;
       }
-      endRun(kind === "trap" ? "Te eliminó una trampa" : "Te bloqueó un muro");
+
+      if (t === CellType.Trap) {
+        spawnPop(x, y, CELL_COLORS[t], 0.95);
+        spawnSparks(x, y, "rgba(255,160,180,0.95)", 0.65);
+        applyCollect(CellType.Trap, true, x, y);
+        return;
+      }
+
+      if (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus) spawnEatFX(t, x, y);
+      else spawnPop(x, y, CELL_COLORS[t], 0.85);
+
+      const before = score;
+      applyCollect(t, true, x, y);
+      const delta = score - before;
+      if (delta !== 0) spawnFloatText(
+        x, y,
+        (delta > 0 ? `+${delta}` : `${delta}`),
+        delta > 0 ? "rgba(255,255,255,0.92)" : "rgba(255,120,120,0.95)"
+      );
     }
   }
 
-  function step() {
-    stepCount++;
-
-    // regen
-    if (mods.regenEverySteps > 0) {
-      mods.regenCounter = (mods.regenCounter | 0) + 1;
-      if (mods.regenCounter >= mods.regenEverySteps) {
-        mods.regenCounter = 0;
-        if (mods.hp > 0) mods.hp = Math.min(mods.hpMax, mods.hp + 1);
-      }
-    }
-
-    // shield regen
-    if (mods.shieldRegenSteps > 0) {
-      mods.shieldRegenCounter = (mods.shieldRegenCounter | 0) + 1;
-      if (mods.shieldRegenCounter >= mods.shieldRegenSteps) {
-        mods.shieldRegenCounter = 0;
-        if (mods.shields < mods.shieldMax) {
-          mods.shields = Math.min(mods.shieldMax, mods.shields + 1);
-          addBuff(mods, "shr", "battery_charging_full", "shield", 1.2, 1);
-        }
-      }
-    }
-
-    // streak
-    if (mods.streakMultPerStep > 0) mods.streak = (mods.streak | 0) + 1;
-
-    // step score
-    if (mods.stepScore > 0) {
-      let add = mods.stepScore;
-      add = Math.floor(add * mods.scoreMult);
-      score += add;
-      if (mode !== Mode.ENDLESS) stageScore += add;
-      else xp += Math.floor(add * 0.2);
-    }
-
-    // onStep hooks
-    const evStep = { stepCount, dt: tickBase * (1 / tickMul), flags: {} };
-    for (const fn of mods.hooks.onStep) { try { fn(evStep); } catch (_) { } }
-
-    // scroll grid
-    grid.pop();
-    const dens = clamp(0.22 + (level * 0.006), 0.20, 0.55);
-    grid.unshift(genRow(dens, stageMods));
-
-    // vacuum
-    if (evStep.flags.vacuum) {
-      const y = zoneY0 + player.yInZone;
-      const row = grid[y];
-      for (let x = 0; x < COLS; x++) {
-        const c = row[x];
-        if (c && c !== Cell.Empty) {
-          applyCollect(c, x, y);
-          row[x] = Cell.Empty;
-        }
-      }
-      try { AudioSys.sfx?.("pick"); } catch (_) { }
-    }
-
-    // magnet (si always)
-    if (mods.magnetAlways && mods.magnetRange > 0) magnetPull();
-
-    // endless leveling
-    if (mode === Mode.ENDLESS && !inUpgrade && xp >= xpNext) {
-      xp -= xpNext;
-      level += 1;
-      xpNext = Math.floor(xpNext * 1.18 + 110);
-      openUpgrade("level");
-    }
-
-    // speed scaling base
-    if (mode === Mode.ENDLESS) tickMul = clamp(1 + level * 0.035, 1, 2.35);
-    else tickMul = clamp(1 + roundIndex * 0.05, 1, 2.25);
+  // ───────────────────────── Combo UI ─────────────────────────
+  function iconForType(t) {
+    if (t === CellType.Coin) return "paid";
+    if (t === CellType.Gem) return "diamond";
+    if (t === CellType.Bonus) return "workspace_premium";
+    return "help";
+  }
+  function nameForType(t) {
+    if (t === CellType.Coin) return I18n.t("cell_coin");
+    if (t === CellType.Gem) return I18n.t("cell_gem");
+    if (t === CellType.Bonus) return I18n.t("cell_bonus");
+    return "—";
   }
 
-  function absY() { return zoneY0 + player.yInZone; }
+  function rerollCombo() {
+    const pick = COMBO_POOL[randi(0, COMBO_POOL.length - 1)];
+    combo = Array.isArray(pick) ? pick.slice() : [CellType.Coin, CellType.Coin, CellType.Gem];
+    comboIdx = 0;
+    comboTimeMax = clamp(6.2 - (level * 0.06), 3.8, 7.0);
+    comboTime = comboTimeMax;
+    renderComboUI();
+  }
 
-  function tryMove(dx, dy) {
-    if (!running || paused || inUpgrade) return;
+  function renderComboUI() {
+    if (!comboSeq || !comboHint) return;
+    comboSeq.innerHTML = "";
+    for (let i = 0; i < combo.length; i++) {
+      const t = combo[i];
+      const chip = document.createElement("div");
+      chip.className = "chip";
+      chip.style.setProperty("--chipc", CELL_COLORS[t] || "rgba(255,255,255,0.22)");
 
-    const nx = clampInt(player.x + dx, 0, COLS - 1);
-    const nyz = clampInt(player.yInZone + dy, 0, zoneH - 1);
-    const ay = zoneY0 + nyz;
+      const ic = document.createElement("span");
+      ic.className = "ms";
+      ic.textContent = iconForType(t);
 
-    // si no cambia, nada
-    if (nx === player.x && nyz === player.yInZone) return;
+      const tx = document.createElement("span");
+      tx.textContent = nameForType(t);
 
-    const cell = grid?.[ay]?.[nx] ?? Cell.Empty;
+      chip.appendChild(ic);
+      chip.appendChild(tx);
 
-    // muro: bloquea salvo romper
-    if (cell === Cell.Block) {
-      if (mods.blockBreakChance > 0 && chance(mods.blockBreakChance)) {
-        grid[ay][nx] = Cell.Empty;
-        if (mods.wallBreakScore > 0) {
-          score += mods.wallBreakScore;
-          if (mode !== Mode.ENDLESS) stageScore += mods.wallBreakScore;
-        }
-        addBuff(mods, "brk", "construction", "boost", 1.0, 1);
-        try { AudioSys.sfx?.("block"); } catch (_) { }
-        fxSpawn("hit", pxOf(nx) + CELL * 0.5, pyOf(ay) + CELL * 0.5, CellColor[Cell.Block]);
+      if (i < comboIdx) chip.style.opacity = "0.55";
+      if (i === comboIdx) chip.style.borderColor = "rgba(255,255,255,0.22)";
+
+      comboSeq.appendChild(chip);
+    }
+    comboHint.textContent = I18n.t("combo_hint");
+  }
+
+  function failCombo() { comboIdx = 0; comboTime = comboTimeMax; renderComboUI(); }
+
+  // ───────────────────────── Upgrades ─────────────────────────
+  const MAGNET_DUR = { rare: 12, epic: 18, legendary: 26 };
+
+  function upgradeIcon(u) {
+    const id = u?.id || "";
+    if (id === "shield") return "shield";
+    if (id === "heart") return "favorite";
+    if (id.startsWith("mag")) return "compass_calibration";
+    if (id === "boost") return "bolt";
+    if (id === "trap") return "verified_user";
+    if (id === "zone") return "open_with";
+    if (id === "coin") return "paid";
+    if (id === "gem") return "diamond";
+    if (id === "bonus") return "workspace_premium";
+    if (id === "reroll") return "casino";
+    if (id === "mult") return "functions";
+    return "upgrade";
+  }
+
+  const Upgrades = [
+    { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 12, rarity: "common", weight: 10,
+      apply() { shields++; updateStatusHUD(); } },
+
+    { id: "heart", nameKey: "up_heart_name", descKey: "up_heart_desc", tagKey: "tag_survival", max: 10, rarity: "common", weight: 9,
+      apply() { hpMax = clampInt(hpMax + 1, HP_START, HP_CAP); hp = clampInt(hp + 1, 0, hpMax); updateStatusHUD(); } },
+
+    { id: "mag1", nameKey: "up_mag1_name", descKey: "up_mag1_desc", tagKey: "tag_qol", max: 1, rarity: "rare", weight: 7,
+      apply() { magnet = Math.max(magnet, 1); magnetTime += MAGNET_DUR.rare; updateStatusHUD(); } },
+    { id: "mag2", nameKey: "up_mag2_name", descKey: "up_mag2_desc", tagKey: "tag_qol", max: 1, rarity: "epic", weight: 4,
+      apply() { magnet = Math.max(magnet, 2); magnetTime += MAGNET_DUR.epic; updateStatusHUD(); } },
+    { id: "mag3", nameKey: "up_mag3_name", descKey: "up_mag3_desc", tagKey: "tag_qol", max: 1, rarity: "legendary", weight: 2,
+      apply() { magnet = Math.max(magnet, 3); magnetTime += MAGNET_DUR.legendary; updateStatusHUD(); } },
+
+    { id: "boost", nameKey: "up_boost_name", descKey: "up_boost_desc", tagKey: "tag_points", max: 10, rarity: "common", weight: 10,
+      apply() { scoreBoost += 0.08; updateStatusHUD(); } },
+
+    { id: "trap", nameKey: "up_trap_name", descKey: "up_trap_desc", tagKey: "tag_defense", max: 4, rarity: "common", weight: 9,
+      apply() { trapResist++; updateStatusHUD(); } },
+
+    { id: "zone", nameKey: "up_zone_name", descKey: "up_zone_desc", tagKey: "tag_mobility", max: 3, rarity: "epic", weight: 4,
+      apply() { zoneExtra++; recomputeZone(); updateStatusHUD(); } },
+
+    { id: "coin", nameKey: "up_coin_name", descKey: "up_coin_desc", tagKey: "tag_points", max: 8, rarity: "common", weight: 10,
+      apply() { coinValue += 2; } },
+    { id: "gem", nameKey: "up_gem_name", descKey: "up_gem_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7,
+      apply() { gemValue += 6; } },
+    { id: "bonus", nameKey: "up_bonus_name", descKey: "up_bonus_desc", tagKey: "tag_points", max: 6, rarity: "rare", weight: 7,
+      apply() { bonusValue += 10; } },
+
+    { id: "reroll", nameKey: "up_reroll_name", descKey: "up_reroll_desc", tagKey: "tag_upgrades", max: 5, rarity: "rare", weight: 6,
+      apply() { rerolls++; updateStatusHUD(); } },
+
+    { id: "mult", nameKey: "up_mult_name", descKey: "up_mult_desc", tagKey: "tag_combo", max: 10, rarity: "epic", weight: 5,
+      apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
+  ];
+
+  function isUpgradeAllowed(u) {
+    if ((pickedCount.get(u.id) || 0) >= (u.max ?? 999)) return false;
+    if (u.id === "mag1") return magnet < 1;
+    if (u.id === "mag2") return magnet < 2;
+    if (u.id === "mag3") return magnet < 3;
+    if (u.id === "heart") return hpMax < HP_CAP;
+    return true;
+  }
+
+  const canPick = (u) => isUpgradeAllowed(u);
+  const markPick = (u) => pickedCount.set(u.id, (pickedCount.get(u.id) || 0) + 1);
+
+  function pickWeighted(pool) {
+    let sum = 0;
+    for (const u of pool) sum += Math.max(0.0001, Number(u.weight) || 1);
+    let r = Math.random() * sum;
+    for (const u of pool) {
+      r -= Math.max(0.0001, Number(u.weight) || 1);
+      if (r <= 0) return u;
+    }
+    return pool[pool.length - 1];
+  }
+
+  function chooseUpgrades(n = 3) {
+    const pool = Upgrades.filter(canPick);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      if (!pool.length) break;
+      const u = pickWeighted(pool);
+      const idx = pool.indexOf(u);
+      if (idx >= 0) pool.splice(idx, 1);
+      out.push(u);
+    }
+    return out;
+  }
+
+  let currentUpgradeChoices = [];
+
+  function pauseForOverlay(on) {
+    if (!running || gameOver) return;
+    paused = !!on;
+    AudioSys.duckMusic(paused || inLevelUp || gameOver);
+  }
+
+  // ───────────────────────── Upgrade Confetti FX ─────────────────────────
+  let upFxCanvas = null, upFxCtx = null;
+  const upConfetti = [];
+  let upFxW = 0, upFxH = 0;
+
+  function getUpgradesPanelHost() {
+    if (!overlayUpgrades) return null;
+    return overlayUpgrades.querySelector?.(".upgradesPanel") ||
+           overlayUpgrades.querySelector?.(".panel") ||
+           overlayUpgrades;
+  }
+
+  function ensureUpgradeFxCanvas() {
+    const host = getUpgradesPanelHost();
+    if (!host) return;
+    if (upFxCanvas && upFxCanvas.parentElement) return;
+
+    try {
+      host.style.position = host.style.position || "relative";
+      const c = document.createElement("canvas");
+      c.id = "upFxCanvas";
+      c.className = "upFxCanvas";
+      c.style.pointerEvents = "none";
+      host.appendChild(c);
+
+      upFxCanvas = c;
+      upFxCtx = c.getContext("2d", { alpha: true });
+      resizeUpgradeFxCanvas();
+    } catch {}
+  }
+
+  function resizeUpgradeFxCanvas() {
+    const host = getUpgradesPanelHost();
+    if (!upFxCanvas || !host) return;
+    const r = host.getBoundingClientRect();
+    const d = Math.max(1, Math.min(2.0, window.devicePixelRatio || 1));
+    upFxW = Math.max(1, Math.floor(r.width));
+    upFxH = Math.max(1, Math.floor(r.height));
+    upFxCanvas.width = Math.floor(upFxW * d);
+    upFxCanvas.height = Math.floor(upFxH * d);
+    try { upFxCtx.setTransform(d, 0, 0, d, 0, 0); } catch {}
+  }
+
+  function rarityLabel(r) {
+    if (r === "rare") return I18n.t("rarity_rare");
+    if (r === "epic") return I18n.t("rarity_epic");
+    if (r === "legendary") return I18n.t("rarity_legendary");
+    return I18n.t("rarity_common");
+  }
+
+  function confettiBurst(strength = 1) {
+    ensureUpgradeFxCanvas();
+    if (!upFxCtx) return;
+
+    const n = clampInt(Math.round(60 * strength), 30, 120);
+    for (let i = 0; i < n; i++) {
+      const x = Math.random() * upFxW;
+      const y = -10 - Math.random() * 40;
+      const sp = (120 + Math.random() * 260) * (0.7 + 0.6 * strength);
+      const ang = (Math.PI * 0.35) + Math.random() * (Math.PI * 0.30);
+      const vx = (Math.cos(ang) * sp) * (Math.random() < 0.5 ? -1 : 1) * 0.35;
+      const vy = Math.sin(ang) * sp;
+
+      const palette = [
+        "rgba(255,211,90,0.95)",
+        "rgba(106,176,255,0.95)",
+        "rgba(46,242,160,0.95)",
+        "rgba(214,133,255,0.95)",
+        "rgba(255,120,160,0.95)",
+      ];
+
+      upConfetti.push({
+        x, y, vx, vy,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() * 8 - 4),
+        w: 4 + Math.random() * 8,
+        h: 6 + Math.random() * 12,
+        life: 1100 + Math.random() * 900,
+        max: 2200,
+        col: palette[randi(0, palette.length - 1)],
+        kind: Math.random() < 0.65 ? "rect" : "tri",
+      });
+    }
+    if (upConfetti.length > 420) upConfetti.splice(0, upConfetti.length - 420);
+  }
+
+  function tickUpgradeFx(dtMs) {
+    if (!upFxCtx || !overlayUpgrades || overlayUpgrades.hidden) {
+      if (upFxCtx && upFxCanvas) { try { upFxCtx.clearRect(0, 0, upFxW, upFxH); } catch {} }
+      upConfetti.length = 0;
+      return;
+    }
+
+    const dt = dtMs / 1000;
+    const g0 = 520;
+    for (let i = upConfetti.length - 1; i >= 0; i--) {
+      const p = upConfetti[i];
+      p.life -= dtMs;
+      if (p.life <= 0 || p.y > upFxH + 80) { upConfetti.splice(i, 1); continue; }
+
+      p.vy += g0 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += p.vr * dt;
+      if (p.x < -40) p.x = upFxW + 40;
+      if (p.x > upFxW + 40) p.x = -40;
+    }
+
+    upFxCtx.clearRect(0, 0, upFxW, upFxH);
+    upFxCtx.save();
+    upFxCtx.globalCompositeOperation = "lighter";
+    for (const p of upConfetti) {
+      const t = clamp(p.life / p.max, 0, 1);
+      const a = clamp(0.92 * t, 0, 0.92);
+      upFxCtx.globalAlpha = a;
+      upFxCtx.fillStyle = p.col;
+
+      upFxCtx.save();
+      upFxCtx.translate(p.x, p.y);
+      upFxCtx.rotate(p.rot);
+
+      if (p.kind === "tri") {
+        upFxCtx.beginPath();
+        upFxCtx.moveTo(0, -p.h * 0.5);
+        upFxCtx.lineTo(-p.w * 0.5, p.h * 0.5);
+        upFxCtx.lineTo(p.w * 0.5, p.h * 0.5);
+        upFxCtx.closePath();
+        upFxCtx.fill();
       } else {
-        applyHit("block");
-        return; // no entras
+        upFxCtx.fillRect(-p.w * 0.5, -p.h * 0.5, p.w, p.h);
       }
+
+      upFxCtx.restore();
     }
-
-    // mover
-    player.x = nx;
-    player.yInZone = nyz;
-
-    // interact
-    if (cell === Cell.Trap) {
-      grid[ay][nx] = Cell.Empty;
-      applyHit("trap");
-      fxSpawn("hit", pxOf(nx) + CELL * 0.5, pyOf(ay) + CELL * 0.5, CellColor[Cell.Trap]);
-    } else if (cell === Cell.Coin || cell === Cell.Gem || cell === Cell.Bonus) {
-      grid[ay][nx] = Cell.Empty;
-      applyCollect(cell, nx, ay);
-    }
-
-    // magnet al moverse
-    if (mods.magnetRange > 0) magnetPull();
-
-    // vibrate
-    vibrate(6);
-    updateHUD();
+    upFxCtx.restore();
+    upFxCtx.globalAlpha = 1;
   }
 
-  function magnetPull() {
-    const r = mods.magnetRange | 0;
-    if (r <= 0) return;
+  function openUpgrade() {
+    if (inLevelUp || gameOver) return;
+    inLevelUp = true;
+    pauseForOverlay(true);
 
-    const px = player.x;
-    const py = absY();
+    level++;
+    levelStartScore = score;
+    nextLevelAt = score + Math.round(240 + level * 150);
 
-    let pulled = 0;
-    const useCheby = !!mods._magCheby;
+    if (upTitle) upTitle.textContent = I18n.t("up_level_title", level);
+    if (upSub) upSub.textContent = I18n.t("up_choose");
 
-    for (let y = py - r; y <= py + r; y++) {
-      if (y < 0 || y >= rows) continue;
-      for (let x = px - r; x <= px + r; x++) {
-        if (x < 0 || x >= COLS) continue;
-        if (x === px && y === py) continue;
+    renderUpgradeChoices();
+    overlayShow(overlayUpgrades);
+    updatePillsNow();
 
-        const dist = useCheby ? Math.max(Math.abs(x - px), Math.abs(y - py)) : (Math.abs(x - px) + Math.abs(y - py));
-        if (dist > r) continue;
+    confettiBurst(1.0 + Math.min(0.8, level * 0.03));
+    AudioSys.sfx("level");
+  }
 
-        const c = grid[y][x];
-        if (c === Cell.Coin || c === Cell.Gem || c === Cell.Bonus) {
-          grid[y][x] = Cell.Empty;
-          applyCollect(c, x, y);
-          pulled++;
-          if (pulled >= 6) break;
-        }
+  function closeUpgrade() {
+    overlayHide(overlayUpgrades);
+    inLevelUp = false;
+    pauseForOverlay(false);
+  }
+
+  function renderUpgradeChoices() {
+    currentUpgradeChoices = chooseUpgrades(3);
+    if (upgradeChoices) upgradeChoices.innerHTML = "";
+
+    for (const u of currentUpgradeChoices) {
+      const name = (I18n.t(u.nameKey) !== u.nameKey) ? I18n.t(u.nameKey) : (
+        u.id === "heart" ? T("up_heart_name", "Corazón") :
+        u.id === "shield" ? T("up_shield_name", "Escudo") :
+        u.id.startsWith("mag") ? T("up_mag_name", "Imán") :
+        u.id === "boost" ? T("up_boost_name", "Boost") :
+        u.id === "trap" ? T("up_trap_name", "Resistencia") :
+        u.id === "zone" ? T("up_zone_name", "Zona +") :
+        u.id === "reroll" ? T("up_reroll_name", "Reroll") :
+        u.id === "mult" ? T("up_mult_name", "Multiplicador") :
+        u.id === "coin" ? T("up_coin_name", "Moneda +") :
+        u.id === "gem" ? T("up_gem_name", "Gema +") :
+        u.id === "bonus" ? T("up_bonus_name", "Bonus +") : u.id
+      );
+
+      let desc = I18n.t(u.descKey);
+      if (desc === u.descKey) {
+        if (u.id === "heart") desc = T("up_heart_desc", "Aumenta tu vida máxima y cura 1♥.");
+        else if (u.id.startsWith("mag")) desc = T("up_mag_desc", "Atrae recompensas cercanas temporalmente.");
+        else desc = "—";
       }
-      if (pulled >= 6) break;
+
+      let extraMeta = "";
+      if (u.id === "mag1") extraMeta = `⏱ ${MAGNET_DUR.rare}s`;
+      if (u.id === "mag2") extraMeta = `⏱ ${MAGNET_DUR.epic}s`;
+      if (u.id === "mag3") extraMeta = `⏱ ${MAGNET_DUR.legendary}s`;
+
+      const tag = I18n.t(u.tagKey);
+      const rarity = (u.rarity || "common");
+      const rarityText = rarityLabel(rarity);
+
+      const card = document.createElement("div");
+      card.className = "upCard";
+      card.dataset.rarity = rarity;
+      card.dataset.upid = u.id;
+      card.setAttribute("role", "button");
+      card.tabIndex = 0;
+
+      const nextLv = (pickedCount.get(u.id) || 0) + 1;
+      const maxLv = u.max ?? 999;
+
+      const icon = upgradeIcon(u);
+
+      card.innerHTML = `
+<div class="upHead">
+  <div class="upIcon"><span class="ms">${icon}</span></div>
+  <div class="upHeadText">
+    <div class="upTitle">${name}</div>
+    <div class="upSubRow">
+      <span class="upRarityBadge">${rarityText}</span>
+      <span class="badge">${tag}</span>
+      <span class="badge">Lv ${nextLv}/${maxLv}</span>
+      ${extraMeta ? `<span class="badge">${extraMeta}</span>` : ``}
+    </div>
+  </div>
+</div>
+<div class="upDesc">${desc}</div>
+      `;
+
+      const pickThis = () => {
+        markPick(u);
+        u.apply();
+
+        const burst = (rarity === "legendary") ? 1.9 : (rarity === "epic") ? 1.4 : (rarity === "rare") ? 1.15 : 1.0;
+        confettiBurst(burst);
+
+        showToast(I18n.t("toast_upgrade", name), 950);
+        shake(120, 3);
+        flash(
+          (rarity === "legendary") ? "#ffd35a" :
+          (rarity === "epic") ? "#d685ff" :
+          (rarity === "rare") ? "#6ab0ff" : "#ffffff",
+          120
+        );
+        AudioSys.sfx("pick");
+        updatePillsNow();
+        closeUpgrade();
+      };
+
+      card.addEventListener("click", () => pickThis());
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickThis(); }
+      });
+
+      upgradeChoices?.appendChild(card);
     }
 
-    if (pulled > 0) {
-      addBuff(mods, "magp", "magnet", "magnet", 0.9, pulled);
-      try { AudioSys.sfx?.("pick"); } catch (_) { }
-    }
+    if (btnReroll) btnReroll.disabled = !(rerolls > 0);
+    if (btnSkipUpgrade) btnSkipUpgrade.hidden = (level < 4);
+  }
+
+  function rerollUpgrades() {
+    if (rerolls <= 0) return;
+    rerolls--;
+    renderUpgradeChoices();
+    showToast(I18n.t("toast_reroll"), 650);
+    shake(90, 2);
+    flash("#ffd35a", 110);
+    AudioSys.sfx("reroll");
+    updateStatusHUD();
   }
 
   // ───────────────────────── Rendering ─────────────────────────
-  const CELL = 64;
-
-  function setupCanvas() {
-    if (!gameCanvas || !fxCanvas || !ctx || !fctx) return;
-
-    gameCanvas.width = COLS * CELL;
-    gameCanvas.height = rows * CELL;
-    fxCanvas.width = gameCanvas.width;
-    fxCanvas.height = gameCanvas.height;
-
-    ctx.imageSmoothingEnabled = false;
-    fctx.imageSmoothingEnabled = true;
-  }
-
-  function pxOf(x) { return (x | 0) * CELL; }
-  function pyOf(y) { return (y | 0) * CELL; }
-
-  function drawCell(x, y, cell) {
-    const px = pxOf(x), py = pyOf(y);
-
-    if (!ctx) return;
-
-    // fondo
-    ctx.fillStyle = CellColor[Cell.Empty];
-    ctx.fillRect(px, py, CELL, CELL);
-
-    if (cell === Cell.Empty) return;
-
-    const col = CellColor[cell] || "#fff";
-
-    if (settings.useSprites) {
-      const img = spriteImg.get(cell);
-      if (img && img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, px, py, CELL, CELL);
-        return;
-      }
-    }
-
-    // fallback
-    ctx.fillStyle = col;
-    ctx.fillRect(px + 6, py + 6, CELL - 12, CELL - 12);
-    ctx.strokeStyle = "rgba(0,0,0,.35)";
-    ctx.strokeRect(px + 6.5, py + 6.5, CELL - 13, CELL - 13);
-  }
-
-  function draw() {
-    if (!ctx || !gameCanvas) return;
-
-    // clear
-    ctx.fillStyle = "#0b0b10";
-    ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
-
-    // grid
-    const preview = mods.previewRows | 0;
-    const previewTop = Math.max(0, zoneY0 - preview);
-
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < COLS; x++) {
-        const c = grid[y][x];
-        drawCell(x, y, c);
-
-        // preview tint
-        if (preview > 0 && y >= previewTop && y < zoneY0) {
-          ctx.fillStyle = "rgba(122,167,255,.08)";
-          ctx.fillRect(pxOf(x), pyOf(y), CELL, CELL);
-        }
-      }
-    }
-
-    // zona
-    const zy = zoneY0 * CELL;
-    ctx.fillStyle = "rgba(122,167,255,.07)";
-    ctx.fillRect(0, zy, gameCanvas.width, zoneH * CELL);
-
-    // jugador
-    const px = player.x * CELL + CELL * 0.5;
-    const py = (zoneY0 + player.yInZone) * CELL + CELL * 0.5;
-
-    const rage = (mods.lowHpRage && mods.hp <= 3) ? 1 : 0;
-
+  function drawSprite(key, x, y, w, h, alpha = 1) {
+    if (!settings.useSprites) return false;
+    if (!sprites.ready) return false;
+    const img = sprites.map.get(key);
+    if (!img) return false;
     ctx.save();
-    ctx.translate(px, py);
-    const pulse = 1 + Math.sin(perfNow() * 0.008) * (settings.reduceMotion ? 0.02 : 0.08);
-    const r = 18 * pulse;
-    ctx.beginPath();
-    ctx.fillStyle = rage ? "rgba(255,125,80,1)" : "rgba(122,167,255,1)";
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(0,0,0,.55)";
-    ctx.stroke();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, x, y, w, h);
     ctx.restore();
+    return true;
+  }
 
-    // shield aura
-    if (mods.shields > 0) {
+  function drawParticles(dtMs) {
+    if (!particles.length) return;
+    const damp = Math.pow(0.0016, dtMs / 1000);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dtMs;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      const t = p.life / p.max;
+
+      p.vx *= damp;
+      p.vy = (p.vy * damp) + 42 * (dtMs / 1000);
+      p.x += p.vx * (dtMs / 1000);
+      p.y += p.vy * (dtMs / 1000);
+
+      const a = clamp(0.90 * t, 0, 0.90);
+
+      if (p.kind === "spark") {
+        p.rot += (p.vr || 0) * (dtMs / 1000);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot || 0);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-(p.w || 2) * 0.5, -(p.h || 8) * 0.5, (p.w || 2), (p.h || 8));
+        ctx.restore();
+      } else {
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.6, (p.rad || 2) * (0.65 + 0.65 * t)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFloatTexts(dtMs) {
+    if (!floatTexts.length) return;
+    for (let i = floatTexts.length - 1; i >= 0; i--) {
+      const f = floatTexts[i];
+      f.life -= dtMs;
+      if (f.life <= 0) { floatTexts.splice(i, 1); continue; }
+
+      const t = f.life / f.max;
+      f.y += f.vy * (dtMs / 1000);
+
+      const a = clamp(0.95 * (t * t), 0, 0.95);
+
       ctx.save();
-      ctx.translate(px, py);
-      ctx.beginPath();
-      ctx.strokeStyle = "rgba(120,210,255,.35)";
-      ctx.lineWidth = 5;
-      ctx.arc(0, 0, 28 + Math.sin(perfNow() * 0.012) * 2, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.globalAlpha = a;
+      ctx.font = `900 ${Math.max(12, Math.floor(cellPx * 0.34))}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = f.stroke;
+      ctx.fillStyle = f.color;
+      ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillText(f.text, f.x, f.y);
       ctx.restore();
     }
   }
 
-  function drawFx(dt) {
-    if (!fctx || !fxCanvas) return;
-    fctx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-    for (let i = FX.length - 1; i >= 0; i--) {
-      const p = FX[i];
-      p.t -= dt;
-      if (p.t <= 0) { FX.splice(i, 1); continue; }
+  function drawMagnetZone(cx, cy) {
+    if (magnet <= 0 || magnetTime <= 0) return;
+    const rad = (magnet + 0.35) * cellPx;
 
-      const a = clamp(p.t / p.life, 0, 1);
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 260 * dt;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const gg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
+    gg.addColorStop(0, "rgba(106,176,255,0.12)");
+    gg.addColorStop(0.55, "rgba(106,176,255,0.06)");
+    gg.addColorStop(1, "rgba(106,176,255,0.0)");
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad * 1.15, 0, Math.PI * 2);
+    ctx.fill();
 
-      fctx.globalAlpha = a * 0.9;
-      fctx.fillStyle = p.col;
-      fctx.beginPath();
-      fctx.arc(p.x, p.y, 4 * p.s, 0, Math.PI * 2);
-      fctx.fill();
-      fctx.globalAlpha = 1;
-    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = "rgba(106,176,255,0.55)";
+    ctx.lineWidth = Math.max(1.2, cellPx * 0.06);
+    ctx.setLineDash([Math.max(4, cellPx * 0.22), Math.max(3, cellPx * 0.16)]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
-  function perfNow() {
-    try { return performance.now(); } catch { return Date.now(); }
+  function drawShieldAura(cx, cy) {
+    if (shields <= 0) return;
+
+    const phase = (running ? runTime : (pNow() / 1000));
+    const pulse = 0.5 + 0.5 * Math.sin(phase * 3.6);
+    const rad = cellPx * (0.78 + 0.06 * pulse);
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    const gg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.15);
+    gg.addColorStop(0.0, "rgba(106,176,255,0.00)");
+    gg.addColorStop(0.38, `rgba(106,176,255,${(0.10 + 0.06 * pulse).toFixed(3)})`);
+    gg.addColorStop(1.0, "rgba(106,176,255,0.00)");
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.58;
+    ctx.strokeStyle = "rgba(106,176,255,0.75)";
+    ctx.lineWidth = Math.max(1.5, cellPx * 0.08);
+    ctx.setLineDash([Math.max(6, cellPx * 0.25), Math.max(4, cellPx * 0.18)]);
+    ctx.lineDashOffset = -phase * 18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
-  // ───────────────────────── Loop ─────────────────────────
-  let raf = 0;
-  let lastT = 0;
+  function drawTileGlow(x, y, t, usedAlpha) {
+    const a = (1 - usedAlpha);
+    if (a <= 0.01) return;
 
-  function loop(t) {
-    raf = requestAnimationFrame(loop);
-    if (!lastT) lastT = t;
-    let dt = (t - lastT) / 1000;
-    lastT = t;
+    let k = 0;
+    if (t === CellType.Coin) k = clamp((coinValue - 10) / 16, 0, 1);
+    else if (t === CellType.Gem) k = clamp((gemValue - 30) / 48, 0, 1);
+    else if (t === CellType.Bonus) k = clamp((bonusValue - 60) / 80, 0, 1);
+    if (k <= 0.01) return;
 
-    dt = clamp(dt, 0, 0.05);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.18 * k * (0.55 + 0.45 * (1 + scoreBoost));
+    const col =
+      (t === CellType.Coin) ? "rgba(46,242,160,0.95)" :
+      (t === CellType.Gem) ? "rgba(106,176,255,0.95)" :
+      "rgba(255,211,90,0.95)";
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, cellPx, cellPx);
+    ctx.restore();
+  }
 
-    // buff timers
-    if (running && !paused) {
-      tickBuffs(mods, dt);
-      if (mods._scoreBoostTimer) mods._scoreBoostTimer = Math.max(0, mods._scoreBoostTimer - dt);
+  function draw(dtMs = 16) {
+    if (!ctx) return;
+    if (!gridReady || !ensureGridValid()) return;
+
+    let psx = 0, psy = 0;
+    if (shakeT > 0) {
+      const k = shakeT / 280;
+      const pow = shakePow * k;
+      psx = (Math.random() * 2 - 1) * pow;
+      psy = (Math.random() * 2 - 1) * pow;
     }
 
-    // stage timer
-    if (running && !paused && mode !== Mode.ENDLESS) {
-      stageTimeLeft -= dt;
-      if (stageTimeLeft <= 0) {
-        if (stageScore >= stageTarget) {
-          // si justo llegó
-          stageTimeLeft = 0;
-        } else {
-          endRun("Tiempo agotado");
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+
+    const bg = ctx.createLinearGradient(0, 0, 0, cssCanvasH);
+    bg.addColorStop(0, "#060610");
+    bg.addColorStop(1, "#04040a");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
+
+    if (bgStars.length) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const st of bgStars) {
+        const tw = 0.55 + 0.45 * Math.sin(st.t);
+        const a = clamp(st.a * tw, 0, 0.24);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.fillRect(st.x, st.y, st.s, st.s);
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
+    if (hitFlashT > 0) {
+      const t = clamp(hitFlashT / hitFlashMax, 0, 1);
+      const a = 0.55 * (t * t);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = hitFlashColor;
+      ctx.fillRect(0, 0, cssCanvasW, cssCanvasH);
+      ctx.restore();
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.028)";
+    ctx.fillRect(offX, offY, gridW, gridH);
+
+    const zTop = offY + zoneY0 * cellPx;
+    const zoneA = 0.070 + 0.06 * zonePulse;
+    ctx.fillStyle = `rgba(106,176,255,${zoneA.toFixed(3)})`;
+    ctx.fillRect(offX, zTop, gridW, zoneH * cellPx);
+
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(offX + 0.5, zTop + 0.5, gridW - 1, zoneH * cellPx - 1);
+    ctx.globalAlpha = 1;
+
+    for (let r = 0; r < ROWS; r++) {
+      const y = offY + r * cellPx + scrollPx;
+      for (let c = 0; c < COLS; c++) {
+        const t = grid[r][c];
+        if (t === CellType.Empty) continue;
+
+        const used = consumed[r][c];
+        const alpha = used ? 0.22 : 0.92;
+
+        const x = offX + c * cellPx;
+        const key =
+          (t === CellType.Coin) ? "coin" :
+          (t === CellType.Gem) ? "gem" :
+          (t === CellType.Bonus) ? "bonus" :
+          (t === CellType.Trap) ? "trap" : "block";
+
+        const pad = Math.max(2, Math.floor(cellPx * 0.08));
+
+        if (!used && (t === CellType.Coin || t === CellType.Gem || t === CellType.Bonus)) drawTileGlow(x, y, t, 0);
+
+        const ok = drawSprite(key, x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2, alpha);
+        if (!ok) {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = CELL_COLORS[t];
+          ctx.fillRect(x + pad, y + pad, cellPx - pad * 2, cellPx - pad * 2);
+          ctx.globalAlpha = 1;
+        }
+
+        if (!used && t === CellType.Trap && trapResist > 0) {
+          ctx.save();
+          ctx.globalAlpha = clamp(0.10 + trapResist * 0.06, 0.10, 0.32);
+          ctx.strokeStyle = "rgba(46,242,160,0.85)";
+          ctx.lineWidth = Math.max(1, Math.floor(cellPx * 0.06));
+          ctx.strokeRect(x + pad + 0.5, y + pad + 0.5, cellPx - pad * 2 - 1, cellPx - pad * 2 - 1);
+          ctx.restore();
         }
       }
-      if (running && !inUpgrade && stageScore >= stageTarget) {
-        stageClear();
-      }
     }
 
-    // combo timer
-    if (running && !paused && !inUpgrade) {
-      comboTimer -= dt;
-      if (comboTimer <= 0) {
-        comboTimer = mods.comboTime;
-        comboIdx = 0;
-        comboMult = 1.0;
-        newCombo();
-      }
+    ctx.globalAlpha = 0.28;
+    ctx.strokeStyle = "rgba(255,255,255,0.075)";
+    ctx.lineWidth = 1;
+    for (let c = 0; c <= COLS; c++) {
+      const x = offX + c * cellPx + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, offY);
+      ctx.lineTo(x, offY + gridH);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      const y = offY + r * cellPx + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(offX, y);
+      ctx.lineTo(offX + gridW, y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    let px = offX + colF * cellPx + psx;
+    let py = offY + (zoneY0 + rowF) * cellPx + psy;
+
+    const s = 1 + 0.08 * playerPulse;
+    const cx = px + cellPx / 2;
+    const cy = py + cellPx / 2;
+
+    drawMagnetZone(cx, cy);
+    drawShieldAura(cx, cy);
+
+    if (mult > 1.2) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const rad = (0.55 + (mult - 1) * 0.22) * cellPx;
+      const gg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      gg.addColorStop(0, "rgba(214,133,255,0.10)");
+      gg.addColorStop(0.55, "rgba(106,176,255,0.06)");
+      gg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
-    // slow timer
-    if (running && !paused && slowTimer > 0) slowTimer = Math.max(0, slowTimer - dt);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.translate(-cx, -cy);
 
-    // tick stepping
-    if (running && !paused && !inUpgrade) {
-      const rageSpeed = (mods.lowHpRage && mods.hp <= 3) ? mods.rageSpeed : 1.0;
-      const slowMul = (slowTimer > 0) ? 0.72 : 1.0;
-      const fxMul = clamp(settings.fx || 1.0, 0.4, 1.25);
-
-      const effMul = tickMul * rageSpeed * slowMul * fxMul;
-      const tickTime = tickBase * (1 / clamp(effMul, 0.35, 3.5));
-
-      tickAcc += dt;
-      while (tickAcc >= tickTime && running && !paused && !inUpgrade) {
-        tickAcc -= tickTime;
-        step();
-      }
+    const padP = Math.max(2, Math.floor(cellPx * 0.08));
+    const okP = drawSprite("player", px + padP, py + padP, cellPx - padP * 2, cellPx - padP * 2, 1);
+    if (!okP) {
+      ctx.fillStyle = "rgba(255,255,255,0.94)";
+      ctx.fillRect(px + padP, py + padP, cellPx - padP * 2, cellPx - padP * 2);
+      ctx.strokeStyle = "rgba(0,0,0,0.40)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px + padP + 1, py + padP + 1, cellPx - padP * 2 - 2, cellPx - padP * 2 - 2);
     }
 
-    // render
-    draw();
-    drawFx(dt);
+    if (shields > 0) {
+      ctx.fillStyle = "rgba(106,176,255,0.96)";
+      ctx.font = `900 ${Math.max(11, Math.floor(cellPx * 0.38))}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(shields), px + cellPx - 10, py + 12);
+    }
 
-    // HUD
-    updateHUD();
+    ctx.restore();
+
+    ctx.globalCompositeOperation = "lighter";
+    drawParticles(dtMs);
+    ctx.globalCompositeOperation = "source-over";
+    drawFloatTexts(dtMs);
+
+    ctx.restore();
   }
 
-  // ───────────────────────── Menu / Install / SW Update ─────────────────────────
-  function bindTabs() {
-    for (const t of tabs) {
-      on(t, "click", () => {
-        vibrate(8);
-        setTab(t.dataset.tab || "play");
-      });
-    }
-  }
+  // ───────────────────────── Resize ─────────────────────────
+  function resize() {
+    if ((!gameArea && !canvasWrap) || !canvas || !ctx) return;
 
-  function bindInstall() {
-    on(window, "beforeinstallprompt", (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      if (btnInstall) btnInstall.hidden = false;
-    });
+    updateVhUnit();
+    applyRowsIfNeeded({ forceReset: false });
 
-    on(btnInstall, "click", async () => {
-      if (!deferredPrompt) return;
-      try {
-        deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-      } catch (_) { }
-      deferredPrompt = null;
-      if (btnInstall) btnInstall.hidden = true;
-    });
+    const host = railCanvasEl || canvasWrap || gameArea;
+    const r = host.getBoundingClientRect();
+    const cs = getComputedStyle(host);
+    const padW = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const padH = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
 
-    on(window, "appinstalled", () => {
-      deferredPrompt = null;
-      if (btnInstall) btnInstall.hidden = true;
-      toast("Instalado ✅");
-    });
-  }
+    const availW = Math.max(240, Math.floor(r.width - padW));
+    const availH = Math.max(240, Math.floor(r.height - padH));
 
-  function bindSWUpdateDot() {
-    try {
-      if (!("serviceWorker" in navigator)) return;
-      navigator.serviceWorker.addEventListener("message", (ev) => {
-        const d = ev?.data;
-        if (!d) return;
-        if (d.type === "SW_UPDATE_READY" || d.type === "sw_update_ready") {
-          updateHeaderDot(true);
-        }
-      });
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        // normalmente indica que el SW cambió: mostrar dot
-        updateHeaderDot(true);
-      });
-    } catch (_) { }
+    let w = availW;
+    let h = Math.floor(w / canvasAR());
+    if (h > availH) { h = availH; w = Math.floor(h * canvasAR()); }
+
+    cssCanvasW = Math.max(240, w);
+    cssCanvasH = Math.max(240, h);
+
+    canvas.style.width = `${cssCanvasW}px`;
+    canvas.style.height = `${cssCanvasH}px`;
+    canvas.style.aspectRatio = `${COLS} / ${ROWS}`;
+
+    dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+    canvas.width = Math.floor(cssCanvasW * dpr);
+    canvas.height = Math.floor(cssCanvasH * dpr);
+
+    const maxCell = isMobileLayout() ? 88 : 72;
+    const minCell = isMobileLayout() ? 16 : 14;
+
+    cellPx = Math.floor(Math.min(cssCanvasW / COLS, cssCanvasH / ROWS));
+    cellPx = clampInt(cellPx, minCell, maxCell);
+
+    gridW = cellPx * COLS;
+    gridH = cellPx * ROWS;
+
+    offX = Math.floor((cssCanvasW - gridW) / 2);
+    offY = Math.floor((cssCanvasH - gridH) / 2);
+
+    initBgStars();
+    resizeUpgradeFxCanvas();
+    updateStatusHUD();
+    draw(16);
   }
 
   // ───────────────────────── Input ─────────────────────────
-  function bindKeyboard() {
-    on(window, "keydown", (e) => {
-      const k = e.key;
-
-      // bloquear scroll con flechas si estamos jugando
-      if (running && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(k)) {
-        e.preventDefault();
-      }
-
-      if (k === "Escape") {
-        if (overlayMenu && !overlayMenu.hidden) { closeMenu(); return; }
-        if (overlayUpgrades && !overlayUpgrades.hidden) { closeUpgradeAndContinue(); return; }
-        if (overlayPaused && !overlayPaused.hidden) { resume(); return; }
-        if (running) { pause(); return; }
-        openMenu();
-        return;
-      }
-
-      if (!running || paused || inUpgrade) return;
-
-      if (k === "ArrowLeft" || k === "a" || k === "A") tryMove(-1, 0);
-      else if (k === "ArrowRight" || k === "d" || k === "D") tryMove(+1, 0);
-      else if (k === "ArrowUp" || k === "w" || k === "W") tryMove(0, -1);
-      else if (k === "ArrowDown" || k === "s" || k === "S") tryMove(0, +1);
-    }, { passive: false });
+  function isAnyBlockingOverlayOpen() {
+    const open = (el) => el && el.hidden === false;
+    return open(overlayStart) || open(overlayOptions) || open(overlayUpgrades) || open(overlayPaused) || open(overlayGameOver) || open(overlayError) || open(overlayLoading);
   }
 
-  function bindDpad() {
-    if (!dpadBtns || !dpadBtns.length) return;
-    for (const b of dpadBtns) {
-      const dir = b.dataset.dir || "";
-      const move = () => {
-        if (dir === "l") tryMove(-1, 0);
-        else if (dir === "r") tryMove(+1, 0);
-        else if (dir === "u") tryMove(0, -1);
-        else if (dir === "d") tryMove(0, +1);
-      };
-      on(b, "pointerdown", (e) => { e.preventDefault(); move(); }, { passive: false });
-      on(b, "click", (e) => { e.preventDefault(); move(); }, { passive: false });
+  function canControl() {
+    return running && !paused && !gameOver && !inLevelUp && !isAnyBlockingOverlayOpen();
+  }
+
+  function move(dx, dy) {
+    if (!canControl()) return;
+    targetCol = clampInt(targetCol + dx, 0, COLS - 1);
+    targetRow = clampInt(targetRow + dy, 0, zoneH - 1);
+    vibrate(8);
+    playerPulse = 0.65;
+    AudioSys.unlock();
+  }
+
+  function bindInputs() {
+    window.addEventListener("keydown", (e) => {
+      const k = e.key;
+      AudioSys.unlock();
+
+      if (k === "Escape") { togglePause(); return; }
+      if (k === "r" || k === "R") { if (!isAnyBlockingOverlayOpen()) { resetRun(false); startRun(); } return; }
+
+      if (k === "ArrowLeft" || k === "a" || k === "A") move(-1, 0);
+      if (k === "ArrowRight" || k === "d" || k === "D") move(+1, 0);
+      if (k === "ArrowUp" || k === "w" || k === "W") move(0, -1);
+      if (k === "ArrowDown" || k === "s" || k === "S") move(0, +1);
+    });
+
+    btnLeft?.addEventListener("click", () => move(-1, 0));
+    btnRight?.addEventListener("click", () => move(+1, 0));
+    btnUp?.addEventListener("click", () => move(0, -1));
+    btnDown?.addEventListener("click", () => move(0, +1));
+
+    if (!canvas || !gameArea) return;
+
+    const blockIfGame = (e) => { if (e.cancelable) e.preventDefault(); };
+    gameArea.addEventListener("wheel", blockIfGame, { passive: false });
+    gameArea.addEventListener("touchmove", blockIfGame, { passive: false });
+    gameArea.addEventListener("gesturestart", blockIfGame, { passive: false });
+    gameArea.addEventListener("gesturechange", blockIfGame, { passive: false });
+
+    let sx = 0, sy = 0, st = 0, active = false;
+
+    canvas.addEventListener("pointerdown", (e) => {
+      AudioSys.unlock();
+      if (!canControl()) return;
+      active = true;
+      sx = e.clientX;
+      sy = e.clientY;
+      st = pNow();
+      canvas.setPointerCapture?.(e.pointerId);
+    });
+
+    const endSwipe = (e) => {
+      if (!active) return;
+      active = false;
+      if (!canControl()) return;
+
+      const dx = e.clientX - sx;
+      const dy = e.clientY - sy;
+      const dt = pNow() - st;
+
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      if (dt < 650 && (adx > 22 || ady > 22)) {
+        if (adx > ady) move(dx > 0 ? +1 : -1, 0);
+        else move(0, dy > 0 ? +1 : -1);
+      }
+    };
+
+    canvas.addEventListener("pointerup", endSwipe, { passive: true });
+    canvas.addEventListener("pointercancel", () => { active = false; }, { passive: true });
+  }
+
+  // ───────────────────────── UI ─────────────────────────
+  function togglePause() {
+    if (!running || gameOver || inLevelUp) return;
+    if (overlayOptions && !overlayOptions.hidden) return;
+    paused = !paused;
+    if (paused) { overlayShow(overlayPaused); AudioSys.duckMusic(true); }
+    else { overlayHide(overlayPaused); AudioSys.duckMusic(false); }
+    AudioSys.sfx("ui");
+    updateStatusHUD();
+  }
+
+  function showOptions() {
+    overlayShow(overlayOptions);
+    pauseForOverlay(true);
+    try {
+      requestAnimationFrame(() => {
+        const body =
+          overlayOptions?.querySelector?.("#optionsBody") ||
+          overlayOptions?.querySelector?.(".panel") ||
+          overlayOptions;
+        if (body) body.scrollTop = 0;
+      });
+    } catch {}
+    AudioSys.sfx("ui");
+    updateStatusHUD();
+  }
+
+  function showPressToStart(){
+    if (!overlayPress){
+      overlayShow(overlayStart);
+      return;
+    }
+
+    // Preparar texto de modo / dispositivo
+    const mode = (U && U.isStandalone && U.isStandalone()) ? "APP" : "WEB";
+    const device = (U && U.isMobileLike && U.isMobileLike()) ? "MÓVIL" : "PC";
+    if (pillModeVal) pillModeVal.textContent = `${mode} • ${device}`;
+    if (pressMeta) pressMeta.textContent = `Modo: ${mode} • ${device}`;
+
+    overlayHide(overlayStart);
+    overlayShow(overlayPress);
+
+    let done = false;
+    const proceed = async () => {
+      if (done) return;
+      done = true;
+
+      try{ sessionStorage.setItem("gridrogue_press_seen_v1", "1"); }catch(_){}
+      try{ AudioSys && AudioSys.unlock && AudioSys.unlock(true); }catch(_){}
+
+      await overlayFadeOut(overlayPress, 160);
+      overlayShow(overlayStart);
+
+      // Focus UX
+      try{ btnStart && btnStart.focus && btnStart.focus(); }catch(_){}
+    };
+
+    if (btnPressStart){
+      btnPressStart.onclick = proceed;
+    }
+
+    const onAny = (e) => {
+      // Evitar disparos cuando el usuario intenta seleccionar texto
+      if (e && e.target && e.target.closest && e.target.closest("a,button,input,select,textarea")) {
+        // Si es el botón de empezar, dejar al click hacer su trabajo
+        if (e.target === btnPressStart) return;
+      }
+      proceed();
+    };
+
+    // Captura una sola vez, luego se limpia.
+    window.addEventListener("keydown", onAny, { once:true });
+    window.addEventListener("pointerdown", onAny, { once:true, passive:true });
+    window.addEventListener("touchstart", onAny, { once:true, passive:true });
+  }
+
+  function hideOptions() {
+    overlayHide(overlayOptions);
+    if (!inLevelUp && !gameOver && running) pauseForOverlay(false);
+    AudioSys.sfx("ui");
+    updateStatusHUD();
+  }
+
+  // ───────────────────────── Run lifecycle ─────────────────────────
+  let pendingReload = false;
+
+  function resetRun(showMenu) {
+    running = false;
+    paused = false;
+    gameOver = false;
+    inLevelUp = false;
+
+    score = 0; streak = 0; mult = 1.0; level = 1;
+    levelStartScore = 0; nextLevelAt = 220;
+
+    hpMax = HP_START;
+    hp = HP_START;
+
+    shields = 0; magnet = 0; magnetTime = 0; scoreBoost = 0; trapResist = 0; rerolls = 0;
+    pickedCount.clear();
+
+    zoneExtra = 0;
+    recomputeZone();
+
+    targetCol = Math.floor(COLS / 2);
+    targetRow = Math.floor(zoneH / 2);
+    colF = targetCol;
+    rowF = targetRow;
+
+    runTime = 0;
+    scrollPx = 0;
+
+    particles.length = 0;
+    floatTexts.length = 0;
+    playerPulse = 0;
+    zonePulse = 0;
+    shakeT = 0;
+    shakePow = 0;
+
+    hitFlashT = 0;
+    hitFlashMax = 1;
+
+    makeGrid();
+    rerollCombo();
+
+    overlayHide(overlayPaused);
+    overlayHide(overlayUpgrades);
+    overlayHide(overlayGameOver);
+    overlayHide(overlayOptions);
+
+    if (showMenu) { overlayShow(overlayStart); setState("menu"); }
+    else overlayHide(overlayStart);
+
+    updatePillsNow();
+    draw(16);
+    AudioSys.duckMusic(showMenu);
+  }
+
+  async function startRun() {
+    await AudioSys.unlock();
+    applyAudioSettingsNow();
+    AudioSys.startMusic();
+
+    if (overlayStart && !overlayStart.hidden) await overlayFadeOut(overlayStart, 170);
+    overlayHide(overlayGameOver);
+    overlayHide(overlayPaused);
+    overlayHide(overlayOptions);
+    overlayHide(overlayUpgrades);
+    overlayHide(overlayError);
+
+    running = true;
+    paused = false;
+    gameOver = false;
+    inLevelUp = false;
+
+    runTime = 0;
+    scrollPx = 0;
+    comboTime = comboTimeMax;
+
+    setState("playing");
+    updatePillsNow();
+    draw(16);
+
+    AudioSys.duckMusic(false);
+    AudioSys.sfx("ui");
+  }
+
+  function gameOverNow(reason) {
+    running = false;
+    paused = true;
+    gameOver = true;
+    inLevelUp = false;
+
+    setState("over");
+    shake(360, 12);
+    flash("#ff2b4d", 360);
+    vibrate(32);
+
+    AudioSys.duckMusic(true);
+
+    if (score > best) {
+      best = score;
+      try { writeLS(BEST_KEY, String(best)); writeLS(BEST_KEY_OLD, String(best)); } catch {}
+      try { Auth?.setBestForActive?.(best); } catch {}
+    }
+
+    try {
+      const raw = migrateKeyIfNeeded(RUNS_KEY, RUNS_KEY_OLD);
+      const arr = raw ? safeParse(raw, []) : [];
+      arr.unshift({
+        ts: Date.now(),
+        profileId: activeProfileId,
+        name: playerName,
+        score,
+        level,
+        time: Math.round(runTime),
+        rows: ROWS,
+        hpMax
+      });
+      arr.length = Math.min(arr.length, 30);
+      const json = JSON.stringify(arr);
+      writeLS(RUNS_KEY, json);
+      writeLS(RUNS_KEY_OLD, json);
+    } catch {}
+
+    if (goScoreBig) goScoreBig.textContent = String(score | 0);
+    if (goBestBig) goBestBig.textContent = String(best | 0);
+
+    if (goStats) {
+      goStats.innerHTML = `
+<div class="line"><span>${I18n.t("stats_reason")}</span><span>${reason}</span></div>
+<div class="line"><span>${I18n.t("stats_level")}</span><span>${level}</span></div>
+<div class="line"><span>${I18n.t("stats_time")}</span><span>${Math.round(runTime)}s</span></div>
+<div class="line"><span>${I18n.t("stats_streak")}</span><span>${streak}</span></div>
+<div class="line"><span>${I18n.t("stats_mult")}</span><span>${mult.toFixed(2)}</span></div>
+<div class="line"><span>${T("stats_hp", "HP")}</span><span>${hp}/${hpMax}</span></div>
+      `;
+    }
+
+    overlayShow(overlayGameOver);
+    updateStatusHUD();
+
+    if (pendingReload) {
+      pendingReload = false;
+      requestAppReload();
     }
   }
 
-  function pause() {
-    if (!running || inUpgrade) return;
-    paused = true;
-    overlayShow(overlayPaused);
-    try { AudioSys.sfx?.("ui"); } catch (_) { }
+  // ───────────────────────── Main loop ─────────────────────────
+  let lastT = 0;
+
+  function tickTimedUpgrades(dtMs) {
+    if (magnetTime > 0 && running && !paused && !gameOver && !inLevelUp) {
+      const prev = magnetTime;
+      magnetTime = Math.max(0, magnetTime - dtMs / 1000);
+      if (prev > 0 && magnetTime <= 0.001) {
+        magnetTime = 0;
+        magnet = 0;
+        updateStatusHUD();
+        showToast(T("toast_magnet_end", "Imán terminado"), 700);
+        AudioSys.sfx("ui");
+      }
+    }
   }
 
-  function resume() {
-    if (!running || inUpgrade) return;
-    paused = false;
-    overlayHide(overlayPaused);
-    try { AudioSys.sfx?.("ui"); } catch (_) { }
+  function tickFx(dtMs) {
+    if (toastT > 0) { toastT -= dtMs; if (toastT <= 0) hideToast(); }
+
+    playerPulse = Math.max(0, playerPulse - dtMs / (220 / settings.fx));
+    zonePulse = Math.max(0, zonePulse - dtMs / (260 / settings.fx));
+
+    if (shakeT > 0) { shakeT -= dtMs; if (shakeT <= 0) { shakeT = 0; shakePow = 0; } }
+    if (hitFlashT > 0) { hitFlashT -= dtMs; if (hitFlashT < 0) hitFlashT = 0; }
+
+    pillAccMs += dtMs;
+    if (pillAccMs >= 100) { pillAccMs = 0; updatePillsNow(); }
+
+    tickBgStars(dtMs);
+    tickUpgradeFx(dtMs);
+    tickTimedUpgrades(dtMs);
   }
 
-  // ───────────────────────── Bind UI ─────────────────────────
-  function bindUI() {
-    // header
-    on(btnHome, "click", () => { vibrate(8); openMenu(); });
-    on(btnPause, "click", () => { vibrate(8); pause(); });
+  function update(dtMs) {
+    if (!running || paused || gameOver || inLevelUp) return;
 
-    // press start
-    on(btnPressStart, "click", async () => {
-      vibrate(10);
-      try { await AudioSys.unlock?.(); } catch (_) { }
-      overlayHide(overlayPress);
-      openMenu();
-    });
+    comboTime -= dtMs / 1000;
+    if (comboTimerVal) comboTimerVal.textContent = `${Math.max(0, comboTime).toFixed(1)}s`;
+    if (comboTime <= 0) { failCombo(); comboTime = comboTimeMax; }
 
-    // menu
-    on(btnCloseMenu, "click", () => { vibrate(8); closeMenu(); });
+    const k = 14;
+    colF = lerp(colF, targetCol, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
+    rowF = lerp(rowF, targetRow, clamp((dtMs / 1000) * (k / 12), 0.06, 0.35));
 
-    // play
-    on(btnStartEndless, "click", async () => { vibrate(10); try { await AudioSys.unlock?.(); } catch (_) { } startRun(Mode.ENDLESS); });
-    on(btnStartArcade, "click", async () => { vibrate(10); try { await AudioSys.unlock?.(); } catch (_) { } startRun(Mode.ARCADE); });
-    on(btnStartStory, "click", async () => { vibrate(10); try { await AudioSys.unlock?.(); } catch (_) { } startRun(Mode.STORY); });
+    runTime += dtMs / 1000;
+    const sp = speedRowsPerSec();
+    scrollPx += (sp * cellPx) * (dtMs / 1000);
 
-    on(btnResumeIfRunning, "click", () => {
-      vibrate(8);
-      closeMenu();
-      if (running) {
-        paused = false;
-        overlayHide(overlayPaused);
+    let safe = 0;
+    while (scrollPx >= cellPx && safe++ < 12) {
+      scrollPx -= cellPx;
+      stepAdvance();
+      if (paused || gameOver || inLevelUp || !running) break;
+    }
+  }
+
+  function frame(t) {
+    if (fatalStop) return;
+    try {
+      const dt = clamp(t - lastT, 0, 50);
+      lastT = t;
+
+      tickFx(dt);
+      update(dt);
+      draw(dt);
+    } catch (e) {
+      showFatal(e);
+      return;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ───────────────────────── PWA / SW / Install ─────────────────────────
+  let deferredPrompt = null;
+  let swReg = null;
+  let swReloadGuard = false;
+
+  function isStandalone() {
+    return (window.matchMedia?.("(display-mode: standalone)")?.matches) ||
+      (window.navigator.standalone === true) ||
+      document.referrer.includes("android-app://");
+  }
+
+  function markUpdateAvailable(msg = null) {
+    if (!pillUpdate) return;
+    pillUpdate.hidden = false;
+    setPill(pillUpdate, msg || I18n.t("pill_update"));
+  }
+
+  function requestAppReload() {
+    if (running && !gameOver) {
+      pendingReload = true;
+      markUpdateAvailable(I18n.t("pill_update"));
+      showToast(I18n.t("update_apply_end"), 1200);
+      return;
+    }
+    location.reload();
+  }
+
+  async function applySWUpdateNow() {
+    if (!swReg) { location.reload(); return; }
+
+    if (swReg.waiting) { try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {} }
+    else { try { await swReg.update?.(); } catch {} }
+
+    const k = SW_RELOAD_KEY;
+    const kOld = SW_RELOAD_KEY_OLD;
+
+    if (sessionStorage.getItem(k) !== "1" && sessionStorage.getItem(kOld) !== "1") {
+      sessionStorage.setItem(k, "1");
+      setTimeout(() => location.reload(), 650);
+    } else location.reload();
+  }
+
+  async function repairPWA() {
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
       }
-    });
-
-    on(btnHardReset, "click", () => { vibrate(10); hardResetRun(); });
-
-    // paused overlay
-    on(btnUnpause, "click", () => { vibrate(8); resume(); });
-    on(btnOpenMenuFromPause, "click", () => { vibrate(8); overlayHide(overlayPaused); openMenu(); });
-
-    // upgrades
-    on(btnContinue, "click", () => { vibrate(10); closeUpgradeAndContinue(); });
-    on(btnReroll, "click", () => { vibrate(8); rerollUpgrades(); });
-
-    // gameover
-    on(btnPlayAgain, "click", () => { vibrate(10); overlayHide(overlayGameOver); startRun(mode); });
-    on(btnBackToMenu, "click", () => { vibrate(10); overlayHide(overlayGameOver); if (stage) stage.classList.add("isHidden"); openMenu(); });
-
-    // error overlay
-    on(btnReload, "click", () => location.reload());
-    on(btnRepair, "click", async () => {
-      try {
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }
-      } catch (_) { }
-      location.reload();
-    });
-
-    // emergency
-    on(btnEmergencyReload, "click", () => location.reload());
-    on(btnEmergencyRepair, "click", async () => {
-      try {
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }
-      } catch (_) { }
-      location.reload();
-    });
-
-    // catalog
-    on(btnOpenCatalog, "click", () => {
-      vibrate(8);
-      if (!catalog) return;
-      renderCatalog();
-      catalog.hidden = false;
-    });
-    on(btnCloseCatalog, "click", () => {
-      vibrate(8);
-      if (catalog) catalog.hidden = true;
-    });
-
-    // profiles
-    on(profileSelect, "change", () => {
-      if (!Auth) return;
-      const id = profileSelect.value;
-      try { Auth.setActiveProfile?.(id); } catch (_) { }
-      ensureProfile();
-      renderProfilesUI();
-      updateHUD();
-    });
-
-    on(btnNewProfile, "click", () => {
-      if (!newProfileWrap) return;
-      vibrate(8);
-      newProfileWrap.hidden = false;
-      if (newProfileName) newProfileName.value = "";
-      newProfileName?.focus?.();
-    });
-
-    on(btnCancelCreateProfile, "click", () => {
-      vibrate(8);
-      if (newProfileWrap) newProfileWrap.hidden = true;
-    });
-
-    on(btnCreateProfile, "click", () => {
-      if (!Auth) return;
-      const name = (newProfileName?.value || "").trim().slice(0, 16) || "Jugador";
-      try { Auth.createProfile?.(name); } catch (_) { }
-      if (newProfileWrap) newProfileWrap.hidden = true;
-      ensureProfile();
-      renderProfilesUI();
-      updateHUD();
-      vibrate(10);
-    });
-
-    on(btnRenameProfile, "click", () => {
-      if (!Auth) return;
-      const cur = Auth.getActiveProfile?.();
-      const name = prompt("Nuevo nombre de perfil:", cur?.name || "Jugador");
-      if (!name) return;
-      try { Auth.renameActiveProfile?.(String(name).trim().slice(0, 16)); } catch (_) { }
-      ensureProfile();
-      renderProfilesUI();
-      updateHUD();
-    });
-
-    on(btnDeleteProfile, "click", () => {
-      if (!Auth) return;
-      if (!confirm("¿Borrar este perfil?")) return;
-      try { Auth.deleteActiveProfile?.(); } catch (_) { }
-      ensureProfile();
-      renderProfilesUI();
-      updateHUD();
-    });
-
-    // records
-    on(btnClearRecords, "click", () => {
-      if (!confirm("¿Borrar historial de runs?")) return;
-      lsSet(RUNS_KEY, []);
-      renderRecordsUI();
-      vibrate(10);
-    });
-
-    // options listeners
-    on(optUseSprites, "change", () => { settings.useSprites = !!optUseSprites.checked; saveSettings(); });
-    on(optVibration, "change", () => { settings.vibration = !!optVibration.checked; saveSettings(); });
-    on(optShowDpad, "change", () => { settings.showDpad = !!optShowDpad.checked; saveSettings(); });
-    on(optReduceMotion, "change", () => { settings.reduceMotion = !!optReduceMotion.checked; saveSettings(); });
-    on(optFx, "input", () => { settings.fx = clamp(Number(optFx.value) || 1.0, 0.4, 1.25); saveSettings(); });
-
-    on(optMusicOn, "change", () => { settings.musicOn = !!optMusicOn.checked; saveSettings(); });
-    on(optSfxOn, "change", () => { settings.sfxOn = !!optSfxOn.checked; saveSettings(); });
-    on(optMuteAll, "change", () => { settings.muteAll = !!optMuteAll.checked; saveSettings(); });
-    on(optMusicVol, "input", () => { settings.musicVol = clamp(Number(optMusicVol.value) || 0, 0, 1); saveSettings(); });
-    on(optSfxVol, "input", () => { settings.sfxVol = clamp(Number(optSfxVol.value) || 0, 0, 1); saveSettings(); });
-
-    on(btnTestSfx, "click", () => { try { AudioSys.unlock?.(); AudioSys.sfx?.("ui_click"); } catch (_) { } });
-    on(btnTestMusic, "click", () => { try { AudioSys.unlock?.(); AudioSys.startMusic?.(); setTimeout(() => AudioSys.stopMusic?.(), 1200); } catch (_) { } });
-
-    on(btnRepairPwa, "click", async () => {
-      try {
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }
-        toast("PWA reparada. Recargando…");
-      } catch (_) {
-        toast("No se pudo reparar (pero no pasa nada). Recargando…");
+    } catch {}
+    try {
+      if (window.caches && caches.keys) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
       }
-      location.reload();
+    } catch {}
+    location.reload();
+  }
+
+  async function setupPWA() {
+    setOfflinePill();
+    window.addEventListener("online", setOfflinePill, { passive: true });
+    window.addEventListener("offline", setOfflinePill, { passive: true });
+
+    if (btnInstall) btnInstall.hidden = true;
+
+    if (!isStandalone()) {
+      window.addEventListener("beforeinstallprompt", (e) => {
+        if (isStandalone()) return;
+        e.preventDefault();
+        deferredPrompt = e;
+        if (btnInstall) btnInstall.hidden = false;
+      });
+
+      window.addEventListener("appinstalled", () => {
+        deferredPrompt = null;
+        if (btnInstall) btnInstall.hidden = true;
+      });
+
+      btnInstall?.addEventListener("click", async () => {
+        AudioSys.unlock();
+        if (!deferredPrompt) return;
+        btnInstall.disabled = true;
+        try { deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch {}
+        deferredPrompt = null;
+        btnInstall.hidden = true;
+        btnInstall.disabled = false;
+      });
+    }
+
+    pillUpdate?.addEventListener("click", () => {
+      AudioSys.unlock();
+      if (running && !gameOver) {
+        pendingReload = true;
+        showToast(I18n.t("update_apply_end_short"), 900);
+        return;
+      }
+      applySWUpdateNow();
     });
+
+    if (window.__GRIDRUNNER_NOSW) return;
+
+    if ("serviceWorker" in navigator) {
+      try {
+        const swUrl = new URL(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`, location.href);
+        swReg = await navigator.serviceWorker.register(swUrl);
+
+        try { await swReg.update(); } catch {}
+        if (swReg.waiting) markUpdateAvailable(I18n.t("pill_update"));
+
+        swReg.addEventListener("updatefound", () => {
+          const nw = swReg.installing;
+          if (!nw) return;
+          nw.addEventListener("statechange", () => {
+            if (nw.state === "installed" && navigator.serviceWorker.controller) {
+              markUpdateAvailable(I18n.t("pill_update"));
+              showToast(I18n.t("update_available"), 1100);
+            }
+          });
+        });
+
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (swReloadGuard) return;
+          swReloadGuard = true;
+
+          const k = SW_RELOAD_KEY;
+          const kOld = SW_RELOAD_KEY_OLD;
+
+          if (sessionStorage.getItem(k) !== "1" && sessionStorage.getItem(kOld) !== "1") {
+            sessionStorage.setItem(k, "1");
+            requestAppReload();
+          }
+        });
+      } catch (e) {
+        console.warn("SW register failed:", e);
+      }
+    }
+  }
+
+  // ───────────────────────── Auth UI ─────────────────────────
+  function initAuthUI() {
+    if (!profileSelect) return;
+
+    if (!Auth) {
+      if (newProfileWrap) newProfileWrap.hidden = false;
+      if (btnStart) btnStart.disabled = false;
+      return;
+    }
+
+    const list = Auth.listProfiles?.() || [];
+    profileSelect.innerHTML = "";
+
+    for (const p of list) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      profileSelect.appendChild(opt);
+    }
+
+    const optNew = document.createElement("option");
+    optNew.value = "__new__";
+    optNew.textContent = I18n.t("new_profile");
+    profileSelect.appendChild(optNew);
+
+    const ap = Auth.getActiveProfile?.();
+    if (ap && list.some(x => x.id === ap.id)) profileSelect.value = ap.id;
+    else if (list.length) {
+      profileSelect.value = list[0].id;
+      Auth.setActiveProfile?.(list[0].id);
+      syncFromAuth();
+    } else profileSelect.value = "__new__";
+
+    const refreshNewWrap = () => {
+      const isNew = profileSelect.value === "__new__";
+      if (newProfileWrap) newProfileWrap.hidden = !isNew;
+      const ok = !isNew || ((startName?.value || "").trim().length >= 2);
+      if (btnStart) btnStart.disabled = !ok;
+    };
+
+    profileSelect.addEventListener("change", () => {
+      AudioSys.unlock();
+      if (profileSelect.value !== "__new__") {
+        Auth.setActiveProfile?.(profileSelect.value);
+        syncFromAuth();
+        applySettingsToUI();
+        updatePillsNow();
+      }
+      refreshNewWrap();
+    });
+
+    btnNewProfile?.addEventListener("click", () => {
+      AudioSys.unlock();
+      profileSelect.value = "__new__";
+      refreshNewWrap();
+      startName?.focus();
+    });
+
+    startName?.addEventListener("input", refreshNewWrap);
+    refreshNewWrap();
   }
 
   // ───────────────────────── Boot ─────────────────────────
-  function sanityCheck() {
-    if (!gameCanvas || !fxCanvas || !ctx || !fctx) {
-      showError("Falta gameCanvas/fxCanvas en el HTML.");
-      return false;
-    }
-    return true;
+  function cacheDOM() {
+    stage = $("stage");
+    canvasWrap = $("canvasWrap");
+    gameArea = $("gameArea");
+    hud = $("hud");
+    canvas = $("gameCanvas");
+
+    if (!stage) throw new Error("Falta #stage");
+    if (!gameArea && !canvasWrap) throw new Error("Falta #gameArea (o #canvasWrap)");
+    if (!canvas) throw new Error("Falta #gameCanvas");
+
+    ctx = canvas.getContext("2d", { alpha: false, desynchronized: true }) ||
+          canvas.getContext("2d", { alpha: false }) ||
+          canvas.getContext("2d");
+    if (!ctx) throw new Error("No se pudo crear contexto 2D");
+
+    brandSub = $("brandSub");
+
+    pillScore = $("pillScore");
+    pillBest = $("pillBest");
+    pillStreak = $("pillStreak");
+    pillMult = $("pillMult");
+    pillLevel = $("pillLevel");
+    pillSpeed = $("pillSpeed");
+    pillPlayer = $("pillPlayer");
+    pillUpdate = $("pillUpdate");
+    pillOffline = $("pillOffline");
+    pillVersion = $("pillVersion");
+
+    btnOptions = $("btnOptions");
+    btnPause = $("btnPause");
+    btnRestart = $("btnRestart");
+    btnInstall = $("btnInstall");
+
+    overlayLoading = $("overlayLoading");
+      overlayPress = $("overlayPress");
+    loadingSub = $("loadingSub");
+    overlayStart = $("overlayStart");
+
+    btnPressStart = $("btnPressStart");
+    pressSub = $("pressSub");
+    pressHint = $("pressHint");
+    pressMeta = $("pressMeta");
+    pillModeVal = $("pillModeVal");
+    railCanvasEl = $("railCanvas");
+
+    overlayPaused = $("overlayPaused");
+    overlayUpgrades = $("overlayUpgrades");
+    overlayGameOver = $("overlayGameOver");
+    overlayOptions = $("overlayOptions");
+    overlayError = $("overlayError");
+
+    btnStart = $("btnStart");
+    profileSelect = $("profileSelect");
+    btnNewProfile = $("btnNewProfile");
+    newProfileWrap = $("newProfileWrap");
+    startName = $("startName");
+
+    btnResume = $("btnResume");
+    btnQuitToStart = $("btnQuitToStart");
+    btnPausedRestart = $("btnPausedRestart");
+
+    upTitle = $("upTitle");
+    upSub = $("upSub");
+    upgradeChoices = $("upgradeChoices");
+    btnReroll = $("btnReroll");
+    btnSkipUpgrade = $("btnSkipUpgrade");
+
+    goStats = $("goStats");
+    goScoreBig = $("goScoreBig");
+    goBestBig = $("goBestBig");
+    btnBackToStart = $("btnBackToStart");
+    btnRetry = $("btnRetry");
+
+    btnCloseOptions = $("btnCloseOptions");
+    optSprites = $("optSprites");
+    optVibration = $("optVibration");
+    optDpad = $("optDpad");
+    optFx = $("optFx");
+    optFxValue = $("optFxValue");
+    btnClearLocal = $("btnClearLocal");
+    btnRepairPWA = $("btnRepairPWA");
+
+    optMusicOn = $("optMusicOn");
+    optSfxOn = $("optSfxOn");
+    optMusicVol = $("optMusicVol");
+    optMusicVolValue = $("optMusicVolValue");
+    optSfxVol = $("optSfxVol");
+    optSfxVolValue = $("optSfxVolValue");
+    optMuteAll = $("optMuteAll");
+    btnTestAudio = $("btnTestAudio");
+
+    optLang = $("optLang");
+
+    errMsg = $("errMsg");
+    btnErrClose = $("btnErrClose");
+    btnErrReload = $("btnErrReload");
+
+    comboSeq = $("comboSeq");
+    comboTimerVal = $("comboTimerVal");
+    comboHint = $("comboHint");
+    toast = $("toast");
+
+    levelProgFill = $("levelProgFill");
+    levelProgText = $("levelProgText");
+    levelProgPct = $("levelProgPct");
+
+    dpad = $("dpad");
+    btnUp = $("btnUp");
+    btnDown = $("btnDown");
+    btnLeft = $("btnLeft");
+    btnRight = $("btnRight");
+
+    hudFloat = $("hudFloat");
   }
 
-  function boot() {
+  async function boot() {
     try {
-      loadSettings();
-      applyAudioSettings();
-      applyDpadVisibility();
-      setVHVar();
+      const bootStartedAt = pNow();
 
-      ensureProfile();
+      cacheDOM();
 
-      // stage oculto hasta start
-      if (stage) stage.classList.add("isHidden");
+      window.__GRIDRUNNER_BOOTED = true;
+      window.__GRIDROGUE_BOOTED = true;
 
-      // overlays iniciales
-      if (overlayLoading) overlayHide(overlayLoading);
-      if (overlayPress) overlayShow(overlayPress);
-      if (overlayMenu) overlayHide(overlayMenu);
-      if (overlayUpgrades) overlayHide(overlayUpgrades);
-      if (overlayPaused) overlayHide(overlayPaused);
-      if (overlayGameOver) overlayHide(overlayGameOver);
-      if (overlayError) overlayHide(overlayError);
+      lockPageScroll();
+      installAntiScrollGuards();
+      updateVhUnit();
 
-      // disable pause hasta que empiece run
-      if (btnPause) btnPause.disabled = true;
-      if (btnResumeIfRunning) btnResumeIfRunning.disabled = true;
+      ensureUpgradeFxCanvas();
+      ensureHudStatusUI();
+      installHudObservers();
 
-      bindTabs();
-      bindInstall();
-      bindSWUpdateDot();
-      bindKeyboard();
-      bindDpad();
-      bindUI();
+      setPill(pillVersion, `v${APP_VERSION}`);
+      if (pillUpdate) pillUpdate.hidden = true;
 
-      setTab("play");
-      resetRunCommon();
-      setupCanvas();
+      if (loadingSub) loadingSub.textContent = I18n.t("app_loading");
+      setState("loading");
 
-      // resize hooks
-      on(window, "resize", () => { setVHVar(); setupCanvas(); });
-      on(window, "orientationchange", () => { setTimeout(() => { setVHVar(); setupCanvas(); }, 100); });
+      syncFromAuth();
+      applyAudioSettingsNow();
 
-      lastT = 0;
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(loop);
+      ROWS = desiredRows();
 
-      updateHUD();
+      recomputeZone();
+      makeGrid();
+      rerollCombo();
+
+      initAuthUI();
+
+      setupLanguageUI();
+      applySettingsToUI();
+
+      resize();
+      window.addEventListener("resize", resize, { passive: true });
+      window.visualViewport?.addEventListener?.("resize", resize, { passive: true });
+
+      bindInputs();
+
+      btnPause?.addEventListener("click", togglePause);
+      btnOptions?.addEventListener("click", showOptions);
+
+      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); updateStatusHUD(); });
+      btnQuitToStart?.addEventListener("click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused, 120); resetRun(true); });
+
+      btnPausedRestart?.addEventListener("click", () => { AudioSys.sfx("ui"); resetRun(false); startRun(); });
+
+      btnRetry?.addEventListener("click", () => { resetRun(false); startRun(); });
+      btnBackToStart?.addEventListener("click", () => { resetRun(true); });
+      btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
+
+      btnCloseOptions?.addEventListener("click", hideOptions);
+      overlayOptions?.addEventListener("click", (e) => { if (e.target === overlayOptions) hideOptions(); });
+
+      optSprites?.addEventListener("change", () => { settings.useSprites = !!optSprites.checked; saveSettings(); pushPrefsToAuth(); });
+      optVibration?.addEventListener("change", () => { settings.vibration = !!optVibration.checked; saveSettings(); pushPrefsToAuth(); });
+      optDpad?.addEventListener("change", () => { settings.showDpad = !!optDpad.checked; applySettingsToUI(); saveSettings(); pushPrefsToAuth(); });
+      optFx?.addEventListener("input", () => {
+        settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
+        if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
+        saveSettings();
+        pushPrefsToAuth();
+      });
+
+      optMusicOn?.addEventListener("change", () => { AudioSys.unlock(); settings.musicOn = !!optMusicOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+      optSfxOn?.addEventListener("change", () => { AudioSys.unlock(); settings.sfxOn = !!optSfxOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+      optMusicVol?.addEventListener("input", () => {
+        AudioSys.unlock();
+        settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.6"), 0, 1);
+        if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
+        applyAudioSettingsNow();
+        saveSettings();
+        pushPrefsToAuth();
+      });
+      optSfxVol?.addEventListener("input", () => {
+        AudioSys.unlock();
+        settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.9"), 0, 1);
+        if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
+        applyAudioSettingsNow();
+        saveSettings();
+        pushPrefsToAuth();
+      });
+      optMuteAll?.addEventListener("change", () => { AudioSys.unlock(); settings.muteAll = !!optMuteAll.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+
+      btnTestAudio?.addEventListener("click", async () => {
+        await AudioSys.unlock();
+        applyAudioSettingsNow();
+        AudioSys.startMusic();
+        AudioSys.sfx("coin");
+        showToast(I18n.t("audio_ok"), 700);
+      });
+
+      if (optLang) {
+        optLang.addEventListener("change", () => {
+          const v = String(optLang.value || "auto");
+          settings.lang = v;
+          saveSettings();
+          pushPrefsToAuth();
+
+          I18n.setLang(settings.lang);
+          applySettingsToUI();
+
+          updatePillsNow();
+          renderComboUI();
+          if (overlayUpgrades && !overlayUpgrades.hidden) renderUpgradeChoices();
+          if (brandSub) brandSub.textContent = I18n.t("app_ready");
+        });
+      }
+
+      btnRepairPWA?.addEventListener("click", repairPWA);
+
+      btnClearLocal?.addEventListener("click", () => {
+        const ok = confirm(I18n.t("confirm_clear_local"));
+        if (!ok) return;
+        localStorage.clear();
+        location.reload();
+      });
+
+      btnErrClose?.addEventListener("click", () => overlayHide(overlayError));
+      btnErrReload?.addEventListener("click", () => location.reload());
+
+      btnReroll?.addEventListener("click", rerollUpgrades);
+      btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast(I18n.t("toast_skip"), 650); AudioSys.sfx("ui"); });
+
+      btnStart?.addEventListener("click", async () => {
+        await AudioSys.unlock();
+
+        if (Auth && profileSelect) {
+          if (profileSelect.value === "__new__") {
+            const nm = (startName?.value || "").trim();
+            const p = Auth.createProfile?.(nm);
+            if (!p) { showToast(I18n.t("name_min"), 900); return; }
+            syncFromAuth();
+            initAuthUI();
+          } else {
+            Auth.setActiveProfile?.(profileSelect.value);
+            syncFromAuth();
+          }
+        } else {
+          const nm = (startName?.value || "").trim().slice(0, 16);
+          if (nm.length >= 2) {
+            playerName = nm;
+            writeLS(NAME_KEY, playerName);
+            writeLS(NAME_KEY_OLD, playerName);
+          }
+        }
+        updatePillsNow();
+        await startRun();
+      });
+
+      pillPlayer?.addEventListener("click", () => resetRun(true));
+      pillPlayer?.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") resetRun(true); });
+
+      if (loadingSub) loadingSub.textContent = I18n.t("app_pwa");
+      setupPWA();
+      preloadSpritesWithTimeout(900);
+
+      try { GRPerf?.start?.(); } catch {}
+
+      resetRun(true);
+
+      lastT = pNow();
+      requestAnimationFrame(frame);
+
+      const SPLASH_MIN_MS = 1400;
+      const elapsed = pNow() - bootStartedAt;
+      const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
+
+      setTimeout(async () => {
+        await overlayFadeOut(overlayLoading, 180);
+
+        try{ U && U.applyViewportVars && U.applyViewportVars(); }catch(_){}
+        try{ U && U.applyEnvClasses && U.applyEnvClasses(); }catch(_){}
+
+        setState("menu");
+        if (brandSub) brandSub.textContent = I18n.t("app_ready");
+
+        const seen = (() => { try{ return sessionStorage.getItem("gridrogue_press_seen_v1") === "1"; }catch(_){ return false; } })();
+        if (!seen && overlayPress) showPressToStart();
+        else overlayShow(overlayStart);
+
+        updatePillsNow();
+      }, wait);
+document.addEventListener("visibilitychange", () => {
+        if (document.hidden && running && !gameOver && !inLevelUp) {
+          pauseForOverlay(true);
+          overlayShow(overlayPaused);
+          updateStatusHUD();
+        }
+      });
+
+      try { perfEndBoot?.(); } catch {}
     } catch (e) {
-      showError(e?.message || String(e));
+      showFatal(e);
     }
   }
 
-  // ───────────────────────── Global error traps ─────────────────────────
-  window.addEventListener("error", (e) => {
-    try { showError(e?.message || "Error"); } catch (_) { }
-  });
-  window.addEventListener("unhandledrejection", (e) => {
-    try { showError(e?.reason?.message || String(e?.reason || "Promise error")); } catch (_) { }
-  });
-
-  if (sanityCheck()) boot();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+  else boot();
 })();
