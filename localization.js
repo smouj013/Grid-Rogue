@@ -1,18 +1,21 @@
-/* localization.js — Grid Rogue v0.2.0
+/* localization.js — Grid Rogue v1.1.0
    I18N separado (window.I18n)
    ✅ Normalización robusta (zh-hans/zh-hant, regiones, _ vs -)
    ✅ Soporte RTL (ar): ajusta document.documentElement.dir
-   ✅ Keys v0.1.9 incluidas (vida/corazones, badges de mejoras activas, duraciones, upgrade de vida)
-   ✅ v0.2.0:
-   - Guard anti-doble carga (SW/duplicados)
-   - applyDataAttrs más robusto (acepta root Element/Document y no rompe si falta DOM)
-   - languageOptions estable + auto label siempre disponible
-   - detectBrowser más seguro (navigator opcional)
+   ✅ Guard anti-doble carga (SW/duplicados)
+   ✅ applyDataAttrs robusto (root Element/Document, no rompe si falta DOM)
+   ✅ v1.1.0: claves extra para SKILLS/CATÁLOGO + DISCOVERY + SHOP + CHESTS
+   ✅ Extensible: I18n.extend(lang, entries) para packs externos (opcional)
 */
 (() => {
   "use strict";
 
-  const VERSION = "0.2.0";
+  const VERSION = "1.1.0";
+
+  // ───────────────────────── Guard anti doble carga ─────────────────────────
+  const g = (typeof globalThis !== "undefined") ? globalThis : (typeof window !== "undefined" ? window : {});
+  const LOAD_GUARD = "__GRIDROGUE_LOCALIZATION_LOADED_V1100";
+  try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
   // ✅ Guard: evita crash si se ejecuta dos veces (SW/duplicados)
   try {
@@ -56,51 +59,67 @@
     return base;
   };
 
-  // Diccionarios (TODOS los idiomas como en v0.1.9)
+  // ───────────────────────── Diccionarios ─────────────────────────
+  // Nota: además del dict base, soportamos "packs" extendidos por idioma:
+  // I18n.extend("es", { skill_x_name: "...", skill_x_desc: "..." })
   const dict = {
     es: {
       langName: "Español",
       defaultPlayer: "Jugador",
+
       app_ready: "Listo",
       app_loading: "Iniciando…",
       app_pwa: "PWA…",
       audio_ok: "Audio OK",
+
       update_apply_end: "Update listo: se aplicará al terminar.",
       update_available: "Actualización disponible.",
       update_apply_end_short: "Se aplicará al terminar.",
       pill_update: "Actualizar",
+
       toast_trap: "Trampa",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Mejora: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Saltar",
       toast_shield_saved: "El escudo salvó un KO",
+
       name_min: "Nombre mínimo 2 letras",
       combo_hint: "Completa la secuencia para subir multiplicador.",
+
       stats_reason: "Motivo",
       stats_level: "Nivel",
       stats_time: "Tiempo",
       stats_streak: "Racha",
       stats_mult: "Mult",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bonus",
+
       opt_language: "Idioma",
       lang_auto: "Auto",
+
       up_choose: "Elige una mejora",
       up_level_title: "Nivel {0}",
+
       rarity_common: "Común",
       rarity_rare: "Rara",
       rarity_epic: "Épica",
       rarity_legendary: "Legendaria",
+
       new_profile: "Crear nuevo…",
       confirm_clear_local: "¿Borrar datos locales? (Perfiles, ajustes, runs)",
+
+      // Tags (base)
       tag_defense: "Defensa",
       tag_qol: "QoL",
       tag_points: "Puntos",
       tag_mobility: "Movilidad",
       tag_upgrades: "Upgrades",
       tag_combo: "Combo",
+
+      // Upgrades base
       up_shield_name: "Escudo",
       up_shield_desc: "Bloquea 1 KO (se consume).",
       up_mag1_name: "Imán I",
@@ -126,7 +145,7 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Sube multiplicador base (+0.10).",
 
-      // v0.1.9
+      // v0.1.9 (HP/badges)
       hud_hp: "Vida",
       toast_damage: "Daño",
       toast_heal: "Vida +1",
@@ -139,51 +158,152 @@
       ui_time_left: "Queda: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Activa",
+
+      // ───────── v1.1.0 (SKILLS/CATÁLOGO + DISCOVERY + SHOP + COFRES) ─────────
+      ui_menu: "Menú",
+      ui_play: "Jugar",
+      ui_start: "Empezar",
+      ui_continue: "Continuar",
+      ui_pause: "Pausa",
+      ui_resume: "Reanudar",
+      ui_restart: "Reiniciar",
+      ui_back: "Volver",
+      ui_close: "Cerrar",
+      ui_ok: "OK",
+      ui_cancel: "Cancelar",
+      ui_yes: "Sí",
+      ui_no: "No",
+
+      ui_shop: "Tienda",
+      ui_chest: "Cofre",
+      ui_skills: "Habilidades",
+      ui_catalog: "Catálogo",
+      ui_discovery: "Descubrimiento",
+
+      skills_title: "Habilidades",
+      skills_choose: "Elige una habilidad",
+      skills_owned: "Obtenidas",
+      skills_locked: "Bloqueadas",
+      skills_new: "Nueva",
+      skills_details: "Detalles",
+      skills_show_all: "Ver todo",
+      skills_filter_all: "Todas",
+      skills_filter_owned: "Obtenidas",
+      skills_filter_new: "Nuevas",
+      skills_filter_locked: "Bloqueadas",
+      skills_sort: "Orden",
+      skills_sort_name: "Nombre",
+      skills_sort_rarity: "Rareza",
+      skills_sort_recent: "Recientes",
+
+      discovery_title: "Descubrimiento",
+      discovery_found: "Descubierta",
+      discovery_progress: "Descubiertas: {0}/{1}",
+      discovery_complete: "Catálogo completo",
+      discovery_hint: "Consigue habilidades para descubrir nuevas.",
+
+      shop_title: "Tienda",
+      shop_offer: "Oferta",
+      shop_buy: "Comprar",
+      shop_owned: "Ya la tienes",
+      shop_sold: "Vendido",
+      shop_refresh: "Renovar",
+      shop_refresh_free: "Renovar gratis",
+      shop_refresh_cost: "Renovar ({0})",
+      shop_cost: "Coste: {0}",
+      shop_balance: "Saldo: {0}",
+      shop_not_enough: "No tienes suficiente",
+      shop_out_of_stock: "Sin stock",
+      shop_hint: "Gasta coins para comprar habilidades.",
+
+      chest_title: "Cofre",
+      chest_open: "Abrir",
+      chest_opening: "Abriendo…",
+      chest_claim: "Reclamar",
+      chest_skip: "Saltar",
+      chest_free: "Gratis",
+      chest_cost: "Coste: {0}",
+      chest_you_got: "Has conseguido: {0}",
+      chest_roll_again: "Tirar otra vez",
+      chest_rolls_left: "Tiradas: {0}",
+      chest_empty: "Vacío",
+      chest_hint: "Abre cofres para conseguir habilidades aleatorias.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coins",
+
+      toast_shop_buy: "Comprado: {0}",
+      toast_shop_fail: "No se puede comprar",
+      toast_chest_open: "Cofre abierto",
+      toast_discovery_new: "¡Nuevo descubrimiento!",
+      toast_skill_new: "Nueva habilidad: {0}",
+
+      // Tags extra (v1.1.0)
+      tag_survival2: "Supervivencia",
+      tag_damage: "Daño",
+      tag_economy: "Economía",
+      tag_utility: "Utilidad",
+      tag_luck: "Suerte",
+      tag_shop: "Tienda",
+      tag_chest: "Cofres",
+      tag_discovery: "Descubrimiento",
     },
 
     en: {
       langName: "English",
       defaultPlayer: "Player",
+
       app_ready: "Ready",
       app_loading: "Starting…",
       app_pwa: "PWA…",
       audio_ok: "Audio OK",
+
       update_apply_end: "Update ready: it will apply after the run.",
       update_available: "Update available.",
       update_apply_end_short: "It will apply after the run.",
       pill_update: "Update",
+
       toast_trap: "Trap",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Upgrade: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Skip",
       toast_shield_saved: "Shield saved you from a KO",
+
       name_min: "Name must be at least 2 characters",
       combo_hint: "Complete the sequence to increase multiplier.",
+
       stats_reason: "Reason",
       stats_level: "Level",
       stats_time: "Time",
       stats_streak: "Streak",
       stats_mult: "Mult",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bonus",
+
       opt_language: "Language",
       lang_auto: "Auto",
+
       up_choose: "Choose an upgrade",
       up_level_title: "Level {0}",
+
       rarity_common: "Common",
       rarity_rare: "Rare",
       rarity_epic: "Epic",
       rarity_legendary: "Legendary",
+
       new_profile: "Create new…",
       confirm_clear_local: "Clear local data? (Profiles, settings, runs)",
+
       tag_defense: "Defense",
       tag_qol: "QoL",
       tag_points: "Points",
       tag_mobility: "Mobility",
       tag_upgrades: "Upgrades",
       tag_combo: "Combo",
+
       up_shield_name: "Shield",
       up_shield_desc: "Blocks 1 KO (consumed).",
       up_mag1_name: "Magnet I",
@@ -209,7 +329,6 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Increase base multiplier (+0.10).",
 
-      // v0.1.9
       hud_hp: "HP",
       toast_damage: "Damage",
       toast_heal: "HP +1",
@@ -222,51 +341,151 @@
       ui_time_left: "Left: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Active",
+
+      // v1.1.0
+      ui_menu: "Menu",
+      ui_play: "Play",
+      ui_start: "Start",
+      ui_continue: "Continue",
+      ui_pause: "Pause",
+      ui_resume: "Resume",
+      ui_restart: "Restart",
+      ui_back: "Back",
+      ui_close: "Close",
+      ui_ok: "OK",
+      ui_cancel: "Cancel",
+      ui_yes: "Yes",
+      ui_no: "No",
+
+      ui_shop: "Shop",
+      ui_chest: "Chest",
+      ui_skills: "Skills",
+      ui_catalog: "Catalog",
+      ui_discovery: "Discovery",
+
+      skills_title: "Skills",
+      skills_choose: "Choose a skill",
+      skills_owned: "Owned",
+      skills_locked: "Locked",
+      skills_new: "New",
+      skills_details: "Details",
+      skills_show_all: "Show all",
+      skills_filter_all: "All",
+      skills_filter_owned: "Owned",
+      skills_filter_new: "New",
+      skills_filter_locked: "Locked",
+      skills_sort: "Sort",
+      skills_sort_name: "Name",
+      skills_sort_rarity: "Rarity",
+      skills_sort_recent: "Recent",
+
+      discovery_title: "Discovery",
+      discovery_found: "Discovered",
+      discovery_progress: "Discovered: {0}/{1}",
+      discovery_complete: "Catalog complete",
+      discovery_hint: "Get skills to discover new ones.",
+
+      shop_title: "Shop",
+      shop_offer: "Offer",
+      shop_buy: "Buy",
+      shop_owned: "Owned",
+      shop_sold: "Sold",
+      shop_refresh: "Refresh",
+      shop_refresh_free: "Free refresh",
+      shop_refresh_cost: "Refresh ({0})",
+      shop_cost: "Cost: {0}",
+      shop_balance: "Balance: {0}",
+      shop_not_enough: "Not enough",
+      shop_out_of_stock: "Out of stock",
+      shop_hint: "Spend coins to buy skills.",
+
+      chest_title: "Chest",
+      chest_open: "Open",
+      chest_opening: "Opening…",
+      chest_claim: "Claim",
+      chest_skip: "Skip",
+      chest_free: "Free",
+      chest_cost: "Cost: {0}",
+      chest_you_got: "You got: {0}",
+      chest_roll_again: "Roll again",
+      chest_rolls_left: "Rolls: {0}",
+      chest_empty: "Empty",
+      chest_hint: "Open chests to get random skills.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coins",
+
+      toast_shop_buy: "Bought: {0}",
+      toast_shop_fail: "Can't buy",
+      toast_chest_open: "Chest opened",
+      toast_discovery_new: "New discovery!",
+      toast_skill_new: "New skill: {0}",
+
+      tag_survival2: "Survival",
+      tag_damage: "Damage",
+      tag_economy: "Economy",
+      tag_utility: "Utility",
+      tag_luck: "Luck",
+      tag_shop: "Shop",
+      tag_chest: "Chests",
+      tag_discovery: "Discovery",
     },
 
     fr: {
       langName: "Français",
       defaultPlayer: "Joueur",
+
       app_ready: "Prêt",
       app_loading: "Démarrage…",
       app_pwa: "PWA…",
       audio_ok: "Audio OK",
+
       update_apply_end: "MAJ prête : elle s’appliquera après la partie.",
       update_available: "Mise à jour disponible.",
       update_apply_end_short: "Après la partie.",
       pill_update: "Mettre à jour",
+
       toast_trap: "Piège",
       toast_combo_mult: "Combo : +MULT",
       toast_upgrade: "Amélioration : {0}",
       toast_reroll: "Relance",
       toast_skip: "Passer",
       toast_shield_saved: "Bouclier : KO évité",
+
       name_min: "Nom : minimum 2 caractères",
       combo_hint: "Complète la séquence pour augmenter le multiplicateur.",
+
       stats_reason: "Raison",
       stats_level: "Niveau",
       stats_time: "Temps",
       stats_streak: "Série",
       stats_mult: "Mult",
+
       cell_coin: "Pièce",
       cell_gem: "Gemme",
       cell_bonus: "Bonus",
+
       opt_language: "Langue",
       lang_auto: "Auto",
+
       up_choose: "Choisis une amélioration",
       up_level_title: "Niveau {0}",
+
       rarity_common: "Commune",
       rarity_rare: "Rare",
       rarity_epic: "Épique",
       rarity_legendary: "Légendaire",
+
       new_profile: "Créer nouveau…",
       confirm_clear_local: "Effacer les données locales ? (Profils, réglages, runs)",
+
       tag_defense: "Défense",
       tag_qol: "QoL",
       tag_points: "Points",
       tag_mobility: "Mobilité",
       tag_upgrades: "Amélios",
       tag_combo: "Combo",
+
       up_shield_name: "Bouclier",
       up_shield_desc: "Bloque 1 KO (consommé).",
       up_mag1_name: "Aimant I",
@@ -292,7 +511,6 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Augmente le mult de base (+0,10).",
 
-      // v0.1.9
       hud_hp: "Vie",
       toast_damage: "Dégâts",
       toast_heal: "Vie +1",
@@ -305,51 +523,151 @@
       ui_time_left: "Reste : {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Active",
+
+      // v1.1.0
+      ui_menu: "Menu",
+      ui_play: "Jouer",
+      ui_start: "Démarrer",
+      ui_continue: "Continuer",
+      ui_pause: "Pause",
+      ui_resume: "Reprendre",
+      ui_restart: "Recommencer",
+      ui_back: "Retour",
+      ui_close: "Fermer",
+      ui_ok: "OK",
+      ui_cancel: "Annuler",
+      ui_yes: "Oui",
+      ui_no: "Non",
+
+      ui_shop: "Boutique",
+      ui_chest: "Coffre",
+      ui_skills: "Compétences",
+      ui_catalog: "Catalogue",
+      ui_discovery: "Découverte",
+
+      skills_title: "Compétences",
+      skills_choose: "Choisis une compétence",
+      skills_owned: "Possédées",
+      skills_locked: "Verrouillées",
+      skills_new: "Nouveau",
+      skills_details: "Détails",
+      skills_show_all: "Tout voir",
+      skills_filter_all: "Toutes",
+      skills_filter_owned: "Possédées",
+      skills_filter_new: "Nouvelles",
+      skills_filter_locked: "Verrouillées",
+      skills_sort: "Tri",
+      skills_sort_name: "Nom",
+      skills_sort_rarity: "Rareté",
+      skills_sort_recent: "Récentes",
+
+      discovery_title: "Découverte",
+      discovery_found: "Découverte",
+      discovery_progress: "Découvertes : {0}/{1}",
+      discovery_complete: "Catalogue complet",
+      discovery_hint: "Obtiens des compétences pour en découvrir de nouvelles.",
+
+      shop_title: "Boutique",
+      shop_offer: "Offre",
+      shop_buy: "Acheter",
+      shop_owned: "Déjà acquis",
+      shop_sold: "Vendu",
+      shop_refresh: "Rafraîchir",
+      shop_refresh_free: "Rafraîchir (gratuit)",
+      shop_refresh_cost: "Rafraîchir ({0})",
+      shop_cost: "Coût : {0}",
+      shop_balance: "Solde : {0}",
+      shop_not_enough: "Pas assez",
+      shop_out_of_stock: "Rupture",
+      shop_hint: "Dépense des pièces pour acheter des compétences.",
+
+      chest_title: "Coffre",
+      chest_open: "Ouvrir",
+      chest_opening: "Ouverture…",
+      chest_claim: "Récupérer",
+      chest_skip: "Passer",
+      chest_free: "Gratuit",
+      chest_cost: "Coût : {0}",
+      chest_you_got: "Obtenu : {0}",
+      chest_roll_again: "Relancer",
+      chest_rolls_left: "Tirages : {0}",
+      chest_empty: "Vide",
+      chest_hint: "Ouvre des coffres pour obtenir des compétences aléatoires.",
+
+      currency_coin: "Pièce",
+      currency_coins: "Pièces",
+
+      toast_shop_buy: "Acheté : {0}",
+      toast_shop_fail: "Achat impossible",
+      toast_chest_open: "Coffre ouvert",
+      toast_discovery_new: "Nouvelle découverte !",
+      toast_skill_new: "Nouvelle compétence : {0}",
+
+      tag_survival2: "Survie",
+      tag_damage: "Dégâts",
+      tag_economy: "Économie",
+      tag_utility: "Utilité",
+      tag_luck: "Chance",
+      tag_shop: "Boutique",
+      tag_chest: "Coffres",
+      tag_discovery: "Découverte",
     },
 
     de: {
       langName: "Deutsch",
       defaultPlayer: "Spieler",
+
       app_ready: "Bereit",
       app_loading: "Startet…",
       app_pwa: "PWA…",
       audio_ok: "Audio OK",
+
       update_apply_end: "Update bereit: wird nach dem Lauf angewendet.",
       update_available: "Update verfügbar.",
       update_apply_end_short: "Nach dem Lauf.",
       pill_update: "Aktualisieren",
+
       toast_trap: "Falle",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Upgrade: {0}",
       toast_reroll: "Neu würfeln",
       toast_skip: "Überspringen",
       toast_shield_saved: "Schild hat dich vor KO gerettet",
+
       name_min: "Name: mindestens 2 Zeichen",
       combo_hint: "Vervollständige die Sequenz für mehr Multiplikator.",
+
       stats_reason: "Grund",
       stats_level: "Level",
       stats_time: "Zeit",
       stats_streak: "Serie",
       stats_mult: "Mult",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bonus",
+
       opt_language: "Sprache",
       lang_auto: "Auto",
+
       up_choose: "Wähle ein Upgrade",
       up_level_title: "Level {0}",
+
       rarity_common: "Gewöhnlich",
       rarity_rare: "Selten",
       rarity_epic: "Episch",
       rarity_legendary: "Legendär",
+
       new_profile: "Neu erstellen…",
       confirm_clear_local: "Lokale Daten löschen? (Profile, Einstellungen, Runs)",
+
       tag_defense: "Verteidigung",
       tag_qol: "QoL",
       tag_points: "Punkte",
       tag_mobility: "Mobilität",
       tag_upgrades: "Upgrades",
       tag_combo: "Combo",
+
       up_shield_name: "Schild",
       up_shield_desc: "Blockt 1 KO (verbraucht).",
       up_mag1_name: "Magnet I",
@@ -375,7 +693,6 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Erhöht Basismultiplikator (+0,10).",
 
-      // v0.1.9
       hud_hp: "Leben",
       toast_damage: "Schaden",
       toast_heal: "Leben +1",
@@ -388,51 +705,151 @@
       ui_time_left: "Übrig: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Aktiv",
+
+      // v1.1.0
+      ui_menu: "Menü",
+      ui_play: "Spielen",
+      ui_start: "Start",
+      ui_continue: "Fortsetzen",
+      ui_pause: "Pause",
+      ui_resume: "Weiter",
+      ui_restart: "Neustart",
+      ui_back: "Zurück",
+      ui_close: "Schließen",
+      ui_ok: "OK",
+      ui_cancel: "Abbrechen",
+      ui_yes: "Ja",
+      ui_no: "Nein",
+
+      ui_shop: "Shop",
+      ui_chest: "Truhe",
+      ui_skills: "Skills",
+      ui_catalog: "Katalog",
+      ui_discovery: "Entdeckung",
+
+      skills_title: "Skills",
+      skills_choose: "Wähle einen Skill",
+      skills_owned: "Besitzt",
+      skills_locked: "Gesperrt",
+      skills_new: "Neu",
+      skills_details: "Details",
+      skills_show_all: "Alle anzeigen",
+      skills_filter_all: "Alle",
+      skills_filter_owned: "Besitzt",
+      skills_filter_new: "Neu",
+      skills_filter_locked: "Gesperrt",
+      skills_sort: "Sortieren",
+      skills_sort_name: "Name",
+      skills_sort_rarity: "Seltenheit",
+      skills_sort_recent: "Neueste",
+
+      discovery_title: "Entdeckung",
+      discovery_found: "Entdeckt",
+      discovery_progress: "Entdeckt: {0}/{1}",
+      discovery_complete: "Katalog vollständig",
+      discovery_hint: "Erhalte Skills, um neue zu entdecken.",
+
+      shop_title: "Shop",
+      shop_offer: "Angebot",
+      shop_buy: "Kaufen",
+      shop_owned: "Schon vorhanden",
+      shop_sold: "Verkauft",
+      shop_refresh: "Aktualisieren",
+      shop_refresh_free: "Gratis aktualisieren",
+      shop_refresh_cost: "Aktualisieren ({0})",
+      shop_cost: "Kosten: {0}",
+      shop_balance: "Guthaben: {0}",
+      shop_not_enough: "Nicht genug",
+      shop_out_of_stock: "Ausverkauft",
+      shop_hint: "Gib Coins aus, um Skills zu kaufen.",
+
+      chest_title: "Truhe",
+      chest_open: "Öffnen",
+      chest_opening: "Öffne…",
+      chest_claim: "Nehmen",
+      chest_skip: "Überspringen",
+      chest_free: "Gratis",
+      chest_cost: "Kosten: {0}",
+      chest_you_got: "Erhalten: {0}",
+      chest_roll_again: "Nochmal würfeln",
+      chest_rolls_left: "Würfe: {0}",
+      chest_empty: "Leer",
+      chest_hint: "Öffne Truhen für zufällige Skills.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coins",
+
+      toast_shop_buy: "Gekauft: {0}",
+      toast_shop_fail: "Kauf nicht möglich",
+      toast_chest_open: "Truhe geöffnet",
+      toast_discovery_new: "Neue Entdeckung!",
+      toast_skill_new: "Neuer Skill: {0}",
+
+      tag_survival2: "Überleben",
+      tag_damage: "Schaden",
+      tag_economy: "Wirtschaft",
+      tag_utility: "Utility",
+      tag_luck: "Glück",
+      tag_shop: "Shop",
+      tag_chest: "Truhen",
+      tag_discovery: "Entdeckung",
     },
 
     it: {
       langName: "Italiano",
       defaultPlayer: "Giocatore",
+
       app_ready: "Pronto",
       app_loading: "Avvio…",
       app_pwa: "PWA…",
       audio_ok: "Audio OK",
+
       update_apply_end: "Aggiornamento pronto: si applicherà dopo la run.",
       update_available: "Aggiornamento disponibile.",
       update_apply_end_short: "Dopo la run.",
       pill_update: "Aggiorna",
+
       toast_trap: "Trappola",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Miglioria: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Salta",
       toast_shield_saved: "Scudo: KO evitato",
+
       name_min: "Nome: minimo 2 caratteri",
       combo_hint: "Completa la sequenza per aumentare il moltiplicatore.",
+
       stats_reason: "Motivo",
       stats_level: "Livello",
       stats_time: "Tempo",
       stats_streak: "Serie",
       stats_mult: "Mult",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bonus",
+
       opt_language: "Lingua",
       lang_auto: "Auto",
+
       up_choose: "Scegli un upgrade",
       up_level_title: "Livello {0}",
+
       rarity_common: "Comune",
       rarity_rare: "Raro",
       rarity_epic: "Epico",
       rarity_legendary: "Leggendario",
+
       new_profile: "Crea nuovo…",
       confirm_clear_local: "Cancellare i dati locali? (Profili, impostazioni, runs)",
+
       tag_defense: "Difesa",
       tag_qol: "QoL",
       tag_points: "Punti",
       tag_mobility: "Mobilità",
       tag_upgrades: "Upgrade",
       tag_combo: "Combo",
+
       up_shield_name: "Scudo",
       up_shield_desc: "Blocca 1 KO (consumato).",
       up_mag1_name: "Magnete I",
@@ -458,7 +875,6 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Aumenta mult base (+0,10).",
 
-      // v0.1.9
       hud_hp: "Vita",
       toast_damage: "Danni",
       toast_heal: "Vita +1",
@@ -471,51 +887,151 @@
       ui_time_left: "Resta: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Attiva",
+
+      // v1.1.0
+      ui_menu: "Menu",
+      ui_play: "Gioca",
+      ui_start: "Avvia",
+      ui_continue: "Continua",
+      ui_pause: "Pausa",
+      ui_resume: "Riprendi",
+      ui_restart: "Riavvia",
+      ui_back: "Indietro",
+      ui_close: "Chiudi",
+      ui_ok: "OK",
+      ui_cancel: "Annulla",
+      ui_yes: "Sì",
+      ui_no: "No",
+
+      ui_shop: "Negozio",
+      ui_chest: "Forziere",
+      ui_skills: "Abilità",
+      ui_catalog: "Catalogo",
+      ui_discovery: "Scoperta",
+
+      skills_title: "Abilità",
+      skills_choose: "Scegli un’abilità",
+      skills_owned: "Possedute",
+      skills_locked: "Bloccate",
+      skills_new: "Nuova",
+      skills_details: "Dettagli",
+      skills_show_all: "Mostra tutto",
+      skills_filter_all: "Tutte",
+      skills_filter_owned: "Possedute",
+      skills_filter_new: "Nuove",
+      skills_filter_locked: "Bloccate",
+      skills_sort: "Ordina",
+      skills_sort_name: "Nome",
+      skills_sort_rarity: "Rarità",
+      skills_sort_recent: "Recenti",
+
+      discovery_title: "Scoperta",
+      discovery_found: "Scoperta",
+      discovery_progress: "Scoperte: {0}/{1}",
+      discovery_complete: "Catalogo completo",
+      discovery_hint: "Ottieni abilità per scoprirne di nuove.",
+
+      shop_title: "Negozio",
+      shop_offer: "Offerta",
+      shop_buy: "Compra",
+      shop_owned: "Già posseduta",
+      shop_sold: "Venduta",
+      shop_refresh: "Aggiorna",
+      shop_refresh_free: "Aggiorna gratis",
+      shop_refresh_cost: "Aggiorna ({0})",
+      shop_cost: "Costo: {0}",
+      shop_balance: "Saldo: {0}",
+      shop_not_enough: "Non basta",
+      shop_out_of_stock: "Esaurito",
+      shop_hint: "Spendi coin per comprare abilità.",
+
+      chest_title: "Forziere",
+      chest_open: "Apri",
+      chest_opening: "Apertura…",
+      chest_claim: "Riscatta",
+      chest_skip: "Salta",
+      chest_free: "Gratis",
+      chest_cost: "Costo: {0}",
+      chest_you_got: "Hai ottenuto: {0}",
+      chest_roll_again: "Ritira",
+      chest_rolls_left: "Tiri: {0}",
+      chest_empty: "Vuoto",
+      chest_hint: "Apri forzieri per ottenere abilità casuali.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coin",
+
+      toast_shop_buy: "Comprato: {0}",
+      toast_shop_fail: "Impossibile comprare",
+      toast_chest_open: "Forziere aperto",
+      toast_discovery_new: "Nuova scoperta!",
+      toast_skill_new: "Nuova abilità: {0}",
+
+      tag_survival2: "Sopravvivenza",
+      tag_damage: "Danno",
+      tag_economy: "Economia",
+      tag_utility: "Utilità",
+      tag_luck: "Fortuna",
+      tag_shop: "Negozio",
+      tag_chest: "Forzieri",
+      tag_discovery: "Scoperta",
     },
 
     pt: {
       langName: "Português",
       defaultPlayer: "Jogador",
+
       app_ready: "Pronto",
       app_loading: "A iniciar…",
       app_pwa: "PWA…",
       audio_ok: "Áudio OK",
+
       update_apply_end: "Update pronto: aplica-se no fim da run.",
       update_available: "Atualização disponível.",
       update_apply_end_short: "No fim da run.",
       pill_update: "Atualizar",
+
       toast_trap: "Armadilha",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Upgrade: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Saltar",
       toast_shield_saved: "Escudo salvou-te de um KO",
+
       name_min: "Nome: mínimo 2 caracteres",
       combo_hint: "Completa a sequência para aumentar o multiplicador.",
+
       stats_reason: "Motivo",
       stats_level: "Nível",
       stats_time: "Tempo",
       stats_streak: "Sequência",
       stats_mult: "Mult",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bónus",
+
       opt_language: "Idioma",
       lang_auto: "Auto",
+
       up_choose: "Escolhe um upgrade",
       up_level_title: "Nível {0}",
+
       rarity_common: "Comum",
       rarity_rare: "Raro",
       rarity_epic: "Épico",
       rarity_legendary: "Lendário",
+
       new_profile: "Criar novo…",
       confirm_clear_local: "Apagar dados locais? (Perfis, definições, runs)",
+
       tag_defense: "Defesa",
       tag_qol: "QoL",
       tag_points: "Pontos",
       tag_mobility: "Mobilidade",
       tag_upgrades: "Upgrades",
       tag_combo: "Combo",
+
       up_shield_name: "Escudo",
       up_shield_desc: "Bloqueia 1 KO (consome).",
       up_mag1_name: "Íman I",
@@ -541,7 +1057,6 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Aumenta mult base (+0,10).",
 
-      // v0.1.9
       hud_hp: "Vida",
       toast_damage: "Dano",
       toast_heal: "Vida +1",
@@ -554,51 +1069,151 @@
       ui_time_left: "Falta: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Ativa",
+
+      // v1.1.0
+      ui_menu: "Menu",
+      ui_play: "Jogar",
+      ui_start: "Iniciar",
+      ui_continue: "Continuar",
+      ui_pause: "Pausa",
+      ui_resume: "Retomar",
+      ui_restart: "Reiniciar",
+      ui_back: "Voltar",
+      ui_close: "Fechar",
+      ui_ok: "OK",
+      ui_cancel: "Cancelar",
+      ui_yes: "Sim",
+      ui_no: "Não",
+
+      ui_shop: "Loja",
+      ui_chest: "Baú",
+      ui_skills: "Habilidades",
+      ui_catalog: "Catálogo",
+      ui_discovery: "Descoberta",
+
+      skills_title: "Habilidades",
+      skills_choose: "Escolhe uma habilidade",
+      skills_owned: "Obtidas",
+      skills_locked: "Bloqueadas",
+      skills_new: "Nova",
+      skills_details: "Detalhes",
+      skills_show_all: "Ver tudo",
+      skills_filter_all: "Todas",
+      skills_filter_owned: "Obtidas",
+      skills_filter_new: "Novas",
+      skills_filter_locked: "Bloqueadas",
+      skills_sort: "Ordenar",
+      skills_sort_name: "Nome",
+      skills_sort_rarity: "Raridade",
+      skills_sort_recent: "Recentes",
+
+      discovery_title: "Descoberta",
+      discovery_found: "Descoberta",
+      discovery_progress: "Descobertas: {0}/{1}",
+      discovery_complete: "Catálogo completo",
+      discovery_hint: "Obtém habilidades para descobrir novas.",
+
+      shop_title: "Loja",
+      shop_offer: "Oferta",
+      shop_buy: "Comprar",
+      shop_owned: "Já tens",
+      shop_sold: "Vendido",
+      shop_refresh: "Atualizar",
+      shop_refresh_free: "Atualizar grátis",
+      shop_refresh_cost: "Atualizar ({0})",
+      shop_cost: "Custo: {0}",
+      shop_balance: "Saldo: {0}",
+      shop_not_enough: "Não chega",
+      shop_out_of_stock: "Sem stock",
+      shop_hint: "Gasta coins para comprar habilidades.",
+
+      chest_title: "Baú",
+      chest_open: "Abrir",
+      chest_opening: "A abrir…",
+      chest_claim: "Reclamar",
+      chest_skip: "Saltar",
+      chest_free: "Grátis",
+      chest_cost: "Custo: {0}",
+      chest_you_got: "Recebeste: {0}",
+      chest_roll_again: "Rolar de novo",
+      chest_rolls_left: "Rolos: {0}",
+      chest_empty: "Vazio",
+      chest_hint: "Abre baús para obter habilidades aleatórias.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coins",
+
+      toast_shop_buy: "Comprado: {0}",
+      toast_shop_fail: "Não dá para comprar",
+      toast_chest_open: "Baú aberto",
+      toast_discovery_new: "Nova descoberta!",
+      toast_skill_new: "Nova habilidade: {0}",
+
+      tag_survival2: "Sobrevivência",
+      tag_damage: "Dano",
+      tag_economy: "Economia",
+      tag_utility: "Utilidade",
+      tag_luck: "Sorte",
+      tag_shop: "Loja",
+      tag_chest: "Baús",
+      tag_discovery: "Descoberta",
     },
 
     ca: {
       langName: "Català",
       defaultPlayer: "Jugador",
+
       app_ready: "A punt",
       app_loading: "Iniciant…",
       app_pwa: "PWA…",
       audio_ok: "Àudio OK",
+
       update_apply_end: "Actualització llesta: s’aplicarà en acabar la run.",
       update_available: "Actualització disponible.",
       update_apply_end_short: "En acabar la run.",
       pill_update: "Actualitza",
+
       toast_trap: "Trampa",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Millora: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Saltar",
       toast_shield_saved: "L’escut t’ha salvat d’un KO",
+
       name_min: "Nom: mínim 2 lletres",
       combo_hint: "Completa la seqüència per pujar multiplicador.",
+
       stats_reason: "Motiu",
       stats_level: "Nivell",
       stats_time: "Temps",
       stats_streak: "Ratxa",
       stats_mult: "Mult",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bonus",
+
       opt_language: "Idioma",
       lang_auto: "Auto",
+
       up_choose: "Tria una millora",
       up_level_title: "Nivell {0}",
+
       rarity_common: "Comuna",
       rarity_rare: "Rara",
       rarity_epic: "Èpica",
       rarity_legendary: "Legendària",
+
       new_profile: "Crear nou…",
       confirm_clear_local: "Esborrar dades locals? (Perfils, opcions, runs)",
+
       tag_defense: "Defensa",
       tag_qol: "QoL",
       tag_points: "Punts",
       tag_mobility: "Mobilitat",
       tag_upgrades: "Upgrades",
       tag_combo: "Combo",
+
       up_shield_name: "Escut",
       up_shield_desc: "Bloqueja 1 KO (es consumeix).",
       up_mag1_name: "Imant I",
@@ -624,7 +1239,6 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Puja mult base (+0,10).",
 
-      // v0.1.9
       hud_hp: "Vida",
       toast_damage: "Dany",
       toast_heal: "Vida +1",
@@ -637,51 +1251,151 @@
       ui_time_left: "Queda: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Activa",
+
+      // v1.1.0
+      ui_menu: "Menú",
+      ui_play: "Jugar",
+      ui_start: "Començar",
+      ui_continue: "Continuar",
+      ui_pause: "Pausa",
+      ui_resume: "Reprendre",
+      ui_restart: "Reiniciar",
+      ui_back: "Tornar",
+      ui_close: "Tancar",
+      ui_ok: "OK",
+      ui_cancel: "Cancel·lar",
+      ui_yes: "Sí",
+      ui_no: "No",
+
+      ui_shop: "Botiga",
+      ui_chest: "Cofre",
+      ui_skills: "Habilitats",
+      ui_catalog: "Catàleg",
+      ui_discovery: "Descobriment",
+
+      skills_title: "Habilitats",
+      skills_choose: "Tria una habilitat",
+      skills_owned: "Obtingudes",
+      skills_locked: "Bloquejades",
+      skills_new: "Nova",
+      skills_details: "Detalls",
+      skills_show_all: "Veure-ho tot",
+      skills_filter_all: "Totes",
+      skills_filter_owned: "Obtingudes",
+      skills_filter_new: "Noves",
+      skills_filter_locked: "Bloquejades",
+      skills_sort: "Ordre",
+      skills_sort_name: "Nom",
+      skills_sort_rarity: "Raresa",
+      skills_sort_recent: "Recents",
+
+      discovery_title: "Descobriment",
+      discovery_found: "Descoberta",
+      discovery_progress: "Descobertes: {0}/{1}",
+      discovery_complete: "Catàleg complet",
+      discovery_hint: "Aconsegueix habilitats per descobrir-ne de noves.",
+
+      shop_title: "Botiga",
+      shop_offer: "Oferta",
+      shop_buy: "Comprar",
+      shop_owned: "Ja la tens",
+      shop_sold: "Venut",
+      shop_refresh: "Actualitza",
+      shop_refresh_free: "Actualitza gratis",
+      shop_refresh_cost: "Actualitza ({0})",
+      shop_cost: "Cost: {0}",
+      shop_balance: "Saldo: {0}",
+      shop_not_enough: "No n’hi ha prou",
+      shop_out_of_stock: "Sense estoc",
+      shop_hint: "Gasta coins per comprar habilitats.",
+
+      chest_title: "Cofre",
+      chest_open: "Obrir",
+      chest_opening: "Obrint…",
+      chest_claim: "Reclamar",
+      chest_skip: "Saltar",
+      chest_free: "Gratis",
+      chest_cost: "Cost: {0}",
+      chest_you_got: "Has obtingut: {0}",
+      chest_roll_again: "Tornar a tirar",
+      chest_rolls_left: "Tirades: {0}",
+      chest_empty: "Buit",
+      chest_hint: "Obre cofres per obtenir habilitats aleatòries.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coins",
+
+      toast_shop_buy: "Comprat: {0}",
+      toast_shop_fail: "No es pot comprar",
+      toast_chest_open: "Cofre obert",
+      toast_discovery_new: "Nou descobriment!",
+      toast_skill_new: "Nova habilitat: {0}",
+
+      tag_survival2: "Supervivència",
+      tag_damage: "Dany",
+      tag_economy: "Economia",
+      tag_utility: "Utilitat",
+      tag_luck: "Sort",
+      tag_shop: "Botiga",
+      tag_chest: "Cofres",
+      tag_discovery: "Descobriment",
     },
 
     zh: {
       langName: "中文（简体）",
       defaultPlayer: "玩家",
+
       app_ready: "就绪",
       app_loading: "启动中…",
       app_pwa: "PWA…",
       audio_ok: "音频 OK",
+
       update_apply_end: "更新已就绪：将在本局结束后应用。",
       update_available: "有可用更新。",
       update_apply_end_short: "本局结束后应用。",
       pill_update: "更新",
+
       toast_trap: "陷阱",
       toast_combo_mult: "连击：+MULT",
       toast_upgrade: "升级：{0}",
       toast_reroll: "重掷",
       toast_skip: "跳过",
       toast_shield_saved: "护盾帮你挡了一次 KO",
+
       name_min: "名字至少 2 个字符",
       combo_hint: "完成序列来提升倍率。",
+
       stats_reason: "原因",
       stats_level: "等级",
       stats_time: "时间",
       stats_streak: "连胜",
       stats_mult: "倍率",
+
       cell_coin: "金币",
       cell_gem: "宝石",
       cell_bonus: "奖励",
+
       opt_language: "语言",
       lang_auto: "自动",
+
       up_choose: "选择一个升级",
       up_level_title: "等级 {0}",
+
       rarity_common: "普通",
       rarity_rare: "稀有",
       rarity_epic: "史诗",
       rarity_legendary: "传说",
+
       new_profile: "创建新账号…",
       confirm_clear_local: "清除本地数据？（账号、设置、记录）",
+
       tag_defense: "防御",
       tag_qol: "体验",
       tag_points: "分数",
       tag_mobility: "机动",
       tag_upgrades: "升级",
       tag_combo: "连击",
+
       up_shield_name: "护盾",
       up_shield_desc: "抵挡 1 次 KO（消耗）。",
       up_mag1_name: "磁铁 I",
@@ -707,7 +1421,6 @@
       up_mult_name: "倍率 +",
       up_mult_desc: "提高基础倍率（+0.10）。",
 
-      // v0.1.9
       hud_hp: "生命",
       toast_damage: "受伤",
       toast_heal: "生命 +1",
@@ -720,51 +1433,151 @@
       ui_time_left: "剩余：{0}",
       badge_stack_fmt: "x{0}",
       badge_active: "已激活",
+
+      // v1.1.0
+      ui_menu: "菜单",
+      ui_play: "开始",
+      ui_start: "开始",
+      ui_continue: "继续",
+      ui_pause: "暂停",
+      ui_resume: "继续",
+      ui_restart: "重开",
+      ui_back: "返回",
+      ui_close: "关闭",
+      ui_ok: "确定",
+      ui_cancel: "取消",
+      ui_yes: "是",
+      ui_no: "否",
+
+      ui_shop: "商店",
+      ui_chest: "宝箱",
+      ui_skills: "技能",
+      ui_catalog: "图鉴",
+      ui_discovery: "发现",
+
+      skills_title: "技能",
+      skills_choose: "选择一个技能",
+      skills_owned: "已拥有",
+      skills_locked: "未解锁",
+      skills_new: "新",
+      skills_details: "详情",
+      skills_show_all: "查看全部",
+      skills_filter_all: "全部",
+      skills_filter_owned: "已拥有",
+      skills_filter_new: "新的",
+      skills_filter_locked: "未解锁",
+      skills_sort: "排序",
+      skills_sort_name: "名称",
+      skills_sort_rarity: "稀有度",
+      skills_sort_recent: "最近",
+
+      discovery_title: "发现",
+      discovery_found: "已发现",
+      discovery_progress: "已发现：{0}/{1}",
+      discovery_complete: "图鉴已完成",
+      discovery_hint: "获得技能来发现新的内容。",
+
+      shop_title: "商店",
+      shop_offer: "优惠",
+      shop_buy: "购买",
+      shop_owned: "已拥有",
+      shop_sold: "已售出",
+      shop_refresh: "刷新",
+      shop_refresh_free: "免费刷新",
+      shop_refresh_cost: "刷新（{0}）",
+      shop_cost: "花费：{0}",
+      shop_balance: "余额：{0}",
+      shop_not_enough: "不足",
+      shop_out_of_stock: "无库存",
+      shop_hint: "花金币购买技能。",
+
+      chest_title: "宝箱",
+      chest_open: "打开",
+      chest_opening: "打开中…",
+      chest_claim: "领取",
+      chest_skip: "跳过",
+      chest_free: "免费",
+      chest_cost: "花费：{0}",
+      chest_you_got: "获得：{0}",
+      chest_roll_again: "再抽一次",
+      chest_rolls_left: "次数：{0}",
+      chest_empty: "空",
+      chest_hint: "打开宝箱获得随机技能。",
+
+      currency_coin: "金币",
+      currency_coins: "金币",
+
+      toast_shop_buy: "已购买：{0}",
+      toast_shop_fail: "无法购买",
+      toast_chest_open: "宝箱已打开",
+      toast_discovery_new: "新发现！",
+      toast_skill_new: "新技能：{0}",
+
+      tag_survival2: "生存",
+      tag_damage: "伤害",
+      tag_economy: "经济",
+      tag_utility: "功能",
+      tag_luck: "运气",
+      tag_shop: "商店",
+      tag_chest: "宝箱",
+      tag_discovery: "发现",
     },
 
     "zh-hant": {
       langName: "中文（繁體）",
       defaultPlayer: "玩家",
+
       app_ready: "就緒",
       app_loading: "啟動中…",
       app_pwa: "PWA…",
       audio_ok: "音訊 OK",
+
       update_apply_end: "更新已就緒：將在本局結束後套用。",
       update_available: "有可用更新。",
       update_apply_end_short: "本局結束後套用。",
       pill_update: "更新",
+
       toast_trap: "陷阱",
       toast_combo_mult: "連擊：+MULT",
       toast_upgrade: "升級：{0}",
       toast_reroll: "重擲",
       toast_skip: "跳過",
       toast_shield_saved: "護盾幫你擋了一次 KO",
+
       name_min: "名字至少 2 個字元",
       combo_hint: "完成序列來提升倍率。",
+
       stats_reason: "原因",
       stats_level: "等級",
       stats_time: "時間",
       stats_streak: "連勝",
       stats_mult: "倍率",
+
       cell_coin: "金幣",
       cell_gem: "寶石",
       cell_bonus: "獎勵",
+
       opt_language: "語言",
       lang_auto: "自動",
+
       up_choose: "選擇一個升級",
       up_level_title: "等級 {0}",
+
       rarity_common: "普通",
       rarity_rare: "稀有",
       rarity_epic: "史詩",
       rarity_legendary: "傳說",
+
       new_profile: "建立新帳號…",
       confirm_clear_local: "清除本機資料？（帳號、設定、紀錄）",
+
       tag_defense: "防禦",
       tag_qol: "體驗",
       tag_points: "分數",
       tag_mobility: "機動",
       tag_upgrades: "升級",
       tag_combo: "連擊",
+
       up_shield_name: "護盾",
       up_shield_desc: "抵擋 1 次 KO（消耗）。",
       up_mag1_name: "磁鐵 I",
@@ -790,7 +1603,6 @@
       up_mult_name: "倍率 +",
       up_mult_desc: "提高基礎倍率（+0.10）。",
 
-      // v0.1.9
       hud_hp: "生命",
       toast_damage: "受傷",
       toast_heal: "生命 +1",
@@ -803,51 +1615,151 @@
       ui_time_left: "剩餘：{0}",
       badge_stack_fmt: "x{0}",
       badge_active: "已啟用",
+
+      // v1.1.0
+      ui_menu: "選單",
+      ui_play: "開始",
+      ui_start: "開始",
+      ui_continue: "繼續",
+      ui_pause: "暫停",
+      ui_resume: "繼續",
+      ui_restart: "重開",
+      ui_back: "返回",
+      ui_close: "關閉",
+      ui_ok: "確定",
+      ui_cancel: "取消",
+      ui_yes: "是",
+      ui_no: "否",
+
+      ui_shop: "商店",
+      ui_chest: "寶箱",
+      ui_skills: "技能",
+      ui_catalog: "圖鑑",
+      ui_discovery: "發現",
+
+      skills_title: "技能",
+      skills_choose: "選擇一個技能",
+      skills_owned: "已擁有",
+      skills_locked: "未解鎖",
+      skills_new: "新",
+      skills_details: "詳情",
+      skills_show_all: "查看全部",
+      skills_filter_all: "全部",
+      skills_filter_owned: "已擁有",
+      skills_filter_new: "新的",
+      skills_filter_locked: "未解鎖",
+      skills_sort: "排序",
+      skills_sort_name: "名稱",
+      skills_sort_rarity: "稀有度",
+      skills_sort_recent: "最近",
+
+      discovery_title: "發現",
+      discovery_found: "已發現",
+      discovery_progress: "已發現：{0}/{1}",
+      discovery_complete: "圖鑑完成",
+      discovery_hint: "獲得技能來發現新的內容。",
+
+      shop_title: "商店",
+      shop_offer: "優惠",
+      shop_buy: "購買",
+      shop_owned: "已擁有",
+      shop_sold: "已售出",
+      shop_refresh: "刷新",
+      shop_refresh_free: "免費刷新",
+      shop_refresh_cost: "刷新（{0}）",
+      shop_cost: "花費：{0}",
+      shop_balance: "餘額：{0}",
+      shop_not_enough: "不足",
+      shop_out_of_stock: "缺貨",
+      shop_hint: "花金幣購買技能。",
+
+      chest_title: "寶箱",
+      chest_open: "打開",
+      chest_opening: "打開中…",
+      chest_claim: "領取",
+      chest_skip: "跳過",
+      chest_free: "免費",
+      chest_cost: "花費：{0}",
+      chest_you_got: "獲得：{0}",
+      chest_roll_again: "再抽一次",
+      chest_rolls_left: "次數：{0}",
+      chest_empty: "空",
+      chest_hint: "打開寶箱獲得隨機技能。",
+
+      currency_coin: "金幣",
+      currency_coins: "金幣",
+
+      toast_shop_buy: "已購買：{0}",
+      toast_shop_fail: "無法購買",
+      toast_chest_open: "寶箱已打開",
+      toast_discovery_new: "新發現！",
+      toast_skill_new: "新技能：{0}",
+
+      tag_survival2: "生存",
+      tag_damage: "傷害",
+      tag_economy: "經濟",
+      tag_utility: "功能",
+      tag_luck: "運氣",
+      tag_shop: "商店",
+      tag_chest: "寶箱",
+      tag_discovery: "發現",
     },
 
     ja: {
       langName: "日本語",
       defaultPlayer: "プレイヤー",
+
       app_ready: "準備完了",
       app_loading: "起動中…",
       app_pwa: "PWA…",
       audio_ok: "オーディオ OK",
+
       update_apply_end: "アップデート準備完了：ラン終了後に適用されます。",
       update_available: "アップデートがあります。",
       update_apply_end_short: "終了後に適用。",
       pill_update: "更新",
+
       toast_trap: "トラップ",
       toast_combo_mult: "コンボ：+MULT",
       toast_upgrade: "強化：{0}",
       toast_reroll: "リロール",
       toast_skip: "スキップ",
       toast_shield_saved: "シールドが KO を防いだ",
+
       name_min: "名前は2文字以上です",
       combo_hint: "シーケンスを完成させて倍率を上げよう。",
+
       stats_reason: "理由",
       stats_level: "レベル",
       stats_time: "時間",
       stats_streak: "連続",
       stats_mult: "倍率",
+
       cell_coin: "コイン",
       cell_gem: "ジェム",
       cell_bonus: "ボーナス",
+
       opt_language: "言語",
       lang_auto: "自動",
+
       up_choose: "アップグレードを選択",
       up_level_title: "レベル {0}",
+
       rarity_common: "コモン",
       rarity_rare: "レア",
       rarity_epic: "エピック",
       rarity_legendary: "レジェンド",
+
       new_profile: "新規作成…",
       confirm_clear_local: "ローカルデータを消去しますか？（プロフィール/設定/記録）",
+
       tag_defense: "防御",
       tag_qol: "快適性",
       tag_points: "得点",
       tag_mobility: "機動",
       tag_upgrades: "強化",
       tag_combo: "コンボ",
+
       up_shield_name: "シールド",
       up_shield_desc: "KOを1回防ぐ（消費）。",
       up_mag1_name: "マグネット I",
@@ -873,7 +1785,6 @@
       up_mult_name: "倍率 +",
       up_mult_desc: "基礎倍率を上げる（+0.10）。",
 
-      // v0.1.9
       hud_hp: "ライフ",
       toast_damage: "ダメージ",
       toast_heal: "ライフ +1",
@@ -886,51 +1797,151 @@
       ui_time_left: "残り：{0}",
       badge_stack_fmt: "x{0}",
       badge_active: "発動中",
+
+      // v1.1.0
+      ui_menu: "メニュー",
+      ui_play: "プレイ",
+      ui_start: "スタート",
+      ui_continue: "続ける",
+      ui_pause: "一時停止",
+      ui_resume: "再開",
+      ui_restart: "リスタート",
+      ui_back: "戻る",
+      ui_close: "閉じる",
+      ui_ok: "OK",
+      ui_cancel: "キャンセル",
+      ui_yes: "はい",
+      ui_no: "いいえ",
+
+      ui_shop: "ショップ",
+      ui_chest: "宝箱",
+      ui_skills: "スキル",
+      ui_catalog: "カタログ",
+      ui_discovery: "発見",
+
+      skills_title: "スキル",
+      skills_choose: "スキルを選択",
+      skills_owned: "所持",
+      skills_locked: "未解放",
+      skills_new: "新",
+      skills_details: "詳細",
+      skills_show_all: "すべて表示",
+      skills_filter_all: "すべて",
+      skills_filter_owned: "所持",
+      skills_filter_new: "新規",
+      skills_filter_locked: "未解放",
+      skills_sort: "並び替え",
+      skills_sort_name: "名前",
+      skills_sort_rarity: "レア度",
+      skills_sort_recent: "最近",
+
+      discovery_title: "発見",
+      discovery_found: "発見",
+      discovery_progress: "発見：{0}/{1}",
+      discovery_complete: "カタログ完成",
+      discovery_hint: "スキルを入手して新しいものを発見しよう。",
+
+      shop_title: "ショップ",
+      shop_offer: "オファー",
+      shop_buy: "購入",
+      shop_owned: "所持済み",
+      shop_sold: "売り切れ",
+      shop_refresh: "更新",
+      shop_refresh_free: "無料更新",
+      shop_refresh_cost: "更新（{0}）",
+      shop_cost: "コスト：{0}",
+      shop_balance: "所持：{0}",
+      shop_not_enough: "不足",
+      shop_out_of_stock: "在庫なし",
+      shop_hint: "コインでスキルを購入。",
+
+      chest_title: "宝箱",
+      chest_open: "開く",
+      chest_opening: "開封中…",
+      chest_claim: "受け取る",
+      chest_skip: "スキップ",
+      chest_free: "無料",
+      chest_cost: "コスト：{0}",
+      chest_you_got: "獲得：{0}",
+      chest_roll_again: "もう一回",
+      chest_rolls_left: "回数：{0}",
+      chest_empty: "空",
+      chest_hint: "宝箱からランダムスキルを獲得。",
+
+      currency_coin: "コイン",
+      currency_coins: "コイン",
+
+      toast_shop_buy: "購入：{0}",
+      toast_shop_fail: "購入できない",
+      toast_chest_open: "宝箱を開けた",
+      toast_discovery_new: "新しい発見！",
+      toast_skill_new: "新スキル：{0}",
+
+      tag_survival2: "生存",
+      tag_damage: "ダメージ",
+      tag_economy: "経済",
+      tag_utility: "便利",
+      tag_luck: "運",
+      tag_shop: "ショップ",
+      tag_chest: "宝箱",
+      tag_discovery: "発見",
     },
 
     ko: {
       langName: "한국어",
       defaultPlayer: "플레이어",
+
       app_ready: "준비됨",
       app_loading: "시작 중…",
       app_pwa: "PWA…",
       audio_ok: "오디오 OK",
+
       update_apply_end: "업데이트 준비 완료: 이번 런이 끝나면 적용됩니다.",
       update_available: "업데이트가 있습니다.",
       update_apply_end_short: "끝나면 적용.",
       pill_update: "업데이트",
+
       toast_trap: "함정",
       toast_combo_mult: "콤보: +MULT",
       toast_upgrade: "업그레이드: {0}",
       toast_reroll: "리롤",
       toast_skip: "건너뛰기",
       toast_shield_saved: "방패가 KO를 막아줬어요",
+
       name_min: "이름은 최소 2글자",
       combo_hint: "시퀀스를 완성해 배수를 올리세요.",
+
       stats_reason: "이유",
       stats_level: "레벨",
       stats_time: "시간",
       stats_streak: "연속",
       stats_mult: "배수",
+
       cell_coin: "코인",
       cell_gem: "젬",
       cell_bonus: "보너스",
+
       opt_language: "언어",
       lang_auto: "자동",
+
       up_choose: "업그레이드를 선택하세요",
       up_level_title: "레벨 {0}",
+
       rarity_common: "일반",
       rarity_rare: "희귀",
       rarity_epic: "에픽",
       rarity_legendary: "전설",
+
       new_profile: "새로 만들기…",
       confirm_clear_local: "로컬 데이터를 삭제할까요? (프로필/설정/기록)",
+
       tag_defense: "방어",
       tag_qol: "편의",
       tag_points: "점수",
       tag_mobility: "기동",
       tag_upgrades: "업그레이드",
       tag_combo: "콤보",
+
       up_shield_name: "방패",
       up_shield_desc: "KO 1회를 막습니다(소모).",
       up_mag1_name: "자석 I",
@@ -956,7 +1967,6 @@
       up_mult_name: "배수 +",
       up_mult_desc: "기본 배수 증가(+0.10).",
 
-      // v0.1.9
       hud_hp: "체력",
       toast_damage: "피해",
       toast_heal: "체력 +1",
@@ -969,51 +1979,151 @@
       ui_time_left: "남은 시간: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "활성",
+
+      // v1.1.0
+      ui_menu: "메뉴",
+      ui_play: "플레이",
+      ui_start: "시작",
+      ui_continue: "계속",
+      ui_pause: "일시정지",
+      ui_resume: "재개",
+      ui_restart: "재시작",
+      ui_back: "뒤로",
+      ui_close: "닫기",
+      ui_ok: "확인",
+      ui_cancel: "취소",
+      ui_yes: "예",
+      ui_no: "아니오",
+
+      ui_shop: "상점",
+      ui_chest: "상자",
+      ui_skills: "스킬",
+      ui_catalog: "카탈로그",
+      ui_discovery: "발견",
+
+      skills_title: "스킬",
+      skills_choose: "스킬을 선택하세요",
+      skills_owned: "보유",
+      skills_locked: "잠김",
+      skills_new: "신규",
+      skills_details: "상세",
+      skills_show_all: "전체 보기",
+      skills_filter_all: "전체",
+      skills_filter_owned: "보유",
+      skills_filter_new: "신규",
+      skills_filter_locked: "잠김",
+      skills_sort: "정렬",
+      skills_sort_name: "이름",
+      skills_sort_rarity: "희귀도",
+      skills_sort_recent: "최근",
+
+      discovery_title: "발견",
+      discovery_found: "발견됨",
+      discovery_progress: "발견: {0}/{1}",
+      discovery_complete: "카탈로그 완료",
+      discovery_hint: "스킬을 얻어 새로운 것을 발견하세요.",
+
+      shop_title: "상점",
+      shop_offer: "상품",
+      shop_buy: "구매",
+      shop_owned: "이미 보유",
+      shop_sold: "품절",
+      shop_refresh: "새로고침",
+      shop_refresh_free: "무료 새로고침",
+      shop_refresh_cost: "새로고침({0})",
+      shop_cost: "비용: {0}",
+      shop_balance: "보유: {0}",
+      shop_not_enough: "부족",
+      shop_out_of_stock: "재고 없음",
+      shop_hint: "코인으로 스킬을 구매하세요.",
+
+      chest_title: "상자",
+      chest_open: "열기",
+      chest_opening: "여는 중…",
+      chest_claim: "받기",
+      chest_skip: "건너뛰기",
+      chest_free: "무료",
+      chest_cost: "비용: {0}",
+      chest_you_got: "획득: {0}",
+      chest_roll_again: "다시",
+      chest_rolls_left: "횟수: {0}",
+      chest_empty: "비어 있음",
+      chest_hint: "상자를 열어 랜덤 스킬을 획득하세요.",
+
+      currency_coin: "코인",
+      currency_coins: "코인",
+
+      toast_shop_buy: "구매: {0}",
+      toast_shop_fail: "구매 불가",
+      toast_chest_open: "상자 열림",
+      toast_discovery_new: "새 발견!",
+      toast_skill_new: "새 스킬: {0}",
+
+      tag_survival2: "생존",
+      tag_damage: "피해",
+      tag_economy: "경제",
+      tag_utility: "유틸",
+      tag_luck: "운",
+      tag_shop: "상점",
+      tag_chest: "상자",
+      tag_discovery: "발견",
     },
 
     ru: {
       langName: "Русский",
       defaultPlayer: "Игрок",
+
       app_ready: "Готово",
       app_loading: "Запуск…",
       app_pwa: "PWA…",
       audio_ok: "Аудио OK",
+
       update_apply_end: "Обновление готово: применится после забега.",
       update_available: "Доступно обновление.",
       update_apply_end_short: "После забега.",
       pill_update: "Обновить",
+
       toast_trap: "Ловушка",
       toast_combo_mult: "Комбо: +MULT",
       toast_upgrade: "Улучшение: {0}",
       toast_reroll: "Реролл",
       toast_skip: "Пропустить",
       toast_shield_saved: "Щит спас от KO",
+
       name_min: "Имя: минимум 2 символа",
       combo_hint: "Собери последовательность, чтобы повысить множитель.",
+
       stats_reason: "Причина",
       stats_level: "Уровень",
       stats_time: "Время",
       stats_streak: "Серия",
       stats_mult: "Множ.",
+
       cell_coin: "Монета",
       cell_gem: "Гем",
       cell_bonus: "Бонус",
+
       opt_language: "Язык",
       lang_auto: "Авто",
+
       up_choose: "Выбери улучшение",
       up_level_title: "Уровень {0}",
+
       rarity_common: "Обычное",
       rarity_rare: "Редкое",
       rarity_epic: "Эпическое",
       rarity_legendary: "Легендарное",
+
       new_profile: "Создать новый…",
       confirm_clear_local: "Очистить локальные данные? (Профили, настройки, забеги)",
+
       tag_defense: "Защита",
       tag_qol: "QoL",
       tag_points: "Очки",
       tag_mobility: "Мобильность",
       tag_upgrades: "Улучшения",
       tag_combo: "Комбо",
+
       up_shield_name: "Щит",
       up_shield_desc: "Блокирует 1 KO (тратится).",
       up_mag1_name: "Магнит I",
@@ -1039,7 +2149,6 @@
       up_mult_name: "Множ. +",
       up_mult_desc: "Повышает базовый множитель (+0.10).",
 
-      // v0.1.9
       hud_hp: "Жизни",
       toast_damage: "Урон",
       toast_heal: "Жизнь +1",
@@ -1052,51 +2161,151 @@
       ui_time_left: "Осталось: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Активно",
+
+      // v1.1.0
+      ui_menu: "Меню",
+      ui_play: "Играть",
+      ui_start: "Старт",
+      ui_continue: "Продолжить",
+      ui_pause: "Пауза",
+      ui_resume: "Продолжить",
+      ui_restart: "Перезапуск",
+      ui_back: "Назад",
+      ui_close: "Закрыть",
+      ui_ok: "OK",
+      ui_cancel: "Отмена",
+      ui_yes: "Да",
+      ui_no: "Нет",
+
+      ui_shop: "Магазин",
+      ui_chest: "Сундук",
+      ui_skills: "Навыки",
+      ui_catalog: "Каталог",
+      ui_discovery: "Открытия",
+
+      skills_title: "Навыки",
+      skills_choose: "Выбери навык",
+      skills_owned: "Есть",
+      skills_locked: "Закрыто",
+      skills_new: "Новый",
+      skills_details: "Детали",
+      skills_show_all: "Показать всё",
+      skills_filter_all: "Все",
+      skills_filter_owned: "Есть",
+      skills_filter_new: "Новые",
+      skills_filter_locked: "Закрыто",
+      skills_sort: "Сортировка",
+      skills_sort_name: "Название",
+      skills_sort_rarity: "Редкость",
+      skills_sort_recent: "Недавние",
+
+      discovery_title: "Открытия",
+      discovery_found: "Открыто",
+      discovery_progress: "Открыто: {0}/{1}",
+      discovery_complete: "Каталог завершён",
+      discovery_hint: "Получай навыки, чтобы открывать новые.",
+
+      shop_title: "Магазин",
+      shop_offer: "Предложение",
+      shop_buy: "Купить",
+      shop_owned: "Уже есть",
+      shop_sold: "Продано",
+      shop_refresh: "Обновить",
+      shop_refresh_free: "Обновить бесплатно",
+      shop_refresh_cost: "Обновить ({0})",
+      shop_cost: "Цена: {0}",
+      shop_balance: "Баланс: {0}",
+      shop_not_enough: "Недостаточно",
+      shop_out_of_stock: "Нет в наличии",
+      shop_hint: "Трать монеты, чтобы покупать навыки.",
+
+      chest_title: "Сундук",
+      chest_open: "Открыть",
+      chest_opening: "Открывается…",
+      chest_claim: "Забрать",
+      chest_skip: "Пропустить",
+      chest_free: "Бесплатно",
+      chest_cost: "Цена: {0}",
+      chest_you_got: "Получено: {0}",
+      chest_roll_again: "Ещё раз",
+      chest_rolls_left: "Броски: {0}",
+      chest_empty: "Пусто",
+      chest_hint: "Открывай сундуки, чтобы получать случайные навыки.",
+
+      currency_coin: "Монета",
+      currency_coins: "Монеты",
+
+      toast_shop_buy: "Куплено: {0}",
+      toast_shop_fail: "Нельзя купить",
+      toast_chest_open: "Сундук открыт",
+      toast_discovery_new: "Новое открытие!",
+      toast_skill_new: "Новый навык: {0}",
+
+      tag_survival2: "Выживание",
+      tag_damage: "Урон",
+      tag_economy: "Экономика",
+      tag_utility: "Утилита",
+      tag_luck: "Удача",
+      tag_shop: "Магазин",
+      tag_chest: "Сундуки",
+      tag_discovery: "Открытия",
     },
 
     ar: {
       langName: "العربية",
       defaultPlayer: "لاعب",
+
       app_ready: "جاهز",
       app_loading: "جارٍ البدء…",
       app_pwa: "PWA…",
       audio_ok: "الصوت OK",
+
       update_apply_end: "التحديث جاهز: سيُطبَّق بعد الجولة.",
       update_available: "يوجد تحديث متاح.",
       update_apply_end_short: "بعد الجولة.",
       pill_update: "تحديث",
+
       toast_trap: "فخ",
       toast_combo_mult: "كومبو: +MULT",
       toast_upgrade: "ترقية: {0}",
       toast_reroll: "إعادة رمي",
       toast_skip: "تخطي",
       toast_shield_saved: "الدرع أنقذك من KO",
+
       name_min: "الاسم: حرفان على الأقل",
       combo_hint: "أكمل التسلسل لزيادة المضاعف.",
+
       stats_reason: "السبب",
       stats_level: "المستوى",
       stats_time: "الوقت",
       stats_streak: "سلسلة",
       stats_mult: "مضاعف",
+
       cell_coin: "عملة",
       cell_gem: "جوهرة",
       cell_bonus: "بونص",
+
       opt_language: "اللغة",
       lang_auto: "تلقائي",
+
       up_choose: "اختر ترقية",
       up_level_title: "المستوى {0}",
+
       rarity_common: "عادي",
       rarity_rare: "نادر",
       rarity_epic: "ملحمي",
       rarity_legendary: "أسطوري",
+
       new_profile: "إنشاء جديد…",
       confirm_clear_local: "مسح البيانات المحلية؟ (ملفات/إعدادات/جولات)",
+
       tag_defense: "دفاع",
       tag_qol: "راحة",
       tag_points: "نقاط",
       tag_mobility: "حركة",
       tag_upgrades: "ترقيات",
       tag_combo: "كومبو",
+
       up_shield_name: "درع",
       up_shield_desc: "يمنع KO واحد (يُستهلك).",
       up_mag1_name: "مغناطيس I",
@@ -1122,7 +2331,6 @@
       up_mult_name: "مضاعف +",
       up_mult_desc: "يزيد المضاعف الأساسي (+0.10).",
 
-      // v0.1.9
       hud_hp: "القلوب",
       toast_damage: "ضرر",
       toast_heal: "قلب +1",
@@ -1135,51 +2343,151 @@
       ui_time_left: "المتبقي: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "مفعّل",
+
+      // v1.1.0
+      ui_menu: "القائمة",
+      ui_play: "لعب",
+      ui_start: "ابدأ",
+      ui_continue: "متابعة",
+      ui_pause: "إيقاف مؤقت",
+      ui_resume: "استئناف",
+      ui_restart: "إعادة",
+      ui_back: "رجوع",
+      ui_close: "إغلاق",
+      ui_ok: "حسنًا",
+      ui_cancel: "إلغاء",
+      ui_yes: "نعم",
+      ui_no: "لا",
+
+      ui_shop: "المتجر",
+      ui_chest: "الصندوق",
+      ui_skills: "المهارات",
+      ui_catalog: "الكتالوج",
+      ui_discovery: "الاكتشاف",
+
+      skills_title: "المهارات",
+      skills_choose: "اختر مهارة",
+      skills_owned: "مملوكة",
+      skills_locked: "مقفلة",
+      skills_new: "جديد",
+      skills_details: "تفاصيل",
+      skills_show_all: "عرض الكل",
+      skills_filter_all: "الكل",
+      skills_filter_owned: "مملوكة",
+      skills_filter_new: "جديدة",
+      skills_filter_locked: "مقفلة",
+      skills_sort: "ترتيب",
+      skills_sort_name: "الاسم",
+      skills_sort_rarity: "الندرة",
+      skills_sort_recent: "الأحدث",
+
+      discovery_title: "الاكتشاف",
+      discovery_found: "تم الاكتشاف",
+      discovery_progress: "تم الاكتشاف: {0}/{1}",
+      discovery_complete: "اكتمل الكتالوج",
+      discovery_hint: "احصل على مهارات لاكتشاف المزيد.",
+
+      shop_title: "المتجر",
+      shop_offer: "عرض",
+      shop_buy: "شراء",
+      shop_owned: "مملوكة",
+      shop_sold: "تم البيع",
+      shop_refresh: "تحديث",
+      shop_refresh_free: "تحديث مجانًا",
+      shop_refresh_cost: "تحديث ({0})",
+      shop_cost: "التكلفة: {0}",
+      shop_balance: "الرصيد: {0}",
+      shop_not_enough: "غير كافٍ",
+      shop_out_of_stock: "نفد المخزون",
+      shop_hint: "استخدم العملات لشراء المهارات.",
+
+      chest_title: "الصندوق",
+      chest_open: "فتح",
+      chest_opening: "جارٍ الفتح…",
+      chest_claim: "استلام",
+      chest_skip: "تخطي",
+      chest_free: "مجاني",
+      chest_cost: "التكلفة: {0}",
+      chest_you_got: "حصلت على: {0}",
+      chest_roll_again: "مرة أخرى",
+      chest_rolls_left: "عدد السحبات: {0}",
+      chest_empty: "فارغ",
+      chest_hint: "افتح الصناديق للحصول على مهارات عشوائية.",
+
+      currency_coin: "عملة",
+      currency_coins: "عملات",
+
+      toast_shop_buy: "تم الشراء: {0}",
+      toast_shop_fail: "لا يمكن الشراء",
+      toast_chest_open: "تم فتح الصندوق",
+      toast_discovery_new: "اكتشاف جديد!",
+      toast_skill_new: "مهارة جديدة: {0}",
+
+      tag_survival2: "بقاء",
+      tag_damage: "ضرر",
+      tag_economy: "اقتصاد",
+      tag_utility: "منفعة",
+      tag_luck: "حظ",
+      tag_shop: "المتجر",
+      tag_chest: "الصناديق",
+      tag_discovery: "الاكتشاف",
     },
 
     tr: {
       langName: "Türkçe",
       defaultPlayer: "Oyuncu",
+
       app_ready: "Hazır",
       app_loading: "Başlatılıyor…",
       app_pwa: "PWA…",
       audio_ok: "Ses OK",
+
       update_apply_end: "Güncelleme hazır: koşu bitince uygulanacak.",
       update_available: "Güncelleme var.",
       update_apply_end_short: "Koşu bitince.",
       pill_update: "Güncelle",
+
       toast_trap: "Tuzak",
       toast_combo_mult: "Kombo: +MULT",
       toast_upgrade: "Yükseltme: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Geç",
       toast_shield_saved: "Kalkan bir KO’yu engelledi",
+
       name_min: "İsim en az 2 karakter",
       combo_hint: "Çarpanı artırmak için diziyi tamamla.",
+
       stats_reason: "Sebep",
       stats_level: "Seviye",
       stats_time: "Süre",
       stats_streak: "Seri",
       stats_mult: "Çarpan",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bonus",
+
       opt_language: "Dil",
       lang_auto: "Oto",
+
       up_choose: "Bir yükseltme seç",
       up_level_title: "Seviye {0}",
+
       rarity_common: "Yaygın",
       rarity_rare: "Nadir",
       rarity_epic: "Epik",
       rarity_legendary: "Efsane",
+
       new_profile: "Yeni oluştur…",
       confirm_clear_local: "Yerel veriler silinsin mi? (Profil/ayarlar/runs)",
+
       tag_defense: "Savunma",
       tag_qol: "Konfor",
       tag_points: "Puan",
       tag_mobility: "Hareket",
       tag_upgrades: "Yükseltmeler",
       tag_combo: "Kombo",
+
       up_shield_name: "Kalkan",
       up_shield_desc: "1 KO engeller (tüketilir).",
       up_mag1_name: "Mıknatıs I",
@@ -1205,7 +2513,6 @@
       up_mult_name: "Çarpan +",
       up_mult_desc: "Temel çarpanı artırır (+0.10).",
 
-      // v0.1.9
       hud_hp: "Can",
       toast_damage: "Hasar",
       toast_heal: "Can +1",
@@ -1218,51 +2525,151 @@
       ui_time_left: "Kalan: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Aktif",
+
+      // v1.1.0
+      ui_menu: "Menü",
+      ui_play: "Oyna",
+      ui_start: "Başla",
+      ui_continue: "Devam",
+      ui_pause: "Duraklat",
+      ui_resume: "Sürdür",
+      ui_restart: "Yeniden başlat",
+      ui_back: "Geri",
+      ui_close: "Kapat",
+      ui_ok: "Tamam",
+      ui_cancel: "İptal",
+      ui_yes: "Evet",
+      ui_no: "Hayır",
+
+      ui_shop: "Mağaza",
+      ui_chest: "Sandık",
+      ui_skills: "Yetenekler",
+      ui_catalog: "Katalog",
+      ui_discovery: "Keşif",
+
+      skills_title: "Yetenekler",
+      skills_choose: "Bir yetenek seç",
+      skills_owned: "Sahip",
+      skills_locked: "Kilitli",
+      skills_new: "Yeni",
+      skills_details: "Detaylar",
+      skills_show_all: "Tümünü göster",
+      skills_filter_all: "Hepsi",
+      skills_filter_owned: "Sahip",
+      skills_filter_new: "Yeni",
+      skills_filter_locked: "Kilitli",
+      skills_sort: "Sırala",
+      skills_sort_name: "İsim",
+      skills_sort_rarity: "Nadirlik",
+      skills_sort_recent: "Son",
+
+      discovery_title: "Keşif",
+      discovery_found: "Keşfedildi",
+      discovery_progress: "Keşfedildi: {0}/{1}",
+      discovery_complete: "Katalog tamam",
+      discovery_hint: "Yeni şeyler keşfetmek için yetenek kazan.",
+
+      shop_title: "Mağaza",
+      shop_offer: "Teklif",
+      shop_buy: "Satın al",
+      shop_owned: "Zaten var",
+      shop_sold: "Satıldı",
+      shop_refresh: "Yenile",
+      shop_refresh_free: "Ücretsiz yenile",
+      shop_refresh_cost: "Yenile ({0})",
+      shop_cost: "Maliyet: {0}",
+      shop_balance: "Bakiye: {0}",
+      shop_not_enough: "Yetersiz",
+      shop_out_of_stock: "Stok yok",
+      shop_hint: "Yetenek almak için coin harca.",
+
+      chest_title: "Sandık",
+      chest_open: "Aç",
+      chest_opening: "Açılıyor…",
+      chest_claim: "Al",
+      chest_skip: "Geç",
+      chest_free: "Ücretsiz",
+      chest_cost: "Maliyet: {0}",
+      chest_you_got: "Kazandın: {0}",
+      chest_roll_again: "Tekrar",
+      chest_rolls_left: "Çekiş: {0}",
+      chest_empty: "Boş",
+      chest_hint: "Rastgele yetenekler için sandık aç.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coins",
+
+      toast_shop_buy: "Alındı: {0}",
+      toast_shop_fail: "Satın alınamaz",
+      toast_chest_open: "Sandık açıldı",
+      toast_discovery_new: "Yeni keşif!",
+      toast_skill_new: "Yeni yetenek: {0}",
+
+      tag_survival2: "Hayatta Kalma",
+      tag_damage: "Hasar",
+      tag_economy: "Ekonomi",
+      tag_utility: "Kullanışlı",
+      tag_luck: "Şans",
+      tag_shop: "Mağaza",
+      tag_chest: "Sandıklar",
+      tag_discovery: "Keşif",
     },
 
     pl: {
       langName: "Polski",
       defaultPlayer: "Gracz",
+
       app_ready: "Gotowe",
       app_loading: "Uruchamianie…",
       app_pwa: "PWA…",
       audio_ok: "Audio OK",
+
       update_apply_end: "Aktualizacja gotowa: zostanie zastosowana po rundzie.",
       update_available: "Dostępna aktualizacja.",
       update_apply_end_short: "Po rundzie.",
       pill_update: "Aktualizuj",
+
       toast_trap: "Pułapka",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Ulepszenie: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Pomiń",
       toast_shield_saved: "Tarcza uratowała przed KO",
+
       name_min: "Nazwa: min. 2 znaki",
       combo_hint: "Ukończ sekwencję, aby zwiększyć mnożnik.",
+
       stats_reason: "Powód",
       stats_level: "Poziom",
       stats_time: "Czas",
       stats_streak: "Seria",
       stats_mult: "Mnoż.",
+
       cell_coin: "Moneta",
       cell_gem: "Klejnot",
       cell_bonus: "Bonus",
+
       opt_language: "Język",
       lang_auto: "Auto",
+
       up_choose: "Wybierz ulepszenie",
       up_level_title: "Poziom {0}",
+
       rarity_common: "Zwykłe",
       rarity_rare: "Rzadkie",
       rarity_epic: "Epickie",
       rarity_legendary: "Legendarne",
+
       new_profile: "Utwórz nowe…",
       confirm_clear_local: "Wyczyścić dane lokalne? (Profile/ustawienia/gry)",
+
       tag_defense: "Obrona",
       tag_qol: "QoL",
       tag_points: "Punkty",
       tag_mobility: "Mobilność",
       tag_upgrades: "Ulepszenia",
       tag_combo: "Combo",
+
       up_shield_name: "Tarcza",
       up_shield_desc: "Blokuje 1 KO (zużywa się).",
       up_mag1_name: "Magnes I",
@@ -1288,7 +2695,6 @@
       up_mult_name: "Mnoż. +",
       up_mult_desc: "Zwiększa bazowy mnożnik (+0.10).",
 
-      // v0.1.9
       hud_hp: "Życie",
       toast_damage: "Obrażenia",
       toast_heal: "Życie +1",
@@ -1301,51 +2707,151 @@
       ui_time_left: "Pozostało: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Aktywne",
+
+      // v1.1.0
+      ui_menu: "Menu",
+      ui_play: "Graj",
+      ui_start: "Start",
+      ui_continue: "Kontynuuj",
+      ui_pause: "Pauza",
+      ui_resume: "Wznów",
+      ui_restart: "Restart",
+      ui_back: "Wstecz",
+      ui_close: "Zamknij",
+      ui_ok: "OK",
+      ui_cancel: "Anuluj",
+      ui_yes: "Tak",
+      ui_no: "Nie",
+
+      ui_shop: "Sklep",
+      ui_chest: "Skrzynia",
+      ui_skills: "Umiejętności",
+      ui_catalog: "Katalog",
+      ui_discovery: "Odkrycia",
+
+      skills_title: "Umiejętności",
+      skills_choose: "Wybierz umiejętność",
+      skills_owned: "Posiadane",
+      skills_locked: "Zablokowane",
+      skills_new: "Nowe",
+      skills_details: "Szczegóły",
+      skills_show_all: "Pokaż wszystko",
+      skills_filter_all: "Wszystkie",
+      skills_filter_owned: "Posiadane",
+      skills_filter_new: "Nowe",
+      skills_filter_locked: "Zablokowane",
+      skills_sort: "Sortuj",
+      skills_sort_name: "Nazwa",
+      skills_sort_rarity: "Rzadkość",
+      skills_sort_recent: "Ostatnie",
+
+      discovery_title: "Odkrycia",
+      discovery_found: "Odkryto",
+      discovery_progress: "Odkryto: {0}/{1}",
+      discovery_complete: "Katalog kompletny",
+      discovery_hint: "Zdobywaj umiejętności, aby odkrywać nowe.",
+
+      shop_title: "Sklep",
+      shop_offer: "Oferta",
+      shop_buy: "Kup",
+      shop_owned: "Już masz",
+      shop_sold: "Sprzedane",
+      shop_refresh: "Odśwież",
+      shop_refresh_free: "Odśwież za darmo",
+      shop_refresh_cost: "Odśwież ({0})",
+      shop_cost: "Koszt: {0}",
+      shop_balance: "Stan: {0}",
+      shop_not_enough: "Za mało",
+      shop_out_of_stock: "Brak",
+      shop_hint: "Wydawaj monety, aby kupować umiejętności.",
+
+      chest_title: "Skrzynia",
+      chest_open: "Otwórz",
+      chest_opening: "Otwieranie…",
+      chest_claim: "Odbierz",
+      chest_skip: "Pomiń",
+      chest_free: "Darmowe",
+      chest_cost: "Koszt: {0}",
+      chest_you_got: "Zdobyto: {0}",
+      chest_roll_again: "Jeszcze raz",
+      chest_rolls_left: "Losowania: {0}",
+      chest_empty: "Pusto",
+      chest_hint: "Otwieraj skrzynie, aby zdobywać losowe umiejętności.",
+
+      currency_coin: "Moneta",
+      currency_coins: "Monety",
+
+      toast_shop_buy: "Kupiono: {0}",
+      toast_shop_fail: "Nie można kupić",
+      toast_chest_open: "Skrzynia otwarta",
+      toast_discovery_new: "Nowe odkrycie!",
+      toast_skill_new: "Nowa umiejętność: {0}",
+
+      tag_survival2: "Przetrwanie",
+      tag_damage: "Obrażenia",
+      tag_economy: "Ekonomia",
+      tag_utility: "Użyteczność",
+      tag_luck: "Szczęście",
+      tag_shop: "Sklep",
+      tag_chest: "Skrzynie",
+      tag_discovery: "Odkrycia",
     },
 
     nl: {
       langName: "Nederlands",
       defaultPlayer: "Speler",
+
       app_ready: "Klaar",
       app_loading: "Starten…",
       app_pwa: "PWA…",
       audio_ok: "Audio OK",
+
       update_apply_end: "Update klaar: wordt toegepast na de run.",
       update_available: "Update beschikbaar.",
       update_apply_end_short: "Na de run.",
       pill_update: "Updaten",
+
       toast_trap: "Val",
       toast_combo_mult: "Combo: +MULT",
       toast_upgrade: "Upgrade: {0}",
       toast_reroll: "Reroll",
       toast_skip: "Overslaan",
       toast_shield_saved: "Schild redde je van een KO",
+
       name_min: "Naam: minimaal 2 tekens",
       combo_hint: "Voltooi de reeks om de multiplier te verhogen.",
+
       stats_reason: "Reden",
       stats_level: "Level",
       stats_time: "Tijd",
       stats_streak: "Reeks",
       stats_mult: "Mult",
+
       cell_coin: "Coin",
       cell_gem: "Gem",
       cell_bonus: "Bonus",
+
       opt_language: "Taal",
       lang_auto: "Auto",
+
       up_choose: "Kies een upgrade",
       up_level_title: "Level {0}",
+
       rarity_common: "Gewoon",
       rarity_rare: "Zeldzaam",
       rarity_epic: "Episch",
       rarity_legendary: "Legendarisch",
+
       new_profile: "Nieuw maken…",
       confirm_clear_local: "Lokale data wissen? (Profielen/instellingen/runs)",
+
       tag_defense: "Verdediging",
       tag_qol: "QoL",
       tag_points: "Punten",
       tag_mobility: "Mobiliteit",
       tag_upgrades: "Upgrades",
       tag_combo: "Combo",
+
       up_shield_name: "Schild",
       up_shield_desc: "Blokkeert 1 KO (verbruikt).",
       up_mag1_name: "Magneet I",
@@ -1371,7 +2877,6 @@
       up_mult_name: "Mult +",
       up_mult_desc: "Verhoogt basismultiplier (+0.10).",
 
-      // v0.1.9
       hud_hp: "Levens",
       toast_damage: "Schade",
       toast_heal: "Leven +1",
@@ -1384,12 +2889,103 @@
       ui_time_left: "Resterend: {0}",
       badge_stack_fmt: "x{0}",
       badge_active: "Actief",
+
+      // v1.1.0
+      ui_menu: "Menu",
+      ui_play: "Spelen",
+      ui_start: "Start",
+      ui_continue: "Doorgaan",
+      ui_pause: "Pauze",
+      ui_resume: "Hervatten",
+      ui_restart: "Herstart",
+      ui_back: "Terug",
+      ui_close: "Sluiten",
+      ui_ok: "OK",
+      ui_cancel: "Annuleren",
+      ui_yes: "Ja",
+      ui_no: "Nee",
+
+      ui_shop: "Winkel",
+      ui_chest: "Kist",
+      ui_skills: "Skills",
+      ui_catalog: "Catalogus",
+      ui_discovery: "Ontdekking",
+
+      skills_title: "Skills",
+      skills_choose: "Kies een skill",
+      skills_owned: "In bezit",
+      skills_locked: "Vergrendeld",
+      skills_new: "Nieuw",
+      skills_details: "Details",
+      skills_show_all: "Alles tonen",
+      skills_filter_all: "Alles",
+      skills_filter_owned: "In bezit",
+      skills_filter_new: "Nieuw",
+      skills_filter_locked: "Vergrendeld",
+      skills_sort: "Sorteren",
+      skills_sort_name: "Naam",
+      skills_sort_rarity: "Zeldzaamheid",
+      skills_sort_recent: "Recent",
+
+      discovery_title: "Ontdekking",
+      discovery_found: "Ontdekt",
+      discovery_progress: "Ontdekt: {0}/{1}",
+      discovery_complete: "Catalogus compleet",
+      discovery_hint: "Verkrijg skills om nieuwe te ontdekken.",
+
+      shop_title: "Winkel",
+      shop_offer: "Aanbod",
+      shop_buy: "Kopen",
+      shop_owned: "Al in bezit",
+      shop_sold: "Verkocht",
+      shop_refresh: "Vernieuwen",
+      shop_refresh_free: "Gratis vernieuwen",
+      shop_refresh_cost: "Vernieuwen ({0})",
+      shop_cost: "Kosten: {0}",
+      shop_balance: "Saldo: {0}",
+      shop_not_enough: "Niet genoeg",
+      shop_out_of_stock: "Geen voorraad",
+      shop_hint: "Geef coins uit om skills te kopen.",
+
+      chest_title: "Kist",
+      chest_open: "Openen",
+      chest_opening: "Openen…",
+      chest_claim: "Claimen",
+      chest_skip: "Overslaan",
+      chest_free: "Gratis",
+      chest_cost: "Kosten: {0}",
+      chest_you_got: "Gekregen: {0}",
+      chest_roll_again: "Nog eens",
+      chest_rolls_left: "Worpen: {0}",
+      chest_empty: "Leeg",
+      chest_hint: "Open kisten voor willekeurige skills.",
+
+      currency_coin: "Coin",
+      currency_coins: "Coins",
+
+      toast_shop_buy: "Gekocht: {0}",
+      toast_shop_fail: "Kan niet kopen",
+      toast_chest_open: "Kist geopend",
+      toast_discovery_new: "Nieuwe ontdekking!",
+      toast_skill_new: "Nieuwe skill: {0}",
+
+      tag_survival2: "Overleven",
+      tag_damage: "Schade",
+      tag_economy: "Economie",
+      tag_utility: "Nut",
+      tag_luck: "Geluk",
+      tag_shop: "Winkel",
+      tag_chest: "Kisten",
+      tag_discovery: "Ontdekking",
     },
   };
 
   // Supported list
   const supported = ["auto", ...Object.keys(dict)];
   let current = "es";
+
+  // Packs extendidos (mutables)
+  const extra = Object.create(null); // { lang: { key: value } }
 
   function detectBrowser() {
     const nav = (typeof navigator !== "undefined" ? navigator : null);
@@ -1405,13 +3001,15 @@
   }
 
   function setDocLangAndDir(code) {
-    try { document.documentElement.lang = code; } catch {}
-    try { document.documentElement.dir = RTL_LANGS.has(code) ? "rtl" : "ltr"; } catch {}
+    try { if (typeof document !== "undefined" && document.documentElement) document.documentElement.lang = code; } catch {}
+    try { if (typeof document !== "undefined" && document.documentElement) document.documentElement.dir = RTL_LANGS.has(code) ? "rtl" : "ltr"; } catch {}
   }
 
-  function applyDataAttrs(root = document) {
+  function applyDataAttrs(root = (typeof document !== "undefined" ? document : null)) {
     try {
-      const r = root && (root.nodeType ? root : document);
+      const r = root && root.nodeType ? root : (typeof document !== "undefined" ? document : null);
+      if (!r) return;
+
       const qsa = (node, sel) => (node && node.querySelectorAll ? node.querySelectorAll(sel) : []);
       qsa(r, "[data-i18n]").forEach((el) => {
         const k = el.getAttribute("data-i18n");
@@ -1447,7 +3045,7 @@
     setDocLangAndDir(current);
 
     // Refresca textos ya presentes (seguro)
-    try { applyDataAttrs(document); } catch {}
+    try { applyDataAttrs(typeof document !== "undefined" ? document : null); } catch {}
   }
 
   function getLang() { return current; }
@@ -1458,12 +3056,26 @@
     );
   }
 
+  function _getRaw(lang, key) {
+    const ex = extra[lang];
+    if (ex && ex[key] != null) return ex[key];
+    const base = dict[lang];
+    if (base && base[key] != null) return base[key];
+    return null;
+  }
+
+  function has(key, lang = current) {
+    const v = _getRaw(lang, key);
+    return v != null;
+  }
+
   function t(key, ...args) {
-    const base = dict[current] || dict.en || dict.es;
-    const fallback = dict.en || dict.es || {};
+    const lang = current;
     const val =
-      (base && base[key] != null) ? base[key] :
-      (fallback[key] != null ? fallback[key] : (dict.es?.[key] ?? key));
+      _getRaw(lang, key) ??
+      _getRaw("en", key) ??
+      _getRaw("es", key) ??
+      key;
 
     return args.length ? fmt(val, args) : String(val);
   }
@@ -1481,25 +3093,45 @@
 
     const out = [];
     const autoLabel =
-      (dict[current]?.lang_auto) ||
-      (dict.en?.lang_auto) ||
-      (dict.es?.lang_auto) ||
+      (_getRaw(current, "lang_auto")) ||
+      (_getRaw("en", "lang_auto")) ||
+      (_getRaw("es", "lang_auto")) ||
       "Auto";
 
     for (const code of order) {
       if (!supported.includes(code)) continue;
       if (code === "auto") out.push({ code, label: autoLabel });
-      else out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
+      else out.push({ code, label: (dict[code] && dict[code].langName) ? dict[code].langName : code.toUpperCase() });
     }
 
     // append any non-listed supported (future-proof)
     for (const code of supported) {
       if (code === "auto") continue;
       if (order.includes(code)) continue;
-      out.push({ code, label: dict[code]?.langName || code.toUpperCase() });
+      out.push({ code, label: (dict[code] && dict[code].langName) ? dict[code].langName : code.toUpperCase() });
     }
 
     return out;
+  }
+
+  // Extensión opcional (packs de skills/catálogos)
+  // I18n.extend("es", { skill_foo_name:"...", skill_foo_desc:"..." })
+  function extend(lang, entries, opts = {}) {
+    const l = normalize(lang);
+    if (!l || l === "auto") return false;
+    if (!entries || typeof entries !== "object") return false;
+
+    const override = !!opts.override;
+    if (!extra[l]) extra[l] = Object.create(null);
+
+    const tgt = extra[l];
+    for (const k of Object.keys(entries)) {
+      if (!override && tgt[k] != null) continue;
+      const v = entries[k];
+      if (v == null) continue;
+      tgt[k] = String(v);
+    }
+    return true;
   }
 
   // init doc lang/dir with default
@@ -1510,7 +3142,9 @@
     setLang,
     getLang,
     t,
+    has,
     languageOptions,
     applyDataAttrs,
+    extend,
   });
 })();

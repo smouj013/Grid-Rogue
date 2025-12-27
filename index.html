@@ -48,6 +48,21 @@
     })();
   </script>
 
+  <!-- VH fix (suave) para móvil: no interfiere con tu app.js si ya lo hace -->
+  <script>
+    (function () {
+      try {
+        const setVh = () => {
+          const vh = window.innerHeight * 0.01;
+          document.documentElement.style.setProperty("--vh", vh + "px");
+        };
+        setVh();
+        window.addEventListener("resize", setVh, { passive: true });
+        window.addEventListener("orientationchange", setVh, { passive: true });
+      } catch (_) {}
+    })();
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -207,6 +222,7 @@
             </div>
           </div>
 
+          <!-- D-PAD (app.js controla hidden según opt/móvil) -->
           <div class="dpad" id="dpad" hidden>
             <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
               <span class="ms" aria-hidden="true">keyboard_arrow_up</span>

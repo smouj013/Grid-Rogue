@@ -1,15 +1,17 @@
-/* app.js — Grid Rogue v1.1.0 (STABLE+FULLSCREEN + AUDIO + I18N + PWA)
+/* app.js — Grid Rogue v1.1.0 (STABLE+FULLSCREEN + AUDIO + I18N + PWA + SKILLS)
    ✅ Compatible con:
    - utils.js (window.GRUtils)
    - audio.js (window.AudioSys)
    - localization.js (window.I18n)
    - auth.js (window.Auth) si existe
    - rendiment.js (window.GRPerf) si existe (opcional)
+   - skills.js (window.GRSkills) ✅ (pack Skills/Upgrades + Discovery + Shop/Chest)
 
    v1.1.0 (STABLE patch):
    - PWA/SW: anti “reload loop” endurecido (controllerchange + tags + cooldown)
    - Update pill: aplica update sin forzar reload durante run (espera a GameOver o click)
    - Robustez extra en resize/viewport + observers (sin romper DOM/ids)
+   - Integración skills.js (si existe): LevelUp usa Skills Pack; fallback a upgrades internos si no está
 */
 (() => {
   "use strict";
@@ -137,7 +139,7 @@
   // ───────────────────────── Device / Layout ─────────────────────────
   function isCoarsePointer() { try { return matchMedia("(pointer:coarse)").matches; } catch { return false; } }
   function isPortrait() { try { return matchMedia("(orientation: portrait)").matches; } catch { return (innerHeight >= innerWidth); } }
-  function isMobileUA() { const ua = navigator.userAgent || ""; return /Mobi|Android|iPhone|iPad|iPod/i.test(ua); }
+  function isMobileUA() { const ua = (typeof navigator !== "undefined" ? (navigator.userAgent || "") : ""); return /Mobi|Android|iPhone|iPad|iPod/i.test(ua); }
   function isMobileLayout() { return (isCoarsePointer() || isMobileUA()) && isPortrait(); }
   function desiredRows() { return isMobileLayout() ? 16 : 24; }
 
@@ -183,6 +185,7 @@
 
   function vibrate(ms) {
     if (!settings.vibration) return;
+    if (typeof navigator === "undefined") return;
     if (!("vibrate" in navigator)) return;
     try { navigator.vibrate(ms); } catch {}
   }
@@ -576,7 +579,10 @@
     toastT = 0;
   }
 
-  function setOfflinePill() { if (pillOffline) pillOffline.hidden = navigator.onLine; }
+  function setOfflinePill() {
+    if (!pillOffline) return;
+    try { pillOffline.hidden = navigator.onLine; } catch { pillOffline.hidden = true; }
+  }
 
   function speedRowsPerSec() {
     const t = runTime;
@@ -806,11 +812,190 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
   const pickedCount = new Map();
 
+  // ───────────────────────── Skills.js integration ─────────────────────────
+  let Skills = null;
+  let skillsEnabled = false;
+
+  function callFirst(obj, names, ...args) {
+    if (!obj) return undefined;
+    for (const n of names) {
+      const fn = obj[n];
+      if (typeof fn === "function") return fn.apply(obj, args);
+    }
+    return undefined;
+  }
+
+  // API que recibe skills.js (si existe)
+  const skillsApi = {
+    version: APP_VERSION,
+    log: (...a) => { try { console.log("[Skills]", ...a); } catch {} },
+
+    // i18n opcional (skills.js NO depende, pero si lo quiere usar)
+    t: (k, arg) => {
+      try { return I18n.t(k, arg); } catch { return String(k); }
+    },
+
+    // RNG / helpers
+    clamp, clampInt, randi, chance,
+
+    // estado actual (lectura)
+    getState: () => ({
+      running, paused, gameOver, inLevelUp,
+      score, streak, mult, level,
+      runTime, ROWS, COLS,
+      hp, hpMax, shields,
+      magnet, magnetTime,
+      scoreBoost, trapResist, rerolls,
+      coinValue, gemValue, bonusValue,
+      zoneBase, zoneExtra, zoneH,
+    }),
+
+    // mutadores (escritura segura)
+    addScore: (delta) => { score = Math.max(0, (score | 0) + (delta | 0)); },
+    setScore: (v) => { score = Math.max(0, (v | 0)); },
+
+    addStreak: (d) => { streak = Math.max(0, (streak | 0) + (d | 0)); },
+    setStreak: (v) => { streak = Math.max(0, (v | 0)); },
+
+    addMult: (d) => { mult = clamp((Number(mult) || 1) + Number(d || 0), 1.0, 4.0); },
+    setMult: (v) => { mult = clamp(Number(v || 1), 1.0, 4.0); },
+
+    addLevel: (d) => { level = Math.max(1, (level | 0) + (d | 0)); },
+    setLevel: (v) => { level = Math.max(1, (v | 0)); },
+
+    addShield: (d = 1) => { shields = Math.max(0, (shields | 0) + (d | 0)); },
+    setShields: (v) => { shields = Math.max(0, (v | 0)); },
+
+    addMaxHP: (d = 1) => { hpMax = clampInt(hpMax + (d | 0), HP_START, HP_CAP); hp = clampInt(hp, 0, hpMax); },
+    heal: (d = 1) => { hp = clampInt(hp + (d | 0), 0, hpMax); },
+    damage: (d = 1) => { hp = clampInt(hp - (d | 0), 0, hpMax); },
+
+    addMagnet: (d = 1) => { magnet = clampInt(Math.max(magnet, 0) + (d | 0), 0, 3); },
+    setMagnet: (v) => { magnet = clampInt(v, 0, 3); },
+    addMagnetTime: (sec) => { magnetTime = Math.max(0, Number(magnetTime) + Number(sec || 0)); },
+    setMagnetTime: (sec) => { magnetTime = Math.max(0, Number(sec || 0)); },
+
+    addScoreBoost: (d) => { scoreBoost = Math.max(0, Number(scoreBoost) + Number(d || 0)); },
+    setScoreBoost: (v) => { scoreBoost = Math.max(0, Number(v || 0)); },
+
+    addTrapResist: (d = 1) => { trapResist = clampInt(trapResist + (d | 0), 0, 9); },
+    setTrapResist: (v) => { trapResist = clampInt(v, 0, 9); },
+
+    addZoneExtra: (d = 1) => { zoneExtra = clampInt(zoneExtra + (d | 0), 0, 9); recomputeZone(); },
+    setZoneExtra: (v) => { zoneExtra = clampInt(v, 0, 9); recomputeZone(); },
+
+    addReroll: (d = 1) => { rerolls = clampInt(rerolls + (d | 0), 0, 99); },
+    setRerolls: (v) => { rerolls = clampInt(v, 0, 99); },
+
+    addCoinValue: (d = 1) => { coinValue = Math.max(1, (coinValue | 0) + (d | 0)); },
+    addGemValue: (d = 1) => { gemValue = Math.max(1, (gemValue | 0) + (d | 0)); },
+    addBonusValue: (d = 1) => { bonusValue = Math.max(1, (bonusValue | 0) + (d | 0)); },
+
+    // UI / feedback
+    toast: (msg, ms) => showToast(msg, ms),
+    flash: (color, ms) => flash(color, ms),
+    shake: (ms, pow) => shake(ms, pow),
+    sfx: (name) => { try { AudioSys.sfx(name); } catch {} },
+    vibrate: (ms) => vibrate(ms),
+
+    // estado UI
+    updateHUD: () => { updatePillsNow(); },
+
+    // picks map compartido (skills.js lo usa para stacks/limits)
+    pickedCount,
+  };
+
+  function initSkillsPackIfPresent() {
+    try {
+      const GRSkills = (typeof window !== "undefined") ? window.GRSkills : null;
+      if (!GRSkills || !isFn(GRSkills.create)) {
+        Skills = null;
+        skillsEnabled = false;
+        return;
+      }
+
+      const inst = GRSkills.create(skillsApi, pickedCount);
+      Skills = inst || null;
+      skillsEnabled = !!Skills;
+
+      // init hooks opcionales
+      callFirst(Skills, ["onInit", "init"], skillsApi);
+      callFirst(Skills, ["onBoot"], skillsApi);
+    } catch (e) {
+      console.warn("skills.js init failed:", e);
+      Skills = null;
+      skillsEnabled = false;
+    }
+  }
+
+  function skillsGetLevelUpChoices(n = 3) {
+    if (!Skills) return null;
+
+    const out =
+      callFirst(Skills, ["getLevelUpChoices", "rollLevelUp", "makeLevelUpChoices", "levelUpChoices", "pickLevelUpChoices"], n) ??
+      callFirst(Skills, ["getChoices", "rollChoices", "choices"], { kind: "levelup", count: n, level }) ??
+      null;
+
+    return Array.isArray(out) ? out : null;
+  }
+
+  function skillsPick(choice) {
+    if (!Skills || !choice) return false;
+
+    const id = (typeof choice === "string") ? choice : (choice.id || choice.key || choice.skillId || "");
+    if (!id) return false;
+
+    const ok =
+      !!callFirst(Skills, ["pick", "choose", "take", "apply", "select"], id, choice);
+
+    // si no devuelve boolean, asumimos ok si no petó
+    return ok || ok === undefined;
+  }
+
+  function skillsCanReroll() {
+    if (!Skills) return (rerolls > 0);
+    const v = callFirst(Skills, ["canReroll", "canRerollLevelUp"], { level, rerolls }) ?? null;
+    if (typeof v === "boolean") return v;
+    return rerolls > 0;
+  }
+
+  function skillsRerollLevelUp() {
+    if (!Skills) return false;
+    const out = callFirst(Skills, ["rerollLevelUp", "rerollChoices", "reroll"], { kind: "levelup", level, rerolls });
+    if (out === false) return false;
+    return true;
+  }
+
+  function skillsGetBadges() {
+    if (!Skills) return null;
+    const b =
+      callFirst(Skills, ["getBadges", "badges", "getBuffBadges", "getHUD"], skillsApi.getState()) ??
+      null;
+    return Array.isArray(b) ? b : null;
+  }
+
   function updateBuffsUI() {
     if (!hudBuffs) return;
 
     const items = [];
 
+    // 1) badges desde skills.js si existen (prioridad)
+    const sb = skillsGetBadges();
+    if (sb && sb.length) {
+      for (const bb of sb) {
+        if (!bb) continue;
+        const kind = String(bb.kind || bb.id || "skill");
+        const icon = String(bb.icon || "upgrade");
+        const count = Number(bb.count || bb.stack || 0) || 0;
+        const time = Number(bb.time || bb.remaining || 0) || 0;
+        const title = String(bb.title || bb.name || kind);
+        items.push(makeBuffBadge({ kind, icon, count, time, title }));
+      }
+      hudBuffs.innerHTML = items.join("");
+      return;
+    }
+
+    // 2) fallback (modo base)
     if (shields > 0) items.push(makeBuffBadge({ kind: "shield", icon: "shield", count: shields, title: T("buff_shield", "Escudo") }));
     if (magnet > 0 && magnetTime > 0.01) items.push(makeBuffBadge({ kind: "magnet", icon: "compass_calibration", count: magnet, time: magnetTime, title: T("buff_magnet", "Imán") }));
 
@@ -1147,6 +1332,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     playerPulse = 1;
     zonePulse = 1;
 
+    // hook skills
+    callFirst(Skills, ["onTrap", "onHitTrap", "trap"], skillsApi.getState());
+
     const v = scoreFor(CellType.Trap);
     const add = Math.round(v * mult * (1 + scoreBoost));
     score = Math.max(0, score + add);
@@ -1171,6 +1359,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
     playerPulse = 1;
     zonePulse = 1;
+
+    // hook skills
+    callFirst(Skills, ["onCollect", "onPickup", "collect"], { ...skillsApi.getState(), cellType: t });
 
     const v = scoreFor(t);
     const add = Math.round(v * mult * (1 + scoreBoost));
@@ -1242,6 +1433,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     const r = playerAbsRow();
     const c = clampInt(Math.round(Number.isFinite(colF) ? colF : targetCol), 0, COLS - 1);
 
+    // hook skills
+    callFirst(Skills, ["onStep", "onAdvance", "step"], { ...skillsApi.getState(), row: r, col: c });
+
     applyMagnetAround(r, c);
 
     const t = safeCellType(r, c);
@@ -1270,6 +1464,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
           AudioSys.sfx("pick");
           updateStatusHUD();
         } else {
+          // hook skills
+          callFirst(Skills, ["onKO", "onDeath", "onGameOverCause"], { ...skillsApi.getState(), reason: "KO" });
+
           AudioSys.sfx("ko");
           gameOverNow("KO");
         }
@@ -1349,7 +1546,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
   function failCombo() { comboIdx = 0; comboTime = comboTimeMax; renderComboUI(); }
 
-  // ───────────────────────── Upgrades ─────────────────────────
+  // ───────────────────────── Upgrades (fallback base) ─────────────────────────
   const MAGNET_DUR = { rare: 12, epic: 18, legendary: 26 };
 
   function upgradeIcon(u) {
@@ -1368,7 +1565,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     return "upgrade";
   }
 
-  const Upgrades = [
+  const UpgradesFallback = [
     { id: "shield", nameKey: "up_shield_name", descKey: "up_shield_desc", tagKey: "tag_defense", max: 12, rarity: "common", weight: 10,
       apply() { shields++; updateStatusHUD(); } },
 
@@ -1405,7 +1602,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       apply() { mult = clamp(mult + 0.10, 1.0, 4.0); } },
   ];
 
-  function isUpgradeAllowed(u) {
+  function isUpgradeAllowedFallback(u) {
     if ((pickedCount.get(u.id) || 0) >= (u.max ?? 999)) return false;
     if (u.id === "mag1") return magnet < 1;
     if (u.id === "mag2") return magnet < 2;
@@ -1414,8 +1611,12 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     return true;
   }
 
-  const canPick = (u) => isUpgradeAllowed(u);
-  const markPick = (u) => pickedCount.set(u.id, (pickedCount.get(u.id) || 0) + 1);
+  const canPickFallback = (u) => isUpgradeAllowedFallback(u);
+  const markPick = (uOrId) => {
+    const id = (typeof uOrId === "string") ? uOrId : (uOrId?.id || "");
+    if (!id) return;
+    pickedCount.set(id, (pickedCount.get(id) || 0) + 1);
+  };
 
   function pickWeighted(pool) {
     let sum = 0;
@@ -1428,8 +1629,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     return pool[pool.length - 1];
   }
 
-  function chooseUpgrades(n = 3) {
-    const pool = Upgrades.filter(canPick);
+  function chooseUpgradesFallback(n = 3) {
+    const pool = UpgradesFallback.filter(canPickFallback);
     const out = [];
     for (let i = 0; i < n; i++) {
       if (!pool.length) break;
@@ -1596,6 +1797,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     levelStartScore = score;
     nextLevelAt = score + Math.round(240 + level * 150);
 
+    // hook skills
+    callFirst(Skills, ["onLevelUp", "levelUp"], { ...skillsApi.getState(), level });
+
     if (upTitle) upTitle.textContent = I18n.t("up_level_title", level);
     if (upSub) upSub.textContent = I18n.t("up_choose");
 
@@ -1613,77 +1817,100 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     pauseForOverlay(false);
   }
 
+  function normalizeChoiceForUI(u) {
+    if (!u) return null;
+    const id = String(u.id || u.key || u.skillId || u.nameKey || "");
+    const rarity = String(u.rarity || u.tier || u.rare || "common");
+    const icon = String(u.icon || u.iconName || upgradeIcon(u) || "upgrade");
+    const tags = u.tags || u.tag || u.tagKey || null;
+
+    const name =
+      (typeof u.name === "string" && u.name.trim()) ? u.name.trim() :
+      (typeof u.title === "string" && u.title.trim()) ? u.title.trim() :
+      (u.nameKey ? (I18n.t(u.nameKey) !== u.nameKey ? I18n.t(u.nameKey) : u.nameKey) : id);
+
+    const desc =
+      (typeof u.desc === "string" && u.desc.trim()) ? u.desc.trim() :
+      (typeof u.description === "string" && u.description.trim()) ? u.description.trim() :
+      (u.descKey ? (I18n.t(u.descKey) !== u.descKey ? I18n.t(u.descKey) : "") : "");
+
+    const maxLv = Number(u.max ?? u.maxLevel ?? u.cap ?? 999) || 999;
+    const curLv = (pickedCount.get(id) || 0) + 1;
+
+    let tagText = "";
+    if (Array.isArray(tags) && tags.length) tagText = String(tags[0]);
+    else if (typeof tags === "string") tagText = tags;
+    else if (typeof u.tagName === "string") tagText = u.tagName;
+    else if (typeof u.tagKey === "string") tagText = I18n.t(u.tagKey);
+
+    const extraMeta =
+      (typeof u.meta === "string" && u.meta) ? u.meta :
+      (u.duration ? `⏱ ${u.duration}s` : "");
+
+    return { raw: u, id, rarity, icon, name, desc, tagText, maxLv, curLv, extraMeta };
+  }
+
   function renderUpgradeChoices() {
-    currentUpgradeChoices = chooseUpgrades(3);
+    // 1) skills.js choices si existe
+    const skillsChoices = skillsGetLevelUpChoices(3);
+    if (skillsChoices && skillsChoices.length) {
+      currentUpgradeChoices = skillsChoices.slice(0, 3);
+    } else {
+      // 2) fallback base
+      currentUpgradeChoices = chooseUpgradesFallback(3);
+    }
+
     if (upgradeChoices) upgradeChoices.innerHTML = "";
 
-    for (const u of currentUpgradeChoices) {
-      const name = (I18n.t(u.nameKey) !== u.nameKey) ? I18n.t(u.nameKey) : (
-        u.id === "heart" ? T("up_heart_name", "Corazón") :
-        u.id === "shield" ? T("up_shield_name", "Escudo") :
-        u.id.startsWith("mag") ? T("up_mag_name", "Imán") :
-        u.id === "boost" ? T("up_boost_name", "Boost") :
-        u.id === "trap" ? T("up_trap_name", "Resistencia") :
-        u.id === "zone" ? T("up_zone_name", "Zona +") :
-        u.id === "reroll" ? T("up_reroll_name", "Reroll") :
-        u.id === "mult" ? T("up_mult_name", "Multiplicador") :
-        u.id === "coin" ? T("up_coin_name", "Moneda +") :
-        u.id === "gem" ? T("up_gem_name", "Gema +") :
-        u.id === "bonus" ? T("up_bonus_name", "Bonus +") : u.id
-      );
+    for (const rawU of currentUpgradeChoices) {
+      const ui = normalizeChoiceForUI(rawU);
+      if (!ui) continue;
 
-      let desc = I18n.t(u.descKey);
-      if (desc === u.descKey) {
-        if (u.id === "heart") desc = T("up_heart_desc", "Aumenta tu vida máxima y cura 1♥.");
-        else if (u.id.startsWith("mag")) desc = T("up_mag_desc", "Atrae recompensas cercanas temporalmente.");
-        else desc = "—";
-      }
-
-      let extraMeta = "";
-      if (u.id === "mag1") extraMeta = `⏱ ${MAGNET_DUR.rare}s`;
-      if (u.id === "mag2") extraMeta = `⏱ ${MAGNET_DUR.epic}s`;
-      if (u.id === "mag3") extraMeta = `⏱ ${MAGNET_DUR.legendary}s`;
-
-      const tag = I18n.t(u.tagKey);
-      const rarity = (u.rarity || "common");
-      const rarityText = rarityLabel(rarity);
+      const rarityText = rarityLabel(ui.rarity);
 
       const card = document.createElement("div");
       card.className = "upCard";
-      card.dataset.rarity = rarity;
-      card.dataset.upid = u.id;
+      card.dataset.rarity = ui.rarity;
+      card.dataset.upid = ui.id;
       card.setAttribute("role", "button");
       card.tabIndex = 0;
 
-      const nextLv = (pickedCount.get(u.id) || 0) + 1;
-      const maxLv = u.max ?? 999;
-
-      const icon = upgradeIcon(u);
-
       card.innerHTML = `
 <div class="upHead">
-  <div class="upIcon"><span class="ms">${icon}</span></div>
+  <div class="upIcon"><span class="ms">${escapeAttr(ui.icon)}</span></div>
   <div class="upHeadText">
-    <div class="upTitle">${name}</div>
+    <div class="upTitle">${escapeAttr(ui.name)}</div>
     <div class="upSubRow">
-      <span class="upRarityBadge">${rarityText}</span>
-      <span class="badge">${tag}</span>
-      <span class="badge">Lv ${nextLv}/${maxLv}</span>
-      ${extraMeta ? `<span class="badge">${extraMeta}</span>` : ``}
+      <span class="upRarityBadge">${escapeAttr(rarityText)}</span>
+      ${ui.tagText ? `<span class="badge">${escapeAttr(ui.tagText)}</span>` : ``}
+      <span class="badge">Lv ${ui.curLv}/${ui.maxLv}</span>
+      ${ui.extraMeta ? `<span class="badge">${escapeAttr(ui.extraMeta)}</span>` : ``}
     </div>
   </div>
 </div>
-<div class="upDesc">${desc}</div>
+<div class="upDesc">${escapeAttr(ui.desc || "—")}</div>
       `;
 
       const pickThis = () => {
-        markPick(u);
-        u.apply();
+        // siempre marcamos el pick (skills.js lo usa también)
+        markPick(ui.id);
 
+        let pickedViaSkills = false;
+
+        if (Skills && skillsEnabled) {
+          pickedViaSkills = skillsPick(ui.raw);
+        }
+
+        if (!pickedViaSkills) {
+          // fallback base: si el raw tiene apply, usamos eso
+          if (isFn(ui.raw?.apply)) ui.raw.apply();
+        }
+
+        const rarity = ui.rarity || "common";
         const burst = (rarity === "legendary") ? 1.9 : (rarity === "epic") ? 1.4 : (rarity === "rare") ? 1.15 : 1.0;
         confettiBurst(burst);
 
-        showToast(I18n.t("toast_upgrade", name), 950);
+        showToast(I18n.t("toast_upgrade", ui.name), 950);
         shake(120, 3);
         flash(
           (rarity === "legendary") ? "#ffd35a" :
@@ -1704,13 +1931,21 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       upgradeChoices?.appendChild(card);
     }
 
-    if (btnReroll) btnReroll.disabled = !(rerolls > 0);
+    if (btnReroll) btnReroll.disabled = !skillsCanReroll();
     if (btnSkipUpgrade) btnSkipUpgrade.hidden = (level < 4);
   }
 
   function rerollUpgrades() {
-    if (rerolls <= 0) return;
-    rerolls--;
+    // prioridad: skills.js si lo soporta
+    if (Skills && skillsEnabled) {
+      const ok = skillsRerollLevelUp();
+      if (!ok && rerolls <= 0) return;
+      if (!ok && rerolls > 0) rerolls--;
+    } else {
+      if (rerolls <= 0) return;
+      rerolls--;
+    }
+
     renderUpgradeChoices();
     showToast(I18n.t("toast_reroll"), 650);
     shake(90, 2);
@@ -2299,6 +2534,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     overlayHide(overlayGameOver);
     overlayHide(overlayOptions);
 
+    // hook skills
+    callFirst(Skills, ["onResetRun", "resetRun", "onNewRun", "newRun"], skillsApi);
+
     if (showMenu) { overlayShow(overlayStart); setState("menu"); }
     else overlayHide(overlayStart);
 
@@ -2329,6 +2567,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     scrollPx = 0;
     comboTime = comboTimeMax;
 
+    // hook skills
+    callFirst(Skills, ["onRunStart", "onStartRun", "startRun"], skillsApi.getState());
+
     setState("playing");
     updatePillsNow();
     draw(16);
@@ -2349,6 +2590,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     vibrate(32);
 
     AudioSys.duckMusic(true);
+
+    // hook skills
+    callFirst(Skills, ["onGameOver", "gameOver", "onRunEnd", "runEnd"], { ...skillsApi.getState(), reason });
 
     if (score > best) {
       best = score;
@@ -2430,6 +2674,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     tickBgStars(dtMs);
     tickUpgradeFx(dtMs);
     tickTimedUpgrades(dtMs);
+
+    // hook skills (tick)
+    callFirst(Skills, ["tick", "onTick"], dtMs, skillsApi.getState());
   }
 
   function update(dtMs) {
@@ -3067,6 +3314,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
       syncFromAuth();
       applyAudioSettingsNow();
+
+      // skills.js (si está cargado) — se inicializa aquí para que use el estado y el pickedCount compartido
+      initSkillsPackIfPresent();
 
       ROWS = desiredRows();
 

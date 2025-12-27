@@ -1,4 +1,4 @@
-/* styles.css — Grid Rogue v1.0.0 */
+/* styles.css — Grid Rogue v1.1.0 */
 
 :root{
   --bg0:#0b0b10;
@@ -22,12 +22,17 @@
   --vh:1vh;
 
   --topbarH:64px;
+
+  /* Safe-area helpers */
+  --safeL: env(safe-area-inset-left, 0px);
+  --safeR: env(safe-area-inset-right, 0px);
+  --safeT: env(safe-area-inset-top, 0px);
+  --safeB: env(safe-area-inset-bottom, 0px);
 }
 
 *{box-sizing:border-box}
 
-/* ✅ FIX CRÍTICO: el atributo HTML [hidden] debe ganar SIEMPRE.
-   Si no, overlays/dpad no se ocultan y te quedas “pillado”. */
+/* ✅ FIX CRÍTICO: hidden siempre gana */
 [hidden]{display:none !important}
 .overlay[hidden]{display:none !important}
 .dpad[hidden]{display:none !important}
@@ -37,9 +42,13 @@ html,body{
   margin:0;
   background:linear-gradient(180deg,var(--bg0),var(--bg1));
   color:var(--txt);
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
 }
-body{overscroll-behavior:none}
+body{
+  overscroll-behavior:none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
 .ms{
   font-family:"Material Symbols Rounded";
@@ -68,30 +77,62 @@ body{overscroll-behavior:none}
 
 /* ───────── Topbar ───────── */
 .topbar{
-  height:var(--topbarH);
-  display:flex;
+  min-height:var(--topbarH);
+  height:auto;
+  display:grid;
+  grid-template-columns: minmax(190px, 300px) minmax(0, 1fr) auto;
   align-items:center;
-  justify-content:space-between;
-  gap:14px;
-  padding:10px 12px;
+  gap:12px;
+  padding:calc(10px + var(--safeT)) calc(12px + var(--safeR)) 10px calc(12px + var(--safeL));
   border-bottom:1px solid rgba(255,255,255,.08);
   background:linear-gradient(180deg,rgba(10,10,16,.92),rgba(10,10,16,.72));
   backdrop-filter:blur(10px);
 }
-.brand{display:flex;align-items:center;gap:10px;min-width:220px}
-.brandDot{width:12px;height:12px;border-radius:999px;background:radial-gradient(circle at 30% 30%,#fff,rgba(255,255,255,.15) 55%,rgba(106,176,255,.55));box-shadow:0 0 14px rgba(106,176,255,.35)}
-.brandTitle{font-weight:900;letter-spacing:.2px}
-.brandSub{font-size:12px;color:var(--muted)}
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+.brandDot{
+  width:12px;height:12px;border-radius:999px;
+  background:radial-gradient(circle at 30% 30%,#fff,rgba(255,255,255,.15) 55%,rgba(106,176,255,.55));
+  box-shadow:0 0 14px rgba(106,176,255,.35);
+  flex:0 0 auto;
+}
+.brandText{min-width:0}
+.brandTitle{font-weight:900;letter-spacing:.2px;line-height:1.05}
+.brandSub{
+  font-size:12px;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width: 320px;
+}
 
 .miniStats{
   display:flex;
   align-items:center;
   gap:8px;
-  flex:1;
+  min-width:0;
+
+  /* ✅ evita que “reviente” el header: scroll suave si falta espacio */
+  overflow:auto;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+  padding:2px 0;
   justify-content:center;
-  flex-wrap:wrap;
 }
-.actions{display:flex;align-items:center;gap:8px}
+.miniStats::-webkit-scrollbar{display:none}
+
+.actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex:0 0 auto;
+}
 
 /* Pills */
 .pill{
@@ -104,8 +145,10 @@ body{overscroll-behavior:none}
   background:rgba(255,255,255,.03);
   color:var(--txt);
   font-size:12px;
+  flex:0 0 auto;
+  max-width: 100%;
 }
-.pill .pv{font-weight:800}
+.pill .pv{font-weight:800;min-width:0}
 .pill.mini{padding:5px 9px}
 .pill.subtle{background:rgba(255,255,255,.02);color:var(--muted)}
 .pillBtn{cursor:pointer;user-select:none}
@@ -158,21 +201,30 @@ body{overscroll-behavior:none}
   position:relative;
   height:100%;
   padding:12px;
+  padding-bottom:calc(12px + var(--safeB));
 }
 .gameArea{
   height:100%;
   display:flex;
   align-items:stretch;
   justify-content:center;
+  min-height:0;
 }
 
 .railFrame{
   width:min(1100px,100%);
   height:100%;
   display:grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 340px minmax(0,1fr);
   gap:12px;
   align-items:stretch;
+  min-height:0;
+}
+
+.railHud,
+.railCanvas{
+  min-width:0;
+  min-height:0;
 }
 
 .railHud{
@@ -182,44 +234,30 @@ body{overscroll-behavior:none}
   padding:12px;
   overflow:hidden;
 }
-.hud{display:flex;flex-direction:column;gap:10px;height:100%}
+.hud{display:flex;flex-direction:column;gap:10px;height:100%;min-height:0}
 
 .comboTop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-.comboSeq{display:flex;flex-wrap:wrap;gap:8px}
-.chip{
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding:7px 10px;
-  border-radius:999px;
-  border:1px solid rgba(255,255,255,.10);
-  background:rgba(0,0,0,.22);
-  position:relative;
-}
-.chip::before{
-  content:"";
-  position:absolute;
-  inset:-1px;
-  border-radius:999px;
-  border:1px solid rgba(255,255,255,.10);
-  box-shadow:0 0 0 1px rgba(0,0,0,.25) inset;
-  pointer-events:none;
-}
-.chip .ms{font-size:18px}
-.chip{--chipc:rgba(255,255,255,.18)}
-.chip .ms{color:var(--chipc)}
+.comboSeq{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
 .comboTimer{
   display:inline-flex;align-items:center;gap:8px;
   padding:7px 10px;border-radius:999px;
   border:1px solid rgba(255,255,255,.10);
   background:rgba(0,0,0,.22);
+  flex:0 0 auto;
 }
 .comboHint{font-size:12px;color:var(--muted)}
 .levelProg{margin-top:4px}
 .levelRow{display:flex;align-items:center;justify-content:space-between;color:var(--muted);gap:10px}
-.levelRow .left{display:inline-flex;align-items:center;gap:8px}
-.progBar{height:10px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;border:1px solid rgba(255,255,255,.08)}
-.progFill{height:100%;width:0%;background:linear-gradient(90deg,rgba(106,176,255,.92),rgba(214,133,255,.92));border-radius:999px}
+.levelRow .left{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.progBar{
+  height:10px;border-radius:999px;background:rgba(255,255,255,.06);
+  overflow:hidden;border:1px solid rgba(255,255,255,.08)
+}
+.progFill{
+  height:100%;width:0%;
+  background:linear-gradient(90deg,rgba(106,176,255,.92),rgba(214,133,255,.92));
+  border-radius:999px
+}
 
 .toast{
   margin-top:auto;
@@ -245,7 +283,15 @@ body{overscroll-behavior:none}
   background:radial-gradient(circle at 30% 10%, rgba(106,176,255,.10), rgba(0,0,0,.10));
   overflow:hidden;
 }
-.canvasSizer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:12px}
+.canvasSizer{
+  width:100%;
+  height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:12px;
+  min-height:0;
+}
 #gameCanvas{
   display:block;
   image-rendering:pixelated;
@@ -253,6 +299,12 @@ body{overscroll-behavior:none}
   border:1px solid rgba(255,255,255,.10);
   background:#000;
   box-shadow:0 18px 60px rgba(0,0,0,.45);
+
+  /* ✅ nunca se sale del frame */
+  max-width:100%;
+  max-height:100%;
+  width:auto;
+  height:auto;
 }
 
 /* Overlays */
@@ -273,6 +325,7 @@ body{overscroll-behavior:none}
   background:linear-gradient(180deg,var(--panel),rgba(18,18,28,.84));
   box-shadow:var(--shadow);
   overflow:hidden;
+  max-height: calc(100% - 24px);
 }
 .panel.wide{width:min(880px, calc(100% - 24px))}
 .panelHead{
@@ -306,13 +359,20 @@ body{overscroll-behavior:none}
   background:rgba(106,176,255,.14);
 }
 .splashLogo .ms{font-size:26px}
-.splashText .title{font-weight:1000;letter-spacing:.2px}
+.splashText .title{font-weight:900;letter-spacing:.2px}
 .splashText .sub{color:var(--muted);font-size:12px}
 
 /* Loading bar */
 .loadingPanel{max-width:520px}
-.loadingBar{height:10px;border-radius:999px;background:rgba(255,255,255,.06);margin:10px 16px;border:1px solid rgba(255,255,255,.08);overflow:hidden}
-.loadingBarFill{height:100%;width:55%;background:linear-gradient(90deg,rgba(106,176,255,.80),rgba(214,133,255,.80));animation:bar 1.1s ease-in-out infinite alternate}
+.loadingBar{
+  height:10px;border-radius:999px;background:rgba(255,255,255,.06);
+  margin:10px 16px;border:1px solid rgba(255,255,255,.08);overflow:hidden
+}
+.loadingBarFill{
+  height:100%;width:55%;
+  background:linear-gradient(90deg,rgba(106,176,255,.80),rgba(214,133,255,.80));
+  animation:bar 1.1s ease-in-out infinite alternate
+}
 @keyframes bar{from{transform:translateX(-20%)}to{transform:translateX(20%)}}
 .dots{display:inline-flex;gap:5px;margin-left:6px}
 .dots .dot{width:6px;height:6px;border-radius:999px;background:rgba(255,255,255,.75);opacity:.35;animation:dot 1s infinite}
@@ -323,7 +383,7 @@ body{overscroll-behavior:none}
 /* Forms */
 .form{padding:14px 16px 16px}
 .label{display:block;margin:10px 0 6px;color:var(--muted);font-size:12px}
-.row{display:flex;align-items:center}
+.row{display:flex;align-items:center;min-width:0}
 .rowGap{gap:10px}
 .input,.select{
   width:100%;
@@ -341,7 +401,7 @@ body{overscroll-behavior:none}
 .upgradesPanel .panelBody{padding:12px 16px 16px}
 .upgradeChoices{
   display:grid;
-  grid-template-columns:1fr 1fr 1fr;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
   gap:10px;
 }
 .upCard{
@@ -352,18 +412,20 @@ body{overscroll-behavior:none}
   cursor:pointer;
   user-select:none;
   transition:transform .12s ease, border-color .12s ease, background .12s ease;
+  min-width:0;
 }
 .upCard:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.18);background:rgba(0,0,0,.28)}
 .upCard:active{transform:translateY(0)}
-.upHead{display:flex;gap:10px;align-items:flex-start}
+.upHead{display:flex;gap:10px;align-items:flex-start;min-width:0}
 .upIcon{
   width:40px;height:40px;border-radius:14px;
   display:flex;align-items:center;justify-content:center;
   border:1px solid rgba(255,255,255,.10);
   background:rgba(255,255,255,.05);
+  flex:0 0 auto;
 }
 .upIcon .ms{font-size:22px}
-.upTitle{font-weight:1000}
+.upTitle{font-weight:900;min-width:0}
 .upSubRow{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .badge{
   font-size:11px;
@@ -385,7 +447,7 @@ body{overscroll-behavior:none}
 
 /* Game over */
 .goBig{padding:14px 16px 6px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
-.goScore{font-size:44px;font-weight:1000;letter-spacing:.2px}
+.goScore{font-size:44px;font-weight:900;letter-spacing:.2px}
 .goBest{color:var(--muted);font-weight:900}
 .goBest .v{color:rgba(255,255,255,.92)}
 .stats{padding:8px 16px 0}
@@ -393,7 +455,12 @@ body{overscroll-behavior:none}
 .stats .line:last-child{border-bottom:none}
 
 /* Options */
-.optionsPanel .panelHead{position:sticky;top:0;background:linear-gradient(180deg,rgba(18,18,28,.96),rgba(18,18,28,.82))}
+.optionsPanel .panelHead{
+  position:sticky;
+  top:0;
+  background:linear-gradient(180deg,rgba(18,18,28,.96),rgba(18,18,28,.82));
+  z-index:1;
+}
 .options{
   max-height:min(70vh, 560px);
   overflow:auto;
@@ -406,7 +473,7 @@ body{overscroll-behavior:none}
   border-radius:14px;
   border:1px solid rgba(255,255,255,.08);
   background:rgba(255,255,255,.03);
-  font-weight:1000;
+  font-weight:900;
 }
 .optRow{
   display:flex;
@@ -418,6 +485,7 @@ body{overscroll-behavior:none}
   border:1px solid rgba(255,255,255,.08);
   background:rgba(0,0,0,.18);
   margin-bottom:10px;
+  min-width:0;
 }
 .optRow input[type="checkbox"]{width:18px;height:18px;accent-color:var(--accent)}
 .sliderRow{align-items:center}
@@ -434,32 +502,21 @@ body{overscroll-behavior:none}
   word-break:break-word;
 }
 
-/* D-pad */
-.dpad{
+/* ───────── HUD float layer (corazones + buffs) ───────── */
+#hudFloat{
   position:absolute;
-  left:16px;
-  bottom:16px;
-  z-index:55;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  pointer-events:auto;
-}
-.dpadBtn{
-  width:54px;height:54px;
-  border-radius:18px;
-  border:1px solid rgba(255,255,255,.10);
-  background:rgba(0,0,0,.22);
-  color:rgba(255,255,255,.92);
-  cursor:pointer;
-}
-.dpadBtn:hover{border-color:rgba(255,255,255,.18);background:rgba(0,0,0,.28)}
-.dpadBtn:active{transform:translateY(1px)}
-.dpadBtn .ms{font-size:28px}
-.dpadRow{display:flex;gap:10px;justify-content:center}
+  inset:0;
+  pointer-events:none;
+  z-index:40;
+  overflow:visible;
 
-/* HUD float layer */
-#hudFloat{position:absolute;inset:0;pointer-events:none;z-index:40;overflow:visible}
+  /* ✅ centrado y seguro: nunca sale del viewport */
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding:12px;
+  padding-top:calc(12px + var(--safeT));
+}
 .statusBar{
   display:flex;
   align-items:center;
@@ -471,22 +528,51 @@ body{overscroll-behavior:none}
   background:rgba(0,0,0,.22);
   box-shadow:0 12px 34px rgba(0,0,0,.30);
   pointer-events:none;
+
+  width:min(980px, calc(100% - 12px));
+  max-width:100%;
+  min-width:0;
 }
 .statusBar.compact{padding:7px 9px}
-.hpWrap{display:flex;align-items:center;gap:8px}
+
+.hpWrap{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  flex:0 0 auto;
+}
 .hpWrap .hpIcon{color:rgba(255,120,120,.92)}
-.hpHearts{display:inline-flex;gap:2px;flex-wrap:nowrap}
+.hpHearts{
+  display:inline-flex;
+  gap:2px;
+  flex-wrap:nowrap;
+  min-width:0;
+  max-width: 52vw; /* ✅ no invade buffs */
+  overflow:hidden;
+}
+.heart{display:inline-flex;align-items:center;justify-content:center}
 .heart.full{color:rgba(255,120,120,.92)}
 .heart.empty{color:rgba(255,255,255,.22)}
-.hpMore{color:var(--muted);font-weight:900}
-.hpText{color:var(--muted);font-weight:900}
-.buffBar{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.hpMore{color:var(--muted);font-weight:900;flex:0 0 auto}
+.hpText{color:var(--muted);font-weight:900;flex:0 0 auto}
+
+.buffBar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  min-width:0;
+  flex:1 1 auto;
+}
 .buffBadge{
   display:inline-flex;align-items:center;gap:6px;
   padding:6px 8px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,.10);
   background:rgba(255,255,255,.03);
+  max-width:100%;
 }
 .buffBadge .bIcon{font-size:18px;color:rgba(255,255,255,.86)}
 .buffBadge .bTime,.buffBadge .bCount{font-size:12px;color:rgba(255,255,255,.86);font-weight:900}
@@ -494,18 +580,97 @@ body{overscroll-behavior:none}
 /* Upgrade FX canvas */
 .upFxCanvas{position:absolute;inset:0;pointer-events:none}
 
-/* Responsive */
+/* ───────── D-PAD (a los lados, no abajo) ───────── */
+/* El contenedor ocupa toda la pantalla pero no bloquea clicks salvo botones */
+.dpad{
+  position:fixed;
+  inset:0;
+  z-index:55;
+  pointer-events:none;
+}
+
+/* Ignoramos layout interno (row) y colocamos botones en “side rails” */
+.dpadRow{display:contents}
+
+.dpadBtn{
+  width:58px;height:58px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(0,0,0,.24);
+  color:rgba(255,255,255,.92);
+  cursor:pointer;
+  pointer-events:auto;
+  touch-action:manipulation;
+
+  box-shadow:0 14px 36px rgba(0,0,0,.28);
+  backdrop-filter: blur(6px);
+}
+
+.dpadBtn:hover{border-color:rgba(255,255,255,.18);background:rgba(0,0,0,.30)}
+.dpadBtn:active{transform:translateY(1px)}
+.dpadBtn .ms{font-size:30px}
+
+/* Posicionamiento: left y right en los laterales; up/down en el lateral derecho (no tapa el juego) */
+#btnLeft{
+  position:fixed;
+  left:calc(12px + var(--safeL));
+  top:50%;
+  transform:translateY(-50%);
+}
+#btnRight{
+  position:fixed;
+  right:calc(12px + var(--safeR));
+  top:50%;
+  transform:translateY(-50%);
+}
+#btnUp{
+  position:fixed;
+  right:calc(12px + var(--safeR));
+  top:calc(50% - 86px);
+}
+#btnDown{
+  position:fixed;
+  right:calc(12px + var(--safeR));
+  top:calc(50% + 86px);
+}
+
+/* ───────── Responsive ───────── */
 @media (max-width: 980px){
   .railFrame{grid-template-columns: 1fr; gap:10px}
   .railHud{order:2}
   .railCanvas{order:1; min-height:280px}
   .miniStats{justify-content:flex-start}
+  .brandSub{max-width: 220px}
 }
+
 @media (max-width: 520px){
   :root{--topbarH:74px}
-  .topbar{padding:10px 10px;gap:10px}
-  .brand{min-width:0}
+
+  .topbar{
+    grid-template-columns: minmax(160px, 1fr) minmax(0, 1fr) auto;
+    padding:calc(10px + var(--safeT)) calc(10px + var(--safeR)) 10px calc(10px + var(--safeL));
+    gap:10px;
+  }
+
   .brandSub{display:none}
+
   .upgradeChoices{grid-template-columns:1fr; gap:10px}
-  .dpad{left:10px;bottom:10px}
+
+  /* HUD: apila para que NUNCA se salga */
+  .statusBar{
+    flex-direction:column;
+    align-items:stretch;
+    gap:8px;
+  }
+  .buffBar{justify-content:flex-start}
+
+  /* D-pad un pelín más compacto en móviles pequeños */
+  .dpadBtn{width:54px;height:54px;border-radius:18px}
+  #btnUp{top:calc(50% - 78px)}
+  #btnDown{top:calc(50% + 78px)}
+}
+
+/* Mejoras extra para dispositivos táctiles */
+@media (pointer: coarse){
+  .dpadBtn{background:rgba(0,0,0,.28)}
 }
