@@ -1,21 +1,17 @@
-/* sw.js — Grid Rogue v1.1.1 (FIX)
-   - SIN DUPLICADOS (esto era tu bug)
-   - Cache versioned + claves consistentes
-   - Precaching tolerante (no falla si falta un asset)
-   - Navegación: network-first + fallback cache
-   - Assets: cache-first + revalidate
+/* sw.js — Grid Rogue v1.1.0
+   - Cache versioned
    - Message API:
      - {type:"SKIP_WAITING"}
      - {type:"CLEAR_ALL_CACHES"}
-     - {type:"GET_VERSION"} -> {type:"SW_VERSION", version}
+     - {type:"GET_VERSION"} -> replies {type:"SW_VERSION", version}
+   - Notifies activation: {type:"SW_ACTIVATED", version}
 */
 (() => {
   "use strict";
 
   const url = new URL(self.location.href);
-  const VERSION = url.searchParams.get("v") || "1.1.1";
+  const VERSION = url.searchParams.get("v") || "1.1.0";
   const CACHE = `gridrogue-cache-${VERSION}`;
-  const RUNTIME = `gridrogue-runtime-${VERSION}`;
 
   const APP_SHELL = [
     "./",
@@ -50,19 +46,16 @@
     "./assets/audio/sfx_gameover.wav",
     "./assets/audio/sfx_levelup.wav",
     "./assets/audio/sfx_pick.wav",
-    "./assets/audio/sfx_reroll.wav"
+    "./assets/audio/sfx_reroll.wav",
+    "./assets/audio/sfx_combo.wav"
   ];
 
-  const strip = (u) => {
-    try {
-      const x = new URL(u, self.location.origin);
-      x.search = "";
-      x.hash = "";
-      return x.toString();
-    } catch {
-      return u;
-    }
-  };
+  function keyFor(u) {
+    const x = new URL(u, self.location.origin);
+    x.search = "";
+    x.hash = "";
+    return x.toString();
+  }
 
   async function postToAll(msg) {
     const clientsAll = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -71,21 +64,11 @@
     }
   }
 
-  async function safePrecache(cache) {
-    const jobs = APP_SHELL.map(async (p) => {
-      const abs = strip(p);
-      try {
-        const res = await fetch(abs, { cache: "no-cache" });
-        if (res && res.ok) await cache.put(abs, res.clone());
-      } catch (_) {}
-    });
-    await Promise.allSettled(jobs);
-  }
-
   self.addEventListener("install", (event) => {
     event.waitUntil((async () => {
       const cache = await caches.open(CACHE);
-      await safePrecache(cache);
+      const reqs = APP_SHELL.map(p => new Request(keyFor(p), { cache: "reload" }));
+      await cache.addAll(reqs);
       await self.skipWaiting();
     })());
   });
@@ -94,7 +77,7 @@
     event.waitUntil((async () => {
       const keys = await caches.keys();
       await Promise.all(keys.map(k => {
-        if (k.startsWith("gridrogue-") && k !== CACHE && k !== RUNTIME) return caches.delete(k);
+        if (k.startsWith("gridrogue-cache-") && k !== CACHE) return caches.delete(k);
       }));
       await self.clients.claim();
       await postToAll({ type: "SW_ACTIVATED", version: VERSION });
@@ -127,39 +110,36 @@
 
   self.addEventListener("fetch", (event) => {
     const req = event.request;
-    if (!req || req.method !== "GET") return;
+    if (req.method !== "GET") return;
 
     const u = new URL(req.url);
+
+    // Solo mismo origen
     if (u.origin !== self.location.origin) return;
 
-    const isNav = (req.mode === "navigate") || (req.destination === "document");
+    const isNav = req.mode === "navigate" || req.destination === "document";
 
     event.respondWith((async () => {
-      // NAV: network-first, fallback cache(index)
+      const cache = await caches.open(CACHE);
+
       if (isNav) {
-        const cache = await caches.open(CACHE);
+        const cached = await cache.match(keyFor("./index.html"), { ignoreSearch: true });
         try {
           const net = await fetch(req);
-          if (net && net.ok) {
-            await cache.put(strip("./index.html"), net.clone());
-          }
+          if (net && net.ok) cache.put(keyFor("./index.html"), net.clone());
           return net;
         } catch (_) {
-          const cached = await cache.match(strip("./index.html"));
           return cached || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
         }
       }
 
-      // ASSETS: cache-first + revalidate
-      const key = strip(req.url);
-      const cache = await caches.open(CACHE);
-      const hit = await cache.match(key);
-
+      const cacheKey = keyFor(req.url);
+      const hit = await cache.match(cacheKey, { ignoreSearch: true });
       if (hit) {
         event.waitUntil((async () => {
           try {
             const net = await fetch(req);
-            if (net && net.ok) await cache.put(key, net.clone());
+            if (net && net.ok) await cache.put(cacheKey, net.clone());
           } catch (_) {}
         })());
         return hit;
@@ -167,7 +147,7 @@
 
       try {
         const net = await fetch(req);
-        if (net && net.ok) await cache.put(key, net.clone());
+        if (net && net.ok) await cache.put(cacheKey, net.clone());
         return net;
       } catch (_) {
         return new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
