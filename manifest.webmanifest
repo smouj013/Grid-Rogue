@@ -1,66 +1,16 @@
 {
   "name": "Grid Rogue",
   "short_name": "GridRogue",
-  "id": "./",
-  "start_url": "./?v=1.0.0",
+  "description": "Grid Rogue — arcade roguelite en cuadrícula con combos, upgrades y runs rápidas.",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "display_override": ["standalone", "fullscreen", "minimal-ui", "browser"],
   "background_color": "#0b0b10",
   "theme_color": "#0b0b10",
-  "description": "Grid Rogue es un arcade roguelite en cuadrícula: muévete casilla a casilla, encadena combos, esquiva trampas y mejora tu build en runs rápidas.",
-  "lang": "es-ES",
-  "dir": "ltr",
-  "orientation": "portrait",
-  "categories": ["games", "entertainment"],
   "icons": [
-    {
-      "src": "./assets/icons/favicon-32.png",
-      "sizes": "32x32",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./assets/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./assets/icons/icon-192-maskable.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "./assets/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./assets/icons/icon-512-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "./assets/icons/apple-touch-icon-152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./assets/icons/apple-touch-icon-167.png",
-      "sizes": "167x167",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./assets/icons/apple-touch-icon-180.png",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    }
+    { "src": "./assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./assets/icons/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "./assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./assets/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

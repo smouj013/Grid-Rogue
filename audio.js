@@ -1,436 +1,241 @@
-/* audio.js — Grid Rogue v1.0.0
-   UI/Bindings de opciones de audio (Music/SFX + volúmenes + Mute + Test)
-   - Compatible con AudioSys (audio_sys.js)
-   - Compatible con Auth (prefs por perfil) si existe
-   - MUY IMPORTANTE: NO sobrescribe gridrogue_settings_v1 completo:
-     hace MERGE y solo toca campos de audio.
+/* audio.js — Grid Rogue v1.0.0 (AudioSys)
+   - WebAudio + fallback básico
+   - unlock() móvil
+   - sfx(name), startMusic(), stopMusic()
+   - setMute / setMusicOn / setSfxOn / setVolumes
 */
 (() => {
   "use strict";
 
-  const VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "1.0.0");
-
-  const U = window.GRUtils || window.Utils || null;
-  const clamp = U?.clamp || ((v, a, b) => Math.max(a, Math.min(b, v)));
-  const $ = U?.$ || ((id) => document.getElementById(id));
-
-  const safeNum = U?.safeNum || ((x, fb = 0) => {
-    const n = Number(x);
-    return Number.isFinite(n) ? n : fb;
-  });
-
-  const safeParse = U?.safeParse || ((raw, fb) => {
-    try { return JSON.parse(raw); } catch (_) { return fb; }
-  });
-
-  const canLS = U?.canLS || (() => {
-    try {
-      const k = "__ls_test__";
-      localStorage.setItem(k, "1");
-      localStorage.removeItem(k);
-      return true;
-    } catch (_) { return false; }
-  });
-
-  function readLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
-  function writeLS(key, value) { try { localStorage.setItem(key, value); return true; } catch (_) { return false; } }
-
-  const SETTINGS_KEY = "gridrogue_settings_v1";
-  const LEGACY_SETTINGS_KEY = "gridrunner_settings_v1";
-
-  const defaultAudio = () => ({
-    musicOn: true,
-    sfxOn: true,
-    musicVol: 0.60,
-    sfxVol: 0.90,
-    muteAll: false,
-  });
-
-  function sanitizeAudio(s) {
-    const base = defaultAudio();
-    if (!s || typeof s !== "object") return base;
-    return {
-      ...base,
-      ...s,
-      musicOn: (s.musicOn ?? base.musicOn) !== false,
-      sfxOn: (s.sfxOn ?? base.sfxOn) !== false,
-      musicVol: clamp(safeNum(s.musicVol, base.musicVol), 0, 1),
-      sfxVol: clamp(safeNum(s.sfxVol, base.sfxVol), 0, 1),
-      muteAll: !!(s.muteAll ?? base.muteAll),
-    };
-  }
-
-  function getAudioSys() { return window.AudioSys || null; }
-  function getAuth() { return window.Auth || null; }
-
-  function readFullSettingsFromLS() {
-    if (!canLS()) return null;
-    const rawNew = readLS(SETTINGS_KEY);
-    const rawOld = readLS(LEGACY_SETTINGS_KEY);
-    const obj = safeParse(rawNew || rawOld || "null", null);
-    return (obj && typeof obj === "object") ? obj : null;
-  }
-
-  function writeFullSettingsToLS(obj) {
-    if (!canLS()) return false;
-    const json = JSON.stringify(obj || {});
-    const ok1 = writeLS(SETTINGS_KEY, json);
-    const ok2 = writeLS(LEGACY_SETTINGS_KEY, json);
-    return !!(ok1 || ok2);
-  }
-
-  function extractAudioFromAnySettingsObject(obj) {
-    if (!obj || typeof obj !== "object") return null;
-    const hasAny = ("musicOn" in obj) || ("sfxOn" in obj) || ("musicVol" in obj) || ("sfxVol" in obj) || ("muteAll" in obj);
-    if (!hasAny) return null;
-    return sanitizeAudio({
-      musicOn: obj.musicOn,
-      sfxOn: obj.sfxOn,
-      musicVol: obj.musicVol,
-      sfxVol: obj.sfxVol,
-      muteAll: obj.muteAll,
-    });
-  }
-
-  function mergeAudioIntoSettingsObject(fullObj, audioObj) {
-    const base = (fullObj && typeof fullObj === "object") ? fullObj : {};
-    return {
-      ...base,
-      musicOn: !!audioObj.musicOn,
-      sfxOn: audioObj.sfxOn !== false,
-      musicVol: clamp(safeNum(audioObj.musicVol, 0.6), 0, 1),
-      sfxVol: clamp(safeNum(audioObj.sfxVol, 0.9), 0, 1),
-      muteAll: !!audioObj.muteAll,
-    };
-  }
-
-  function loadAudioFromProfilePrefs() {
-    const Auth = getAuth();
-    try {
-      const prefs = Auth?.getPrefsForActive?.();
-      if (!prefs || typeof prefs !== "object") return null;
-
-      const audio = extractAudioFromAnySettingsObject(prefs);
-      return audio;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function saveAudioToProfilePrefs(audioObj) {
-    const Auth = getAuth();
-    if (!Auth?.setPrefsForActive) return false;
-
-    try {
-      const prev = Auth.getPrefsForActive?.() || {};
-      const merged = mergeAudioIntoSettingsObject(prev, audioObj);
-      return !!Auth.setPrefsForActive(merged);
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function loadAudioBestEffort() {
-    const fromProfile = loadAudioFromProfilePrefs();
-    if (fromProfile) return fromProfile;
-
-    const full = readFullSettingsFromLS();
-    const fromFull = extractAudioFromAnySettingsObject(full);
-    return fromFull || defaultAudio();
-  }
-
-  let settings = loadAudioBestEffort();
-
-  let saveT = 0;
-  function saveAudioEverywhere() {
-    clearTimeout(saveT);
-    saveT = setTimeout(() => {
-      const full = readFullSettingsFromLS() || {};
-      const merged = mergeAudioIntoSettingsObject(full, settings);
-      writeFullSettingsToLS(merged);
-      saveAudioToProfilePrefs(settings);
-    }, 60);
-  }
-
-  let musicAttempted = false;
-
-  function applyAudioSettingsNow() {
-    const A = getAudioSys();
-    if (!A) return;
-
-    try { A.setAllowProceduralMusic?.(false); } catch (_) {}
-
-    try {
-      A.setMute?.(!!settings.muteAll);
-      A.setSfxOn?.(settings.sfxOn !== false);
-      A.setMusicOn?.(!!settings.musicOn);
-      A.setVolumes?.({ music: settings.musicVol, sfx: settings.sfxVol });
-
-      if (settings.muteAll || !settings.musicOn || settings.musicVol <= 0.001) {
-        A.stopMusic?.();
-      }
-    } catch (_) {}
-  }
-
-  async function unlockGesture() {
-    const A = getAudioSys();
-    try { await A?.unlock?.(); } catch (_) {}
-  }
-
-  function canTryMusicStart(A) {
-    try {
-      const st = A?.getState?.() || {};
-      if (!("musicMode" in st)) return true;
-      if (st.musicMode === "procedural") return false;
-      return true;
-    } catch (_) {
-      return true;
-    }
-  }
-
-  async function maybeStartMusic() {
-    const A = getAudioSys();
-    if (!A) return;
-
-    if (!settings.musicOn || settings.muteAll || settings.musicVol <= 0.001) return;
-    if (!canTryMusicStart(A)) return;
-    if (musicAttempted) return;
-
-    musicAttempted = true;
-
-    try {
-      await A.startMusic?.();
-      if (!canTryMusicStart(A)) {
-        try { A.stopMusic?.(); } catch (_) {}
-      }
-    } catch (_) {
-      try { A.stopMusic?.(); } catch (_) {}
-    }
-  }
-
-  let didAutoUnlock = false;
-  function bindGlobalUnlock() {
-    const handler = async () => {
-      if (didAutoUnlock) return;
-
-      const A = getAudioSys();
-      if (!A) return; // aún no cargó
-
-      didAutoUnlock = true;
-
-      await unlockGesture();
-      applyAudioSettingsNow();
-      await maybeStartMusic();
-
-      window.removeEventListener("pointerdown", handler, true);
-      window.removeEventListener("keydown", handler, true);
-      window.removeEventListener("touchstart", handler, true);
-    };
-
-    window.addEventListener("pointerdown", handler, true);
-    window.addEventListener("keydown", handler, true);
-    window.addEventListener("touchstart", handler, true);
-  }
-
-  const optMusicOn = $("optMusicOn");
-  const optSfxOn = $("optSfxOn");
-  const optMusicVol = $("optMusicVol");
-  const optMusicVolValue = $("optMusicVolValue");
-  const optSfxVol = $("optSfxVol");
-  const optSfxVolValue = $("optSfxVolValue");
-  const optMuteAll = $("optMuteAll");
-  const btnTestAudio = $("btnTestAudio");
-
-  const optMusic = optMusicOn || $("optMusic");
-  const optSfx = optSfxOn || $("optSfx");
-
-  function syncUIFromSettings() {
-    if (optMusic) optMusic.checked = !!settings.musicOn;
-    if (optSfx) optSfx.checked = (settings.sfxOn !== false);
-
-    if (optMusicVol) optMusicVol.value = String(settings.musicVol);
-    if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
-
-    if (optSfxVol) optSfxVol.value = String(settings.sfxVol);
-    if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
-
-    if (optMuteAll) optMuteAll.checked = !!settings.muteAll;
-  }
-
-  async function playUiClick() {
-    const A = getAudioSys();
-    try {
-      if (settings.sfxOn && !settings.muteAll) await A?.sfx?.("ui");
-    } catch (_) {}
-  }
-
-  function bind() {
-    optMusic?.addEventListener("change", async () => {
-      await unlockGesture();
-
-      settings.musicOn = !!optMusic.checked;
-      musicAttempted = false;
-
-      saveAudioEverywhere();
-      applyAudioSettingsNow();
-
-      const A = getAudioSys();
-      try {
-        if (settings.musicOn && !settings.muteAll && settings.musicVol > 0.001) {
-          await maybeStartMusic();
-        } else {
-          A?.stopMusic?.();
-        }
-      } catch (_) {}
-
-      await playUiClick();
-    });
-
-    optSfx?.addEventListener("change", async () => {
-      await unlockGesture();
-
-      settings.sfxOn = !!optSfx.checked;
-      saveAudioEverywhere();
-      applyAudioSettingsNow();
-
-      await playUiClick();
-    });
-
-    optMusicVol?.addEventListener("input", async () => {
-      await unlockGesture();
-
-      settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.60"), 0, 1);
-      if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
-
-      saveAudioEverywhere();
-      applyAudioSettingsNow();
-
-      if (settings.musicVol > 0.001) {
-        musicAttempted = false;
-        await maybeStartMusic();
-      }
-    });
-
-    optSfxVol?.addEventListener("input", async () => {
-      await unlockGesture();
-
-      settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.90"), 0, 1);
-      if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
-
-      saveAudioEverywhere();
-      applyAudioSettingsNow();
-
-      await playUiClick();
-    });
-
-    optMuteAll?.addEventListener("change", async () => {
-      await unlockGesture();
-
-      settings.muteAll = !!optMuteAll.checked;
-      saveAudioEverywhere();
-      applyAudioSettingsNow();
-
-      const A = getAudioSys();
-      try { if (settings.muteAll) A?.stopMusic?.(); } catch (_) {}
-    });
-
-    btnTestAudio?.addEventListener("click", async () => {
-      await unlockGesture();
-
-      syncUIFromSettings();
-      applyAudioSettingsNow();
-
-      musicAttempted = false;
-      await maybeStartMusic();
-
-      const A = getAudioSys();
-      try {
-        if (settings.sfxOn && !settings.muteAll) {
-          await A?.sfx?.("coin");
-          await A?.sfx?.("ui");
-          await A?.sfx?.("hurt");
-          await A?.sfx?.("heal");
-        }
-      } catch (_) {}
-    });
-  }
-
-  let lastProfileId = null;
-  function getProfileId() {
-    const Auth = getAuth();
-    try {
-      const p = Auth?.getActiveProfile?.();
-      return p?.id || null;
-    } catch (_) { return null; }
-  }
-
-  function startProfileWatcher() {
-    lastProfileId = getProfileId();
-
-    setInterval(() => {
-      const cur = getProfileId();
-      if (cur === lastProfileId) return;
-      lastProfileId = cur;
-
-      const fromProfile = loadAudioFromProfilePrefs();
-      settings = fromProfile ? fromProfile : loadAudioBestEffort();
-
-      musicAttempted = false;
-      syncUIFromSettings();
-      applyAudioSettingsNow();
-    }, 1500);
-  }
-
-  window.AudioUI = {
-    VERSION,
-    getSettings: () => ({ ...settings }),
-    setSettings: (partial) => {
-      settings = sanitizeAudio({ ...settings, ...(partial || {}) });
-      musicAttempted = false;
-      saveAudioEverywhere();
-      syncUIFromSettings();
-      applyAudioSettingsNow();
-      return { ...settings };
-    },
-    sync: () => {
-      syncUIFromSettings();
-      applyAudioSettingsNow();
-    },
-    unlock: async () => {
-      await unlockGesture();
-      applyAudioSettingsNow();
-      musicAttempted = false;
-      await maybeStartMusic();
-    },
-
-    sfx: async (name) => {
-      await unlockGesture();
-      const A = getAudioSys();
-      try { if (settings.sfxOn && !settings.muteAll) return await A?.sfx?.(name); } catch (_) {}
-      return false;
-    },
-
-    hurt: async () => window.AudioUI.sfx("hurt"),
-    heal: async () => window.AudioUI.sfx("heal"),
-    magnetOn: async () => window.AudioUI.sfx("magnet_on"),
-    magnetOff: async () => window.AudioUI.sfx("magnet_off"),
-    upgradeOpen: async () => window.AudioUI.sfx("upgrade_open"),
-    upgradePick: async () => window.AudioUI.sfx("upgrade_pick"),
+  const BASE = new URL("./assets/audio/", location.href);
+
+  const SFX_MAP = {
+    ui: "sfx_ui_click.wav",
+    coin: "sfx_coin.wav",
+    gem: "sfx_gem.wav",
+    bonus: "sfx_bonus.wav",
+    trap: "sfx_trap.wav",
+    ko: "sfx_ko.wav",
+    gameover: "sfx_gameover.wav",
+    level: "sfx_levelup.wav",
+    pick: "sfx_pick.wav",
+    reroll: "sfx_reroll.wav"
   };
 
-  function boot() {
-    settings = loadAudioBestEffort();
-    syncUIFromSettings();
-    applyAudioSettingsNow();
+  const MUSIC_FILES = ["music_loop.mp3", "bgm_loop.mp3"];
 
-    bindGlobalUnlock();
-    bind();
-    startProfileWatcher();
+  let ctx = null;
+  let master = null;
+  let musicGain = null;
+  let sfxGain = null;
+
+  let muteAll = false;
+  let musicOn = true;
+  let sfxOn = true;
+  let musicVol = 0.60;
+  let sfxVol = 0.90;
+
+  let unlocked = false;
+  let musicSource = null;
+  let musicBuf = null;
+
+  const bufCache = new Map();
+
+  function canWebAudio() {
+    return !!(window.AudioContext || window.webkitAudioContext);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot, { once: true });
-  } else {
-    boot();
+  function ensureCtx() {
+    if (!canWebAudio()) return false;
+    if (ctx) return true;
+
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+
+    master = ctx.createGain();
+    musicGain = ctx.createGain();
+    sfxGain = ctx.createGain();
+
+    musicGain.connect(master);
+    sfxGain.connect(master);
+    master.connect(ctx.destination);
+
+    applyGains();
+    return true;
   }
+
+  function applyGains() {
+    if (!master) return;
+    const m = muteAll ? 0 : 1;
+    master.gain.value = m;
+
+    if (musicGain) musicGain.gain.value = (musicOn ? musicVol : 0);
+    if (sfxGain) sfxGain.gain.value = (sfxOn ? sfxVol : 0);
+  }
+
+  async function fetchArrayBuffer(url) {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("audio fetch failed");
+    return await res.arrayBuffer();
+  }
+
+  async function decodeToBuffer(url) {
+    if (!ensureCtx()) return null;
+    if (bufCache.has(url)) return bufCache.get(url);
+
+    const ab = await fetchArrayBuffer(url);
+    const b = await ctx.decodeAudioData(ab.slice(0));
+    bufCache.set(url, b);
+    return b;
+  }
+
+  function playBeep(freq = 440, dur = 0.06, gain = 0.15) {
+    try {
+      if (!ensureCtx()) return;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.value = gain * (muteAll ? 0 : 1);
+      o.connect(g);
+      g.connect(sfxGain || ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + dur);
+    } catch {}
+  }
+
+  async function unlock(force = false) {
+    try {
+      if (!ensureCtx()) { unlocked = true; return true; }
+      if (unlocked && !force) return true;
+
+      // iOS: resume en gesto
+      if (ctx.state !== "running") await ctx.resume();
+
+      // pequeño "silence ping"
+      const b = ctx.createBuffer(1, 1, 22050);
+      const s = ctx.createBufferSource();
+      s.buffer = b;
+      s.connect(master);
+      s.start(0);
+
+      unlocked = true;
+      return true;
+    } catch {
+      unlocked = true;
+      return true;
+    }
+  }
+
+  async function sfx(name) {
+    try {
+      if (!sfxOn || muteAll) return false;
+      await unlock();
+
+      const file = SFX_MAP[name] || null;
+      if (!file) { playBeep(520, 0.05, 0.12); return false; }
+
+      const url = new URL(file, BASE).toString();
+      const b = await decodeToBuffer(url);
+      if (!b) { playBeep(520, 0.05, 0.12); return false; }
+
+      const src = ctx.createBufferSource();
+      src.buffer = b;
+
+      const g = ctx.createGain();
+      g.gain.value = 1;
+
+      src.connect(g);
+      g.connect(sfxGain);
+
+      src.start();
+      return true;
+    } catch {
+      playBeep(520, 0.05, 0.10);
+      return false;
+    }
+  }
+
+  async function loadMusic() {
+    if (musicBuf) return musicBuf;
+    if (!ensureCtx()) return null;
+
+    for (const file of MUSIC_FILES) {
+      try {
+        const url = new URL(file, BASE).toString();
+        musicBuf = await decodeToBuffer(url);
+        if (musicBuf) return musicBuf;
+      } catch {}
+    }
+    return null;
+  }
+
+  async function startMusic() {
+    try {
+      if (!musicOn || muteAll) return;
+      await unlock();
+
+      if (!ensureCtx()) return;
+      if (musicSource) return;
+
+      const b = await loadMusic();
+      if (!b) return;
+
+      const src = ctx.createBufferSource();
+      src.buffer = b;
+      src.loop = true;
+
+      const g = ctx.createGain();
+      g.gain.value = 1;
+
+      src.connect(g);
+      g.connect(musicGain);
+
+      src.start(0);
+      musicSource = src;
+    } catch {}
+  }
+
+  function stopMusic() {
+    try {
+      if (musicSource) {
+        musicSource.stop();
+        musicSource.disconnect();
+      }
+    } catch {}
+    musicSource = null;
+  }
+
+  function duckMusic(on) {
+    try {
+      if (!musicGain) return;
+      musicGain.gain.value = on ? (musicOn ? musicVol * 0.35 : 0) : (musicOn ? musicVol : 0);
+    } catch {}
+  }
+
+  function setMute(v) { muteAll = !!v; applyGains(); }
+  function setMusicOn(v) { musicOn = !!v; applyGains(); if (!musicOn) stopMusic(); }
+  function setSfxOn(v) { sfxOn = !!v; applyGains(); }
+  function setVolumes(o = {}) {
+    if (Number.isFinite(o.music)) musicVol = Math.max(0, Math.min(1, o.music));
+    if (Number.isFinite(o.sfx)) sfxVol = Math.max(0, Math.min(1, o.sfx));
+    applyGains();
+  }
+
+  function getState() {
+    return { muteAll, musicOn, sfxOn, musicVol, sfxVol, unlocked };
+  }
+
+  window.AudioSys = {
+    unlock,
+    sfx,
+    startMusic,
+    stopMusic,
+    duckMusic,
+    setMute,
+    setMusicOn,
+    setSfxOn,
+    setVolumes,
+    getState
+  };
 })();
