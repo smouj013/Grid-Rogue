@@ -25,7 +25,20 @@
 }
 
 *{box-sizing:border-box}
-html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg0),var(--bg1));color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+
+/* ✅ FIX CRÍTICO: el atributo HTML [hidden] debe ganar SIEMPRE.
+   Si no, overlays/dpad no se ocultan y te quedas “pillado”. */
+[hidden]{display:none !important}
+.overlay[hidden]{display:none !important}
+.dpad[hidden]{display:none !important}
+
+html,body{
+  height:100%;
+  margin:0;
+  background:linear-gradient(180deg,var(--bg0),var(--bg1));
+  color:var(--txt);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
+}
 body{overscroll-behavior:none}
 
 .ms{
@@ -445,7 +458,7 @@ body{overscroll-behavior:none}
 .dpadBtn .ms{font-size:28px}
 .dpadRow{display:flex;gap:10px;justify-content:center}
 
-/* HUD float layer (tu app.js añade critical CSS también) */
+/* HUD float layer */
 #hudFloat{position:absolute;inset:0;pointer-events:none;z-index:40;overflow:visible}
 .statusBar{
   display:flex;
