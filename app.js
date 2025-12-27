@@ -55,7 +55,7 @@
 
   const overlayShow = U.overlayShow || ((el) => { if (!el) return; el.hidden = false; });
   const overlayHide = U.overlayHide || ((el) => { if (!el) return; el.hidden = true; });
-  const overlayFadeOut = U.overlayFadeOut || ((el) => Promise.resolve(overlayHide(el)));
+  const overlayFadeOut = U.overlayFadeOut || ((el, _ms = 0) => Promise.resolve(overlayHide(el)));
 
   // NO romper pills con iconos: si existe .pv, solo actualiza eso.
   const setPill = U.setPill || ((el, v) => {
@@ -579,6 +579,7 @@
     setTimeout(() => { toast.hidden = true; }, 180);
     toastT = 0;
   }
+
   function setOfflinePill() { if (pillOffline) pillOffline.hidden = navigator.onLine; }
 
   function speedRowsPerSec() {
@@ -2238,7 +2239,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
-  let pendingReload = false;
+  let pendingReload = false; // ✅ (FIX) único, sin redeclararlo luego
 
   function resetRun(showMenu) {
     running = false;
@@ -2460,7 +2461,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   let deferredPrompt = null;
   let swReg = null;
 
-  let pendingReload = false;
   let swReloadGuard = false;
   let hadControllerAtBoot = false;
   let swActivatedVersion = null;
@@ -2485,7 +2485,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   function requestAppReload() {
-    // Si estamos jugando, marca para aplicar al final de la run (o al morir)
     if (running && !gameOver) {
       pendingReload = true;
       markUpdateAvailable(I18n.t("pill_update"));
@@ -2518,19 +2517,16 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   async function applySWUpdateNow() {
     AudioSys.unlock();
 
-    // Si no hay SW, recarga normal (cache-bust debería venir por APP_VERSION en assets)
     if (!("serviceWorker" in navigator)) {
       requestAppReload();
       return;
     }
 
-    // Si no tenemos registro, intenta recargar igualmente
     if (!swReg) {
       requestAppReload();
       return;
     }
 
-    // Si estamos en partida, aplaza
     if (running && !gameOver) {
       pendingReload = true;
       markUpdateAvailable(I18n.t("pill_update"));
@@ -2539,19 +2535,15 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     }
 
     try {
-      // Fuerza comprobar update
       try { await swReg.update?.(); } catch {}
 
-      // Si ya hay waiting, lo activamos
       if (swReg.waiting) {
         try { swReg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch {}
-        // Espera a controllerchange un poco; si no llega, recarga igual
         await waitForControllerChange(3500);
         requestAppReload();
         return;
       }
 
-      // Si no hay waiting, recarga igualmente (por si el SW ya hizo “clients.navigate”)
       requestAppReload();
     } catch {
       requestAppReload();
@@ -2559,17 +2551,14 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   async function repairPWA() {
-    // “Reparar” = intenta pedir al SW que borre caches conocidas + fallback a hard reset.
     try {
       if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage({ type: "CLEAR_ALL_CACHES" });
-        // el SW nuevo que te pasé hace navigate() en activate y aquí además limpiará caches
         setTimeout(() => location.reload(), 600);
         return;
       }
     } catch {}
 
-    // Fallback duro si no hay controller o algo falla
     try {
       if ("serviceWorker" in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
@@ -2589,7 +2578,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
   function setupInstallUI() {
     if (btnInstall) btnInstall.hidden = true;
-
     if (isStandalone()) return;
 
     window.addEventListener("beforeinstallprompt", (e) => {
@@ -2617,7 +2605,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
   function wireUpdatePill() {
     if (!pillUpdate) return;
-
     pillUpdate.addEventListener("click", () => {
       AudioSys.unlock();
       applySWUpdateNow();
@@ -2632,9 +2619,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       if (!d || !d.type) return;
 
       if (d.type === "SW_ACTIVATED") {
-        // SW nuevo activo: normalmente ya navegó clientes (según sw.js). Aun así, reflejamos estado.
         swActivatedVersion = String(d.version || "");
-        // Si estamos jugando, avisamos; si no, aplicamos reload suave (pero sin bucle)
         markUpdateAvailable(I18n.t("pill_update"));
       }
 
@@ -2643,16 +2628,11 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       }
     });
 
-    // Pide versión al controller actual (si existe)
     try {
       if (navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" });
       }
     } catch {}
-  }
-
-  function setOfflinePill() {
-    if (pillOffline) pillOffline.hidden = navigator.onLine;
   }
 
   async function setupPWA() {
@@ -2663,8 +2643,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     setupInstallUI();
     wireUpdatePill();
 
-    if (btnRepairPWA) btnRepairPWA.addEventListener("click", repairPWA);
-
     if (window.__GRIDRUNNER_NOSW) return;
     if (!("serviceWorker" in navigator)) return;
 
@@ -2673,7 +2651,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     setupSWMessaging();
 
     try {
-      // IMPORTANTÍSIMO: updateViaCache:"none" + scope "./" en GH Pages
       const swUrl = new URL("./sw.js", location.href);
       swUrl.searchParams.set("v", String(APP_VERSION || "1.0.0"));
 
@@ -2682,22 +2659,18 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         updateViaCache: "none",
       });
 
-      // Fuerza check de update
       try { await swReg.update?.(); } catch {}
 
-      // Si ya hay waiting al entrar, lo mostramos
       if (swReg.waiting) {
         markUpdateAvailable(I18n.t("pill_update"));
       }
 
-      // Detecta instalación de nuevo SW
       swReg.addEventListener("updatefound", () => {
         const nw = swReg.installing;
         if (!nw) return;
 
         nw.addEventListener("statechange", () => {
           if (nw.state === "installed") {
-            // Si ya había controller, esto es update real
             if (navigator.serviceWorker.controller) {
               markUpdateAvailable(I18n.t("pill_update"));
               showToast(I18n.t("update_available"), 1100);
@@ -2706,27 +2679,17 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         });
       });
 
-      // Cuando el controller cambia (update aplicado)
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (swReloadGuard) return;
         swReloadGuard = true;
 
-        // Evita bucle: etiqueta por sesión
-        try {
-          const tag = `${Date.now()}`;
-          const prev = sessionStorage.getItem(SW_RELOAD_TAG);
-          if (prev === tag) return;
-          sessionStorage.setItem(SW_RELOAD_TAG, tag);
-        } catch {}
+        try { sessionStorage.setItem(SW_RELOAD_TAG, String(Date.now())); } catch {}
 
-        // Si era primera instalación (sin controller al arrancar), NO hace falta recargar agresivo
         if (!hadControllerAtBoot) {
-          // pero sí limpiamos el pill si estaba
           clearUpdatePill();
           return;
         }
 
-        // Update real: si estamos jugando, aplazamos; si no, recargamos
         requestAppReload();
       });
 
