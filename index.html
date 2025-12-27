@@ -16,6 +16,7 @@
 
   <script>window.APP_VERSION = "1.0.0";</script>
 
+  <!-- Repair mode: ?repair (borra SW + caches) y recarga limpio -->
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
@@ -60,6 +61,13 @@
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
   <link rel="stylesheet" href="./styles.css?v=1.0.0" />
+
+  <!-- Scripts base (defer) -->
+  <script src="./utils.js?v=1.0.0" defer></script>
+  <script src="./localization.js?v=1.0.0" defer></script>
+  <script src="./audio.js?v=1.0.0" defer></script>
+  <script src="./auth.js?v=1.0.0" defer></script>
+  <script src="./app.js?v=1.0.0" defer></script>
 </head>
 
 <body>
@@ -120,11 +128,16 @@
           <span class="pv">Update</span>
         </span>
 
+        <!-- ocultas, pero tu app.js las usa -->
         <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
         <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
       </div>
 
       <div class="actions" aria-label="Acciones">
+        <button class="iconBtn small" id="btnInstall" type="button" title="Instalar" hidden>
+          <span class="ms" aria-hidden="true">download</span>
+        </button>
+
         <button class="iconBtn small" id="btnPause" type="button" title="Pausa">
           <span class="ms" aria-hidden="true">pause</span>
         </button>
@@ -153,7 +166,9 @@
                     </div>
                   </div>
 
-                  <div class="comboHint" id="comboHint">Completa la secuencia para subir el multiplicador.</div>
+                  <div class="comboHint" id="comboHint">
+                    Completa la secuencia para subir el multiplicador.
+                  </div>
 
                   <div class="levelProg levelProgress" id="levelProgress">
                     <div class="levelRow">
@@ -207,12 +222,11 @@
           </div>
         </div>
 
+        <!-- LOADING -->
         <section class="overlay" id="overlayLoading">
           <div class="panel loadingPanel">
             <div class="splash">
-              <div class="splashLogo" aria-hidden="true">
-                <span class="ms">grid_view</span>
-              </div>
+              <div class="splashLogo" aria-hidden="true"><span class="ms">grid_view</span></div>
               <div class="splashText">
                 <div class="title">Grid Rogue</div>
                 <div class="sub">
@@ -228,10 +242,7 @@
               <div class="muted tiny" id="loadingSub">Iniciando…</div>
             </div>
 
-            <div class="loadingBar" aria-hidden="true">
-              <div class="loadingBarFill"></div>
-            </div>
-
+            <div class="loadingBar" aria-hidden="true"><div class="loadingBarFill"></div></div>
             <div class="tiny muted" id="loadingHint">Si tarda, se desbloquea solo (failsafe).</div>
 
             <div class="panelActions panelActionsLeft">
@@ -241,12 +252,11 @@
           </div>
         </section>
 
+        <!-- PRESS -->
         <section class="overlay" id="overlayPress" hidden>
           <div class="panel pressPanel">
             <div class="splash splashCompact">
-              <div class="splashLogo" aria-hidden="true">
-                <span class="ms">grid_view</span>
-              </div>
+              <div class="splashLogo" aria-hidden="true"><span class="ms">grid_view</span></div>
               <div class="splashText">
                 <div class="title">Grid Rogue</div>
                 <div class="sub" id="pressSub">Pulsa para empezar</div>
@@ -267,12 +277,11 @@
           </div>
         </section>
 
+        <!-- START -->
         <section class="overlay" id="overlayStart" hidden>
           <div class="panel wide startPanel">
             <div class="splash splashCompact">
-              <div class="splashLogo" aria-hidden="true">
-                <span class="ms">grid_view</span>
-              </div>
+              <div class="splashLogo" aria-hidden="true"><span class="ms">grid_view</span></div>
               <div class="splashText">
                 <div class="title">Grid Rogue</div>
                 <div class="sub">Arcade roguelite en cuadrícula • runs cortas • upgrades</div>
@@ -319,11 +328,10 @@
           </div>
         </section>
 
+        <!-- PAUSED -->
         <section class="overlay" id="overlayPaused" hidden>
           <div class="panel">
-            <div class="panelHead">
-              <div class="h2">Pausa</div>
-            </div>
+            <div class="panelHead"><div class="h2">Pausa</div></div>
             <div class="panelActions">
               <button class="btn primary" id="btnResume" type="button">Continuar</button>
               <button class="btn" id="btnPausedRestart" type="button">Reiniciar</button>
@@ -332,6 +340,7 @@
           </div>
         </section>
 
+        <!-- UPGRADES -->
         <section class="overlay" id="overlayUpgrades" hidden>
           <div class="panel wide upgradesPanel">
             <div class="panelHead">
@@ -353,11 +362,10 @@
           </div>
         </section>
 
+        <!-- GAME OVER -->
         <section class="overlay" id="overlayGameOver" hidden>
           <div class="panel">
-            <div class="panelHead">
-              <div class="h2">Game Over</div>
-            </div>
+            <div class="panelHead"><div class="h2">Game Over</div></div>
 
             <div class="goBig">
               <div>
@@ -377,6 +385,7 @@
           </div>
         </section>
 
+        <!-- OPTIONS (COMPLETO, ya no se corta) -->
         <section class="overlay" id="overlayOptions" hidden>
           <div class="panel wide optionsPanel">
             <div class="panelHead">
@@ -415,32 +424,32 @@
               </div>
 
               <label class="optRow">
-                <span>Mute</span>
+                <span>Silenciar todo</span>
                 <input id="optMuteAll" type="checkbox" />
               </label>
 
               <div class="optRow">
-                <button class="btn" id="btnTestAudio" type="button">Probar sonido</button>
-                <span class="tiny muted">Desbloquea audio si el móvil lo bloquea</span>
+                <span>Test audio</span>
+                <button class="btn" id="btnTestAudio" type="button">Probar</button>
               </div>
 
-              <div class="optGroupTitle optGroupSpacer">
+              <div class="optGroupTitle">
                 <span class="ms" aria-hidden="true">tune</span>
                 <span>Juego</span>
               </div>
 
               <label class="optRow">
-                <span>Usar sprites (si existen)</span>
+                <span>Sprites (si existen)</span>
                 <input id="optSprites" type="checkbox" />
               </label>
 
               <label class="optRow">
-                <span>Vibración (móvil)</span>
+                <span>Vibración</span>
                 <input id="optVibration" type="checkbox" />
               </label>
 
               <label class="optRow">
-                <span>Mostrar cruceta (móvil)</span>
+                <span>D-Pad (móvil)</span>
                 <input id="optDpad" type="checkbox" />
               </label>
 
@@ -450,179 +459,63 @@
                 <span class="mono" id="optFxValue">1.00</span>
               </div>
 
-              <div class="optGroupTitle optGroupSpacer">
+              <!-- Idioma: tu app.js lo rellena -->
+              <div class="optGroupTitle">
                 <span class="ms" aria-hidden="true">translate</span>
                 <span>Idioma</span>
               </div>
 
-              <div class="optRow" id="optLangRow">
-                <label class="optLabel" for="optLang">Idioma</label>
+              <div class="optRow">
+                <span>Idioma</span>
                 <select id="optLang" class="select"></select>
               </div>
 
-              <div class="optGroupTitle optGroupSpacer">
-                <span class="ms" aria-hidden="true">phone_iphone</span>
-                <span>PWA</span>
+              <div class="optGroupTitle">
+                <span class="ms" aria-hidden="true">build</span>
+                <span>Datos / PWA</span>
               </div>
 
               <div class="optRow">
-                <button class="btn" id="btnInstall" type="button" hidden>Instalar</button>
-                <span class="tiny muted">Si tu navegador lo soporta</span>
+                <span>Reparar PWA</span>
+                <button class="btn danger" id="btnRepairPWA" type="button">Reparar</button>
               </div>
 
-              <div class="optRow danger">
-                <button class="btn danger" id="btnRepairPWA" type="button">Reparar PWA</button>
-                <span class="tiny muted">Desinstala SW + borra caches</span>
+              <div class="optRow">
+                <span>Borrar datos</span>
+                <button class="btn danger" id="btnClearLocal" type="button">Borrar</button>
               </div>
 
-              <div class="optRow danger">
-                <button class="btn danger" id="btnClearLocal" type="button">Borrar datos locales</button>
-                <span class="tiny muted">Perfiles, settings y runs</span>
+              <div class="legal tiny muted">
+                © <span id="legalYear"></span> Grid Rogue. All rights reserved.
               </div>
             </div>
           </div>
         </section>
 
+        <!-- ERROR (tu app.js lo usa) -->
         <section class="overlay" id="overlayError" hidden>
           <div class="panel">
             <div class="panelHead">
               <div class="h2">Error</div>
             </div>
-            <div class="errMsg" id="errMsg">—</div>
+            <div class="panelBody">
+              <div class="errorBox" id="errMsg">Ha ocurrido un error.</div>
+              <div class="tiny muted">Si te pasa a menudo, usa “Reparar PWA” desde Opciones.</div>
+            </div>
             <div class="panelActions">
               <button class="btn" id="btnErrClose" type="button">Cerrar</button>
               <button class="btn primary" id="btnErrReload" type="button">Recargar</button>
             </div>
           </div>
         </section>
+
       </div>
     </main>
   </div>
 
-  <!-- ✅ FAILSAFE GLOBAL (NO depende de app.js):
-       - Emergencia de Loading (ya lo tenías)
-       - FIX del Error overlay “pillado” tras update (close/reload/ESC/click fuera) -->
   <script>
-    (function () {
-      const $ = (id) => document.getElementById(id);
-
-      // ───────────────────────── Loading failsafe (igual, pero robusto) ─────────────────────────
-      const overlayLoading = $("overlayLoading");
-      const loadingSub = $("loadingSub");
-      const loadingHint = $("loadingHint");
-      const btnEmergencyReload = $("btnEmergencyReload");
-      const btnEmergencyRepair = $("btnEmergencyRepair");
-
-      function booted() {
-        return (window.__GRIDROGUE_BOOTED === true) || (window.__GRIDRUNNER_BOOTED === true);
-      }
-
-      function showEmergencyLoading() {
-        if (booted()) return;
-
-        try {
-          if (loadingSub) loadingSub.textContent = "No termina de cargar…";
-          if (loadingHint) loadingHint.textContent = "Usa Recargar o Reparar PWA (borra SW + caches).";
-        } catch (_) {}
-
-        if (btnEmergencyReload) btnEmergencyReload.hidden = false;
-        if (btnEmergencyRepair) btnEmergencyRepair.hidden = false;
-
-        // Mantén el overlay visible para que se vean los botones
-        if (overlayLoading) overlayLoading.hidden = false;
-      }
-
-      setTimeout(showEmergencyLoading, 8000);
-
-      if (btnEmergencyReload) {
-        btnEmergencyReload.addEventListener("click", () => location.reload());
-      }
-
-      if (btnEmergencyRepair) {
-        btnEmergencyRepair.addEventListener("click", () => {
-          const u = new URL(location.href);
-          u.searchParams.set("repair", "1");
-          location.href = u.toString();
-        });
-      }
-
-      // ───────────────────────── Error overlay failsafe (FIX congelado) ─────────────────────────
-      const overlayError = $("overlayError");
-      const btnErrClose = $("btnErrClose");
-      const btnErrReload = $("btnErrReload");
-      const errMsg = $("errMsg");
-
-      function hardUnlockUI() {
-        // Por si algo dejó la UI bloqueada tras error/update
-        try { document.documentElement.style.removeProperty("overflow"); } catch (_) {}
-        try { document.body.style.removeProperty("overflow"); } catch (_) {}
-        try { document.documentElement.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
-        try { document.body.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
-        try { overlayError && overlayError.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
-      }
-
-      function hideErrorOverlay() {
-        if (!overlayError) return;
-        hardUnlockUI();
-        overlayError.hidden = true;
-        overlayError.setAttribute("aria-hidden", "true");
-        // “mata” visualmente aunque el CSS/estado esté raro
-        overlayError.style.display = "none";
-      }
-
-      function showErrorOverlay(message) {
-        if (!overlayError) return;
-        hardUnlockUI();
-        overlayError.hidden = false;
-        overlayError.removeAttribute("aria-hidden");
-        overlayError.style.display = "";
-        if (errMsg && message != null) {
-          try { errMsg.textContent = String(message); } catch (_) {}
-        }
-      }
-
-      // Listeners en capture para ganar a stopPropagation de otros scripts
-      if (btnErrClose) {
-        btnErrClose.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          hideErrorOverlay();
-        }, true);
-      }
-
-      if (btnErrReload) {
-        btnErrReload.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          location.reload();
-        }, true);
-      }
-
-      // Click fuera del panel => cierra
-      if (overlayError) {
-        overlayError.addEventListener("click", (e) => {
-          if (e.target === overlayError) hideErrorOverlay();
-        }, true);
-      }
-
-      // ESC => cierra
-      window.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") hideErrorOverlay();
-      }, true);
-
-      // Helper debug por consola (por si un loop lo reabre)
-      window.__GR_SAFE_HIDE_ERROR = hideErrorOverlay;
-      window.__GR_SAFE_SHOW_ERROR = showErrorOverlay;
-    })();
+    // Legal year (no depende de app.js)
+    (function(){ try{ document.getElementById("legalYear").textContent = String(new Date().getFullYear()); }catch(_){} })();
   </script>
-
-  <!-- ✅ Orden recomendado (defer mantiene el orden y no bloquea render) -->
-  <script src="./rendiment.js?v=1.0.0" defer></script>
-  <script src="./utils.js?v=1.0.0" defer></script>
-  <script src="./localization.js?v=1.0.0" defer></script>
-  <script src="./audio_sys.js?v=1.0.0" defer></script>
-  <script src="./audio.js?v=1.0.0" defer></script>
-  <script src="./auth.js?v=1.0.0" defer></script>
-  <script src="./app.js?v=1.0.0" defer></script>
 </body>
 </html>
