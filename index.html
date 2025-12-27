@@ -1,4 +1,4 @@
-<!-- index.html — Grid Rogue v1.0.0 -->
+<!-- index.html — Grid Rogue v1.0.0 (COMPAT + CLEAN) -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -10,13 +10,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Grid Rogue" />
+  <meta name="application-name" content="Grid Rogue" />
   <meta name="description" content="Grid Rogue — arcade roguelite en cuadrícula con combos, upgrades y runs rápidas." />
 
   <title>Grid Rogue</title>
 
+  <!-- ✅ Version global -->
   <script>window.APP_VERSION = "1.0.0";</script>
 
-  <!-- Repair mode: ?repair (borra SW + caches) y recarga limpio -->
+  <!-- ✅ Repair mode: ?repair (borra SW + caches) y recarga limpio. ?nosw desactiva SW -->
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
@@ -48,6 +50,7 @@
     })();
   </script>
 
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -55,18 +58,24 @@
     rel="stylesheet"
   />
 
+  <!-- PWA -->
   <link rel="manifest" href="./manifest.webmanifest?v=1.0.0" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
+  <!-- Styles -->
   <link rel="stylesheet" href="./styles.css?v=1.0.0" />
 
-  <!-- Scripts base (defer) -->
+  <!-- Scripts (defer, orden garantizado) -->
   <script src="./utils.js?v=1.0.0" defer></script>
   <script src="./localization.js?v=1.0.0" defer></script>
   <script src="./audio.js?v=1.0.0" defer></script>
   <script src="./auth.js?v=1.0.0" defer></script>
+
+  <!-- skills.js (si tu app.js lo usa) ANTES de app.js -->
+  <script src="./skills.js?v=1.0.0" defer></script>
+
   <script src="./app.js?v=1.0.0" defer></script>
 </head>
 
@@ -128,7 +137,7 @@
           <span class="pv">Update</span>
         </span>
 
-        <!-- ocultas, pero tu app.js las usa -->
+        <!-- ocultas, pero app.js las usa -->
         <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
         <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
       </div>
@@ -513,7 +522,9 @@
   </div>
 
   <script>
-    (function(){ try{ document.getElementById("legalYear").textContent = String(new Date().getFullYear()); }catch(_){} })();
+    (function () {
+      try { document.getElementById("legalYear").textContent = String(new Date().getFullYear()); } catch (_) {}
+    })();
   </script>
 </body>
 </html>

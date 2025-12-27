@@ -5,6 +5,13 @@
    - localization.js (window.I18n)
    - auth.js (window.Auth) si existe
    - rendiment.js (window.GRPerf) si existe (opcional)
+
+   v1.0.0 (refactor STABLE):
+   - Refactor de BOOT: separación clara (cacheDOM / initCore / wireUI / startLoop / finalizeSplash)
+   - Hardening: listeners seguros, guards, validaciones, cero redeclaraciones accidentales
+   - PWA/SW: flujo robusto (update pill + applySWUpdateNow + repairPWA) sin “reload loops”
+   - HUD flotante: observers + posicionamiento estable (visualViewport + ResizeObserver)
+   - Mantiene API/ids/DOM esperados para tu index.html + styles.css
 */
 (() => {
   "use strict";
@@ -21,6 +28,12 @@
     if (typeof window.__GRIDRUNNER_BOOTED === "undefined") window.__GRIDRUNNER_BOOTED = false;
     if (typeof window.__GRIDROGUE_BOOTED === "undefined") window.__GRIDROGUE_BOOTED = false;
   } catch (_) {}
+
+  // ───────────────────────── Tiny helpers ─────────────────────────
+  const isFn = (v) => typeof v === "function";
+  const on = (el, ev, fn, opts) => { try { el && el.addEventListener(ev, fn, opts); } catch {} };
+  const off = (el, ev, fn, opts) => { try { el && el.removeEventListener(ev, fn, opts); } catch {} };
+  const raf = (fn) => requestAnimationFrame(fn);
 
   // ───────────────────────── Perf helpers (fallback) ─────────────────────────
   const pNow = (() => {
@@ -211,6 +224,9 @@
     } catch {}
   }
 
+  // DOM refs (necesarias para anti-scroll guards)
+  let overlayOptions = null;
+
   function installAntiScrollGuards() {
     const isScrollableInOptions = (target, event) => {
       try {
@@ -381,24 +397,6 @@
 
   function canvasAR() { return COLS / ROWS; }
 
-  function applyRowsIfNeeded({ forceReset = false } = {}) {
-    const want = desiredRows();
-    if (want === ROWS) return false;
-    ROWS = want;
-
-    if (forceReset) {
-      resetRun(true);
-    } else {
-      if (running && !gameOver) resetRun(true);
-      else {
-        recomputeZone();
-        makeGrid();
-        rerollCombo();
-      }
-    }
-    return true;
-  }
-
   // ───────────────────────── Runtime state ─────────────────────────
   let running = false, paused = false, gameOver = false, inLevelUp = false;
   let score = 0, streak = 0, mult = 1.0, level = 1;
@@ -514,7 +512,7 @@
   let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion;
   let btnOptions, btnPause, btnRestart, btnInstall;
 
-  let overlayLoading, overlayPress, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayOptions, overlayError;
+  let overlayLoading, overlayPress, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayError;
   let btnPressStart, pressMeta;
   let pillModeVal, railCanvasEl;
 
@@ -660,7 +658,7 @@
 
   function scheduleHudStatusPosition() {
     if (_hudPosRAF) return;
-    _hudPosRAF = requestAnimationFrame(() => {
+    _hudPosRAF = raf(() => {
       _hudPosRAF = 0;
       positionHudStatus();
     });
@@ -766,8 +764,8 @@
         }
       }
 
-      window.visualViewport?.addEventListener?.("resize", scheduleHudStatusPosition, { passive: true });
-      window.visualViewport?.addEventListener?.("scroll", scheduleHudStatusPosition, { passive: true });
+      on(window.visualViewport, "resize", scheduleHudStatusPosition, { passive: true });
+      on(window.visualViewport, "scroll", scheduleHudStatusPosition, { passive: true });
 
       document.fonts?.ready?.then?.(() => scheduleHudStatusPosition()).catch?.(() => {});
     } catch {}
@@ -1036,6 +1034,24 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     c = clampInt(c, 0, COLS - 1);
     if (!grid[r]) grid[r] = genRow();
     grid[r][c] = CellType.Empty;
+  }
+
+  function applyRowsIfNeeded({ forceReset = false } = {}) {
+    const want = desiredRows();
+    if (want === ROWS) return false;
+    ROWS = want;
+
+    if (forceReset) {
+      resetRun(true);
+    } else {
+      if (running && !gameOver) resetRun(true);
+      else {
+        recomputeZone();
+        makeGrid();
+        rerollCombo();
+      }
+    }
+    return true;
   }
 
   // ───────────────────────── Gameplay ─────────────────────────
@@ -1429,9 +1445,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
   let currentUpgradeChoices = [];
 
-  function pauseForOverlay(on) {
+  function pauseForOverlay(onv) {
     if (!running || gameOver) return;
-    paused = !!on;
+    paused = !!onv;
     AudioSys.duckMusic(paused || inLevelUp || gameOver);
   }
 
@@ -1682,8 +1698,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         closeUpgrade();
       };
 
-      card.addEventListener("click", () => pickThis());
-      card.addEventListener("keydown", (e) => {
+      on(card, "click", () => pickThis());
+      on(card, "keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickThis(); }
       });
 
@@ -2104,7 +2120,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   function bindInputs() {
-    window.addEventListener("keydown", (e) => {
+    on(window, "keydown", (e) => {
       const k = e.key;
       AudioSys.unlock();
 
@@ -2117,22 +2133,22 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       if (k === "ArrowDown" || k === "s" || k === "S") move(0, +1);
     });
 
-    btnLeft?.addEventListener("click", () => move(-1, 0));
-    btnRight?.addEventListener("click", () => move(+1, 0));
-    btnUp?.addEventListener("click", () => move(0, -1));
-    btnDown?.addEventListener("click", () => move(0, +1));
+    on(btnLeft, "click", () => move(-1, 0));
+    on(btnRight, "click", () => move(+1, 0));
+    on(btnUp, "click", () => move(0, -1));
+    on(btnDown, "click", () => move(0, +1));
 
     if (!canvas || !gameArea) return;
 
     const blockIfGame = (e) => { if (e.cancelable) e.preventDefault(); };
-    gameArea.addEventListener("wheel", blockIfGame, { passive: false });
-    gameArea.addEventListener("touchmove", blockIfGame, { passive: false });
-    gameArea.addEventListener("gesturestart", blockIfGame, { passive: false });
-    gameArea.addEventListener("gesturechange", blockIfGame, { passive: false });
+    on(gameArea, "wheel", blockIfGame, { passive: false });
+    on(gameArea, "touchmove", blockIfGame, { passive: false });
+    on(gameArea, "gesturestart", blockIfGame, { passive: false });
+    on(gameArea, "gesturechange", blockIfGame, { passive: false });
 
     let sx = 0, sy = 0, st = 0, active = false;
 
-    canvas.addEventListener("pointerdown", (e) => {
+    on(canvas, "pointerdown", (e) => {
       AudioSys.unlock();
       if (!canControl()) return;
       active = true;
@@ -2158,8 +2174,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       }
     };
 
-    canvas.addEventListener("pointerup", endSwipe, { passive: true });
-    canvas.addEventListener("pointercancel", () => { active = false; }, { passive: true });
+    on(canvas, "pointerup", endSwipe, { passive: true });
+    on(canvas, "pointercancel", () => { active = false; }, { passive: true });
   }
 
   // ───────────────────────── UI ─────────────────────────
@@ -2177,7 +2193,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     overlayShow(overlayOptions);
     pauseForOverlay(true);
     try {
-      requestAnimationFrame(() => {
+      raf(() => {
         const body =
           overlayOptions?.querySelector?.("#optionsBody") ||
           overlayOptions?.querySelector?.(".panel") ||
@@ -2185,6 +2201,13 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         if (body) body.scrollTop = 0;
       });
     } catch {}
+    AudioSys.sfx("ui");
+    updateStatusHUD();
+  }
+
+  function hideOptions() {
+    overlayHide(overlayOptions);
+    if (!inLevelUp && !gameOver && running) pauseForOverlay(false);
     AudioSys.sfx("ui");
     updateStatusHUD();
   }
@@ -2226,20 +2249,13 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       proceed();
     };
 
-    window.addEventListener("keydown", onAny, { once: true });
-    window.addEventListener("pointerdown", onAny, { once: true, passive: true });
-    window.addEventListener("touchstart", onAny, { once: true, passive: true });
-  }
-
-  function hideOptions() {
-    overlayHide(overlayOptions);
-    if (!inLevelUp && !gameOver && running) pauseForOverlay(false);
-    AudioSys.sfx("ui");
-    updateStatusHUD();
+    on(window, "keydown", onAny, { once: true });
+    on(window, "pointerdown", onAny, { once: true, passive: true });
+    on(window, "touchstart", onAny, { once: true, passive: true });
   }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
-  let pendingReload = false; // ✅ (FIX) único, sin redeclararlo luego
+  let pendingReload = false; // ✅ único
 
   function resetRun(showMenu) {
     running = false;
@@ -2580,19 +2596,19 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     if (btnInstall) btnInstall.hidden = true;
     if (isStandalone()) return;
 
-    window.addEventListener("beforeinstallprompt", (e) => {
+    on(window, "beforeinstallprompt", (e) => {
       if (isStandalone()) return;
       e.preventDefault();
       deferredPrompt = e;
       if (btnInstall) btnInstall.hidden = false;
     });
 
-    window.addEventListener("appinstalled", () => {
+    on(window, "appinstalled", () => {
       deferredPrompt = null;
       if (btnInstall) btnInstall.hidden = true;
     });
 
-    btnInstall?.addEventListener("click", async () => {
+    on(btnInstall, "click", async () => {
       AudioSys.unlock();
       if (!deferredPrompt) return;
       btnInstall.disabled = true;
@@ -2605,7 +2621,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
   function wireUpdatePill() {
     if (!pillUpdate) return;
-    pillUpdate.addEventListener("click", () => {
+    on(pillUpdate, "click", () => {
       AudioSys.unlock();
       applySWUpdateNow();
     });
@@ -2614,7 +2630,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   function setupSWMessaging() {
     if (!("serviceWorker" in navigator)) return;
 
-    navigator.serviceWorker.addEventListener("message", (ev) => {
+    on(navigator.serviceWorker, "message", (ev) => {
       const d = ev?.data;
       if (!d || !d.type) return;
 
@@ -2637,8 +2653,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
   async function setupPWA() {
     setOfflinePill();
-    window.addEventListener("online", setOfflinePill, { passive: true });
-    window.addEventListener("offline", setOfflinePill, { passive: true });
+    on(window, "online", setOfflinePill, { passive: true });
+    on(window, "offline", setOfflinePill, { passive: true });
 
     setupInstallUI();
     wireUpdatePill();
@@ -2738,7 +2754,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       if (btnStart) btnStart.disabled = !ok;
     };
 
-    profileSelect.addEventListener("change", () => {
+    on(profileSelect, "change", () => {
       AudioSys.unlock();
       if (profileSelect.value !== "__new__") {
         Auth.setActiveProfile?.(profileSelect.value);
@@ -2749,14 +2765,14 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       refreshNewWrap();
     });
 
-    btnNewProfile?.addEventListener("click", () => {
+    on(btnNewProfile, "click", () => {
       AudioSys.unlock();
       profileSelect.value = "__new__";
       refreshNewWrap();
       startName?.focus();
     });
 
-    startName?.addEventListener("input", refreshNewWrap);
+    on(startName, "input", refreshNewWrap);
     refreshNewWrap();
   }
 
@@ -2875,6 +2891,126 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     hudFloat = $("hudFloat");
   }
 
+  function wireUI() {
+    on(btnPause, "click", togglePause);
+    on(btnOptions, "click", showOptions);
+
+    on(btnResume, "click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); updateStatusHUD(); });
+    on(btnQuitToStart, "click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused, 120); resetRun(true); });
+    on(btnPausedRestart, "click", () => { AudioSys.sfx("ui"); resetRun(false); startRun(); });
+
+    on(btnRetry, "click", () => { resetRun(false); startRun(); });
+    on(btnBackToStart, "click", () => { resetRun(true); });
+    on(btnRestart, "click", () => { resetRun(false); startRun(); });
+
+    on(btnCloseOptions, "click", hideOptions);
+    on(overlayOptions, "click", (e) => { if (e.target === overlayOptions) hideOptions(); });
+
+    on(optSprites, "change", () => { settings.useSprites = !!optSprites.checked; saveSettings(); pushPrefsToAuth(); });
+    on(optVibration, "change", () => { settings.vibration = !!optVibration.checked; saveSettings(); pushPrefsToAuth(); });
+    on(optDpad, "change", () => { settings.showDpad = !!optDpad.checked; applySettingsToUI(); saveSettings(); pushPrefsToAuth(); });
+
+    on(optFx, "input", () => {
+      settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
+      if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
+      saveSettings();
+      pushPrefsToAuth();
+    });
+
+    on(optMusicOn, "change", () => { AudioSys.unlock(); settings.musicOn = !!optMusicOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+    on(optSfxOn, "change", () => { AudioSys.unlock(); settings.sfxOn = !!optSfxOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+
+    on(optMusicVol, "input", () => {
+      AudioSys.unlock();
+      settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.6"), 0, 1);
+      if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
+      applyAudioSettingsNow();
+      saveSettings();
+      pushPrefsToAuth();
+    });
+
+    on(optSfxVol, "input", () => {
+      AudioSys.unlock();
+      settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.9"), 0, 1);
+      if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
+      applyAudioSettingsNow();
+      saveSettings();
+      pushPrefsToAuth();
+    });
+
+    on(optMuteAll, "change", () => { AudioSys.unlock(); settings.muteAll = !!optMuteAll.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
+
+    on(btnTestAudio, "click", async () => {
+      await AudioSys.unlock();
+      applyAudioSettingsNow();
+      AudioSys.startMusic();
+      AudioSys.sfx("coin");
+      showToast(I18n.t("audio_ok"), 700);
+    });
+
+    if (optLang) {
+      on(optLang, "change", () => {
+        const v = String(optLang.value || "auto");
+        settings.lang = v;
+        saveSettings();
+        pushPrefsToAuth();
+
+        I18n.setLang(settings.lang);
+        applySettingsToUI();
+
+        updatePillsNow();
+        renderComboUI();
+        if (overlayUpgrades && !overlayUpgrades.hidden) renderUpgradeChoices();
+        if (brandSub) brandSub.textContent = I18n.t("app_ready");
+      });
+    }
+
+    on(btnRepairPWA, "click", repairPWA);
+
+    on(btnClearLocal, "click", () => {
+      const ok = confirm(I18n.t("confirm_clear_local"));
+      if (!ok) return;
+      localStorage.clear();
+      location.reload();
+    });
+
+    on(btnErrClose, "click", () => overlayHide(overlayError));
+    on(btnErrReload, "click", () => location.reload());
+
+    on(btnReroll, "click", rerollUpgrades);
+    on(btnSkipUpgrade, "click", () => { closeUpgrade(); showToast(I18n.t("toast_skip"), 650); AudioSys.sfx("ui"); });
+
+    on(btnStart, "click", async () => {
+      await AudioSys.unlock();
+
+      if (Auth && profileSelect) {
+        if (profileSelect.value === "__new__") {
+          const nm = (startName?.value || "").trim();
+          const p = Auth.createProfile?.(nm);
+          if (!p) { showToast(I18n.t("name_min"), 900); return; }
+          syncFromAuth();
+          initAuthUI();
+        } else {
+          Auth.setActiveProfile?.(profileSelect.value);
+          syncFromAuth();
+        }
+      } else {
+        const nm = (startName?.value || "").trim().slice(0, 16);
+        if (nm.length >= 2) {
+          playerName = nm;
+          writeLS(NAME_KEY, playerName);
+          writeLS(NAME_KEY_OLD, playerName);
+        }
+      }
+
+      updatePillsNow();
+      await startRun();
+    });
+
+    on(pillPlayer, "click", () => resetRun(true));
+    on(pillPlayer, "keydown", (e) => { if (e.key === "Enter" || e.key === " ") resetRun(true); });
+  }
+
   async function boot() {
     try {
       const bootStartedAt = pNow();
@@ -2913,128 +3049,11 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       applySettingsToUI();
 
       resize();
-      window.addEventListener("resize", resize, { passive: true });
-      window.visualViewport?.addEventListener?.("resize", resize, { passive: true });
+      on(window, "resize", resize, { passive: true });
+      on(window.visualViewport, "resize", resize, { passive: true });
 
       bindInputs();
-
-      btnPause?.addEventListener("click", togglePause);
-      btnOptions?.addEventListener("click", showOptions);
-
-      btnResume?.addEventListener("click", () => { overlayHide(overlayPaused); pauseForOverlay(false); AudioSys.sfx("ui"); updateStatusHUD(); });
-      btnQuitToStart?.addEventListener("click", async () => { AudioSys.sfx("ui"); await overlayFadeOut(overlayPaused, 120); resetRun(true); });
-      btnPausedRestart?.addEventListener("click", () => { AudioSys.sfx("ui"); resetRun(false); startRun(); });
-
-      btnRetry?.addEventListener("click", () => { resetRun(false); startRun(); });
-      btnBackToStart?.addEventListener("click", () => { resetRun(true); });
-      btnRestart?.addEventListener("click", () => { resetRun(false); startRun(); });
-
-      btnCloseOptions?.addEventListener("click", hideOptions);
-      overlayOptions?.addEventListener("click", (e) => { if (e.target === overlayOptions) hideOptions(); });
-
-      optSprites?.addEventListener("change", () => { settings.useSprites = !!optSprites.checked; saveSettings(); pushPrefsToAuth(); });
-      optVibration?.addEventListener("change", () => { settings.vibration = !!optVibration.checked; saveSettings(); pushPrefsToAuth(); });
-      optDpad?.addEventListener("change", () => { settings.showDpad = !!optDpad.checked; applySettingsToUI(); saveSettings(); pushPrefsToAuth(); });
-
-      optFx?.addEventListener("input", () => {
-        settings.fx = clamp(parseFloat(optFx.value || "1"), 0.4, 1.25);
-        if (optFxValue) optFxValue.textContent = settings.fx.toFixed(2);
-        saveSettings();
-        pushPrefsToAuth();
-      });
-
-      optMusicOn?.addEventListener("change", () => { AudioSys.unlock(); settings.musicOn = !!optMusicOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
-      optSfxOn?.addEventListener("change", () => { AudioSys.unlock(); settings.sfxOn = !!optSfxOn.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
-
-      optMusicVol?.addEventListener("input", () => {
-        AudioSys.unlock();
-        settings.musicVol = clamp(parseFloat(optMusicVol.value || "0.6"), 0, 1);
-        if (optMusicVolValue) optMusicVolValue.textContent = settings.musicVol.toFixed(2);
-        applyAudioSettingsNow();
-        saveSettings();
-        pushPrefsToAuth();
-      });
-
-      optSfxVol?.addEventListener("input", () => {
-        AudioSys.unlock();
-        settings.sfxVol = clamp(parseFloat(optSfxVol.value || "0.9"), 0, 1);
-        if (optSfxVolValue) optSfxVolValue.textContent = settings.sfxVol.toFixed(2);
-        applyAudioSettingsNow();
-        saveSettings();
-        pushPrefsToAuth();
-      });
-
-      optMuteAll?.addEventListener("change", () => { AudioSys.unlock(); settings.muteAll = !!optMuteAll.checked; applyAudioSettingsNow(); saveSettings(); pushPrefsToAuth(); });
-
-      btnTestAudio?.addEventListener("click", async () => {
-        await AudioSys.unlock();
-        applyAudioSettingsNow();
-        AudioSys.startMusic();
-        AudioSys.sfx("coin");
-        showToast(I18n.t("audio_ok"), 700);
-      });
-
-      if (optLang) {
-        optLang.addEventListener("change", () => {
-          const v = String(optLang.value || "auto");
-          settings.lang = v;
-          saveSettings();
-          pushPrefsToAuth();
-
-          I18n.setLang(settings.lang);
-          applySettingsToUI();
-
-          updatePillsNow();
-          renderComboUI();
-          if (overlayUpgrades && !overlayUpgrades.hidden) renderUpgradeChoices();
-          if (brandSub) brandSub.textContent = I18n.t("app_ready");
-        });
-      }
-
-      btnRepairPWA?.addEventListener("click", repairPWA);
-
-      btnClearLocal?.addEventListener("click", () => {
-        const ok = confirm(I18n.t("confirm_clear_local"));
-        if (!ok) return;
-        localStorage.clear();
-        location.reload();
-      });
-
-      btnErrClose?.addEventListener("click", () => overlayHide(overlayError));
-      btnErrReload?.addEventListener("click", () => location.reload());
-
-      btnReroll?.addEventListener("click", rerollUpgrades);
-      btnSkipUpgrade?.addEventListener("click", () => { closeUpgrade(); showToast(I18n.t("toast_skip"), 650); AudioSys.sfx("ui"); });
-
-      btnStart?.addEventListener("click", async () => {
-        await AudioSys.unlock();
-
-        if (Auth && profileSelect) {
-          if (profileSelect.value === "__new__") {
-            const nm = (startName?.value || "").trim();
-            const p = Auth.createProfile?.(nm);
-            if (!p) { showToast(I18n.t("name_min"), 900); return; }
-            syncFromAuth();
-            initAuthUI();
-          } else {
-            Auth.setActiveProfile?.(profileSelect.value);
-            syncFromAuth();
-          }
-        } else {
-          const nm = (startName?.value || "").trim().slice(0, 16);
-          if (nm.length >= 2) {
-            playerName = nm;
-            writeLS(NAME_KEY, playerName);
-            writeLS(NAME_KEY_OLD, playerName);
-          }
-        }
-
-        updatePillsNow();
-        await startRun();
-      });
-
-      pillPlayer?.addEventListener("click", () => resetRun(true));
-      pillPlayer?.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") resetRun(true); });
+      wireUI();
 
       if (loadingSub) loadingSub.textContent = I18n.t("app_pwa");
       await setupPWA();
@@ -3064,7 +3083,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         updatePillsNow();
       }, wait);
 
-      document.addEventListener("visibilitychange", () => {
+      on(document, "visibilitychange", () => {
         if (document.hidden && running && !gameOver && !inLevelUp) {
           pauseForOverlay(true);
           overlayShow(overlayPaused);
