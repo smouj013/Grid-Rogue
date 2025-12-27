@@ -1,4 +1,4 @@
-/* app.js — Grid Rogue v1.0.0 (STABLE+FULLSCREEN + AUDIO + I18N + PWA)
+/* app.js — Grid Rogue v1.1.0 (STABLE+FULLSCREEN + AUDIO + I18N + PWA)
    ✅ Compatible con:
    - utils.js (window.GRUtils)
    - audio.js (window.AudioSys)
@@ -6,22 +6,20 @@
    - auth.js (window.Auth) si existe
    - rendiment.js (window.GRPerf) si existe (opcional)
 
-   v1.0.0 (refactor STABLE):
-   - Refactor de BOOT: separación clara (cacheDOM / initCore / wireUI / startLoop / finalizeSplash)
-   - Hardening: listeners seguros, guards, validaciones, cero redeclaraciones accidentales
-   - PWA/SW: flujo robusto (update pill + applySWUpdateNow + repairPWA) sin “reload loops”
-   - HUD flotante: observers + posicionamiento estable (visualViewport + ResizeObserver)
-   - Mantiene API/ids/DOM esperados para tu index.html + styles.css
+   v1.1.0 (STABLE patch):
+   - PWA/SW: anti “reload loop” endurecido (controllerchange + tags + cooldown)
+   - Update pill: aplica update sin forzar reload durante run (espera a GameOver o click)
+   - Robustez extra en resize/viewport + observers (sin romper DOM/ids)
 */
 (() => {
   "use strict";
 
   // ───────────────────────── Guard anti doble carga ─────────────────────────
   const g = (typeof globalThis !== "undefined") ? globalThis : window;
-  const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V1000";
+  const LOAD_GUARD = "__GRIDROGUE_APPJS_LOADED_V1100";
   try { if (g && g[LOAD_GUARD]) return; if (g) g[LOAD_GUARD] = true; } catch (_) {}
 
-  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "1.0.0");
+  const APP_VERSION = String((typeof window !== "undefined" && window.APP_VERSION) || "1.1.0");
 
   // Compat flags (failsafe/index antiguo) — no pisar si ya existen
   try {
@@ -2255,7 +2253,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   // ───────────────────────── Run lifecycle ─────────────────────────
-  let pendingReload = false; // ✅ único
+  let pendingReload = false;
 
   function resetRun(showMenu) {
     running = false;
@@ -2482,11 +2480,39 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   let swActivatedVersion = null;
 
   const SW_RELOAD_TAG = "gridrogue_sw_reload_tag_v1";
+  const SW_RELOAD_COOLDOWN_MS = 9000;
 
   function isStandalone() {
     return (window.matchMedia?.("(display-mode: standalone)")?.matches) ||
       (window.navigator.standalone === true) ||
       (document.referrer || "").includes("android-app://");
+  }
+
+  function getReloadStamp() {
+    try {
+      const a = sessionStorage.getItem(SW_RELOAD_TAG);
+      const t = parseInt(a || "0", 10) || 0;
+      return t;
+    } catch { return 0; }
+  }
+
+  function markReloadStamp() {
+    const now = Date.now();
+    try { sessionStorage.setItem(SW_RELOAD_TAG, String(now)); } catch {}
+    try { writeLS(SW_RELOAD_KEY, String(now)); writeLS(SW_RELOAD_KEY_OLD, String(now)); } catch {}
+  }
+
+  function reloadedTooRecently() {
+    const now = Date.now();
+    const ss = getReloadStamp();
+    if (ss && (now - ss) < SW_RELOAD_COOLDOWN_MS) return true;
+
+    try {
+      const ls = parseInt(readLS(SW_RELOAD_KEY) || readLS(SW_RELOAD_KEY_OLD) || "0", 10) || 0;
+      if (ls && (now - ls) < SW_RELOAD_COOLDOWN_MS) return true;
+    } catch {}
+
+    return false;
   }
 
   function markUpdateAvailable(msg = null) {
@@ -2507,6 +2533,9 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       showToast(I18n.t("update_apply_end"), 1200);
       return;
     }
+
+    if (reloadedTooRecently()) return;
+    markReloadStamp();
     location.reload();
   }
 
@@ -2668,7 +2697,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
 
     try {
       const swUrl = new URL("./sw.js", location.href);
-      swUrl.searchParams.set("v", String(APP_VERSION || "1.0.0"));
+      swUrl.searchParams.set("v", String(APP_VERSION || "1.1.0"));
 
       swReg = await navigator.serviceWorker.register(swUrl.toString(), {
         scope: "./",
@@ -2696,10 +2725,12 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       });
 
       navigator.serviceWorker.addEventListener("controllerchange", () => {
+        // v1.1.0: anti-loop robusto
         if (swReloadGuard) return;
         swReloadGuard = true;
 
-        try { sessionStorage.setItem(SW_RELOAD_TAG, String(Date.now())); } catch {}
+        if (reloadedTooRecently()) return;
+        markReloadStamp();
 
         if (!hadControllerAtBoot) {
           clearUpdatePill();

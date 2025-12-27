@@ -1,4 +1,4 @@
-<!-- index.html — Grid Rogue v1.0.0 (COMPAT + CLEAN) -->
+<!-- index.html — Grid Rogue v1.1.0 -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -10,15 +10,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Grid Rogue" />
-  <meta name="application-name" content="Grid Rogue" />
-  <meta name="description" content="Grid Rogue — arcade roguelite en cuadrícula con combos, upgrades y runs rápidas." />
+  <meta name="description" content="Grid Rogue — arcade roguelite en cuadrícula con combos, upgrades, cofres y tiendas." />
 
   <title>Grid Rogue</title>
 
-  <!-- ✅ Version global -->
-  <script>window.APP_VERSION = "1.0.0";</script>
+  <script>window.APP_VERSION = "1.1.0";</script>
 
-  <!-- ✅ Repair mode: ?repair (borra SW + caches) y recarga limpio. ?nosw desactiva SW -->
+  <!-- Repair mode: ?repair (borra SW + caches) y recarga limpio -->
   <script>
     (function () {
       const qs = new URLSearchParams(location.search);
@@ -50,7 +48,6 @@
     })();
   </script>
 
-  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -58,25 +55,22 @@
     rel="stylesheet"
   />
 
-  <!-- PWA -->
-  <link rel="manifest" href="./manifest.webmanifest?v=1.0.0" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.1.0" />
   <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" />
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon-180.png" />
 
-  <!-- Styles -->
-  <link rel="stylesheet" href="./styles.css?v=1.0.0" />
+  <link rel="stylesheet" href="./styles.css?v=1.1.0" />
 
-  <!-- Scripts (defer, orden garantizado) -->
-  <script src="./utils.js?v=1.0.0" defer></script>
-  <script src="./localization.js?v=1.0.0" defer></script>
-  <script src="./audio.js?v=1.0.0" defer></script>
-  <script src="./auth.js?v=1.0.0" defer></script>
+  <!-- Scripts base (defer) -->
+  <script src="./utils.js?v=1.1.0" defer></script>
+  <script src="./localization.js?v=1.1.0" defer></script>
+  <script src="./audio.js?v=1.1.0" defer></script>
+  <script src="./auth.js?v=1.1.0" defer></script>
 
-  <!-- skills.js (si tu app.js lo usa) ANTES de app.js -->
-  <script src="./skills.js?v=1.0.0" defer></script>
-
-  <script src="./app.js?v=1.0.0" defer></script>
+  <!-- NUEVOS -->
+  <script src="./skills.js?v=1.1.0" defer></script>
+  <script src="./app.js?v=1.1.0" defer></script>
 </head>
 
 <body>
@@ -90,7 +84,7 @@
         <div class="brandDot" aria-hidden="true"></div>
         <div class="brandText">
           <div class="brandTitle">Grid Rogue</div>
-          <div class="brandSub" id="brandSub">Corazones • buffs • upgrades • combos</div>
+          <div class="brandSub" id="brandSub">Corazones • buffs • upgrades • combos • cofres • tienda</div>
         </div>
       </div>
 
@@ -120,12 +114,12 @@
           <span class="pv">1.00</span>
         </span>
 
-        <span class="pill mini pillBtn subtle" id="pillPlayer" title="Abrir menú" role="button" tabindex="0">
+        <span class="pill mini pillBtn subtle" id="pillPlayer" title="Catálogo (skills)" role="button" tabindex="0">
           <span class="ms" aria-hidden="true">person</span>
           <span class="pv">Jugador</span>
         </span>
 
-        <span class="pill subtle mini" id="pillVersion" title="Versión">v1.0.0</span>
+        <span class="pill subtle mini" id="pillVersion" title="Versión">v1.1.0</span>
 
         <span class="pill subtle mini" id="pillOffline" hidden title="Estado de red">
           <span class="ms" aria-hidden="true">cloud_off</span>
@@ -137,7 +131,7 @@
           <span class="pv">Update</span>
         </span>
 
-        <!-- ocultas, pero app.js las usa -->
+        <!-- ocultas, pero tu app.js puede usarlas -->
         <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
         <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
       </div>
@@ -293,7 +287,7 @@
               <div class="splashLogo" aria-hidden="true"><span class="ms">grid_view</span></div>
               <div class="splashText">
                 <div class="title">Grid Rogue</div>
-                <div class="sub">Arcade roguelite en cuadrícula • runs cortas • upgrades</div>
+                <div class="sub">Arcade roguelite • combos • cofres • tienda • catálogo</div>
               </div>
             </div>
 
@@ -331,7 +325,7 @@
 
               <div class="tiny muted helpText">
                 Controles: WASD / Flechas / Swipe (móvil).<br />
-                Consejo: completa secuencias para subir el multiplicador.
+                Consejo: abre cofres con llaves y compra en tiendas con puntos.
               </div>
             </div>
           </div>
@@ -388,7 +382,6 @@
 
             <div class="panelActions">
               <button class="btn" id="btnBackToStart" type="button">Menú</button>
-              <button class="btn" id="btnRestart" type="button" hidden>Reiniciar</button>
               <button class="btn primary" id="btnRetry" type="button">Reintentar</button>
             </div>
           </div>
@@ -522,9 +515,7 @@
   </div>
 
   <script>
-    (function () {
-      try { document.getElementById("legalYear").textContent = String(new Date().getFullYear()); } catch (_) {}
-    })();
+    (function(){ try{ document.getElementById("legalYear").textContent = String(new Date().getFullYear()); }catch(_){} })();
   </script>
 </body>
 </html>
