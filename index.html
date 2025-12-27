@@ -1,4 +1,4 @@
-<!-- index.html — Grid Rogue v1.1.0 -->
+<!-- index.html — Grid Rogue v1.1.0 (CORREGIDA) -->
 <!doctype html>
 <html lang="es" data-theme="dark">
 <head>
@@ -48,7 +48,7 @@
     })();
   </script>
 
-  <!-- VH fix (suave) para móvil: no interfiere con tu app.js si ya lo hace -->
+  <!-- VH fix (suave) para móvil -->
   <script>
     (function () {
       try {
@@ -83,7 +83,7 @@
   <script src="./audio.js?v=1.1.0" defer></script>
   <script src="./auth.js?v=1.1.0" defer></script>
 
-  <!-- NUEVOS -->
+  <!-- Skills + App -->
   <script src="./skills.js?v=1.1.0" defer></script>
   <script src="./app.js?v=1.1.0" defer></script>
 </head>
@@ -146,7 +146,6 @@
           <span class="pv">Update</span>
         </span>
 
-        <!-- ocultas, pero tu app.js puede usarlas -->
         <span class="pill" id="pillStreak" hidden><span class="pv">0</span></span>
         <span class="pill" id="pillSpeed" hidden><span class="pv">0.0</span></span>
       </div>
@@ -222,7 +221,6 @@
             </div>
           </div>
 
-          <!-- D-PAD (app.js controla hidden según opt/móvil) -->
           <div class="dpad" id="dpad" hidden>
             <button class="dpadBtn" id="btnUp" type="button" aria-label="Arriba">
               <span class="ms" aria-hidden="true">keyboard_arrow_up</span>
@@ -241,7 +239,6 @@
           </div>
         </div>
 
-        <!-- LOADING -->
         <section class="overlay" id="overlayLoading">
           <div class="panel loadingPanel">
             <div class="splash">
@@ -271,7 +268,6 @@
           </div>
         </section>
 
-        <!-- PRESS -->
         <section class="overlay" id="overlayPress" hidden>
           <div class="panel pressPanel">
             <div class="splash splashCompact">
@@ -296,7 +292,6 @@
           </div>
         </section>
 
-        <!-- START -->
         <section class="overlay" id="overlayStart" hidden>
           <div class="panel wide startPanel">
             <div class="splash splashCompact">
@@ -347,7 +342,6 @@
           </div>
         </section>
 
-        <!-- PAUSED -->
         <section class="overlay" id="overlayPaused" hidden>
           <div class="panel">
             <div class="panelHead"><div class="h2">Pausa</div></div>
@@ -359,7 +353,6 @@
           </div>
         </section>
 
-        <!-- UPGRADES -->
         <section class="overlay" id="overlayUpgrades" hidden>
           <div class="panel wide upgradesPanel">
             <div class="panelHead">
@@ -381,7 +374,6 @@
           </div>
         </section>
 
-        <!-- GAME OVER -->
         <section class="overlay" id="overlayGameOver" hidden>
           <div class="panel">
             <div class="panelHead"><div class="h2">Game Over</div></div>
@@ -403,7 +395,6 @@
           </div>
         </section>
 
-        <!-- OPTIONS -->
         <section class="overlay" id="overlayOptions" hidden>
           <div class="panel wide optionsPanel">
             <div class="panelHead">
@@ -509,7 +500,6 @@
           </div>
         </section>
 
-        <!-- ERROR -->
         <section class="overlay" id="overlayError" hidden>
           <div class="panel">
             <div class="panelHead">

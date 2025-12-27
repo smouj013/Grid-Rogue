@@ -1,14 +1,6 @@
-/* skills.js — Grid Rogue v1.1.0 (Upgrades/Skills Pack + DISCOVERY + SHOP/CHEST)
-   ✅ Integra con app.js vía:
-      const Skills = window.GRSkills.create(api, pickedCount)
-      Skills.chooseLevelUp({ level, n })
-      Skills.chooseShop({ level, n })
-      Skills.chooseChest({ level, n })
-      Skills.price(u, level)
-      Skills.pick(u)  // marca pick + descubre + aplica u.apply()
-
-   - No depende de I18n (pero si existe, puede usarse desde app.js)
-   - Discovery: skills secretas no salen en level-up hasta descubrirse (shop/chest o pick previo)
+/* skills.js — Grid Rogue v1.1.0
+   Upgrades/Skills Pack + Discovery + Shop/Chest
+   ✅ Integra con app.js vía window.GRSkills.create(api, pickedCount)
 */
 (() => {
   "use strict";
@@ -75,7 +67,6 @@
     if (!api || typeof api !== "object") throw new Error("GRSkills.create(api, pickedCount): falta api");
     const picks = pickedCount instanceof Map ? pickedCount : new Map();
     const discovered = (api.discoveredSet instanceof Set) ? api.discoveredSet : new Set();
-
     const onDiscover = (typeof api.onDiscover === "function") ? api.onDiscover : null;
 
     function getPickCount(id) { return (picks.get(id) || 0) | 0; }
@@ -84,7 +75,7 @@
       if (!k) return;
       if (discovered.has(k)) return;
       discovered.add(k);
-      try { onDiscover && onDiscover(k); } catch {}
+      try { onDiscover && onDiscover(k); } catch (_) {}
     }
     function isDiscovered(id) { return discovered.has(String(id || "")); }
 
@@ -98,7 +89,7 @@
         weight: 10,
         max: 999,
         unlockAt: 1,
-        secret: false,   // si true: NO sale en level-up hasta descubrirse (shop/chest/pick)
+        secret: false,
         price: 120,
         icon: "",
         apply: () => {},
@@ -107,7 +98,6 @@
       return Object.freeze(d);
     }
 
-    // Helpers de stats contra api (api usa getters/setters en app.js)
     const _clamp = api.clamp || clamp;
     const _clampInt = api.clampInt || clampInt;
 
@@ -120,12 +110,9 @@
       api[key] = _clamp(v, (min ?? -1e9), (max ?? 1e9));
     };
 
-    // ───────────────────────── Catálogo (65+ skills) ─────────────────────────
     const Skills = [];
-
     const add = (d) => Skills.push(mk(d));
 
-    // DEFENSA / SUPERVIVENCIA
     add({ id:"shield_1", name:"Escudo +1", desc:"Ganas 1 escudo. Un escudo bloquea 1 KO.", tag:"Defensa",
       rarity:"common", weight:12, max:18, unlockAt:1, price:90,
       apply(){ incInt("shields", +1, 0, 999); api.updateStatusHUD?.(); } });
@@ -196,7 +183,6 @@
       rarity:"legendary", weight:1.8, max:2, unlockAt:20, price:680, secret:true,
       apply(){ incInt("revives", +1, 0, 9); api.updateStatusHUD?.(); } });
 
-    // MAGNET (QoL)
     add({ id:"mag_1", name:"Imán I", desc:"Atrae recompensas cercanas (nivel 1). +12s.", tag:"QoL",
       rarity:"rare", weight:7, max:1, unlockAt:6, price:220,
       apply(){ api.magnet = Math.max(api.magnet|0, 1); incNum("magnetTime", +12, 0, 999); api.updateStatusHUD?.(); } });
@@ -217,7 +203,6 @@
       rarity:"rare", weight:6, max:6, unlockAt:16, price:240,
       apply(){ incNum("magnetTime", +14, 0, 999); api.updateStatusHUD?.(); } });
 
-    // TRAMPAS
     add({ id:"trap_resist_1", name:"Resistencia a Trampas", desc:"Reduce el castigo de trampas (stack).", tag:"Defensa",
       rarity:"common", weight:10, max:6, unlockAt:1, price:120,
       apply(){ incInt("trapResist", +1, 0, 12); api.updateStatusHUD?.(); } });
@@ -226,7 +211,6 @@
       rarity:"epic", weight:3.2, max:4, unlockAt:18, price:420, secret:true,
       apply(){ incNum("trapHealChance", +0.20, 0, 0.95); api.updateStatusHUD?.(); } });
 
-    // ZONA / MOVILIDAD
     add({ id:"zone_1", name:"Zona +1", desc:"Tu zona de movimiento crece (+1).", tag:"Movilidad",
       rarity:"epic", weight:4, max:3, unlockAt:10, price:380,
       apply(){ incInt("zoneExtra", +1, 0, 9); api.recomputeZone?.(); api.updateStatusHUD?.(); } });
@@ -235,7 +219,6 @@
       rarity:"legendary", weight:1.8, max:2, unlockAt:22, price:700, secret:true,
       apply(){ incInt("zoneExtra", +2, 0, 9); api.recomputeZone?.(); api.updateStatusHUD?.(); } });
 
-    // SCORE / ECONOMÍA
     add({ id:"boost_1", name:"Boost", desc:"+8% puntos (multiplica tus pickups).", tag:"Puntos",
       rarity:"common", weight:11, max:14, unlockAt:1, price:140,
       apply(){ incNum("scoreBoost", +0.08, 0, 10); api.updateStatusHUD?.(); } });
@@ -276,7 +259,6 @@
       rarity:"rare", weight:5, max:6, unlockAt:12, price:260,
       apply(){ incInt("stepScoreBonus", +2, 0, 40); } });
 
-    // MULT / COMBO
     add({ id:"mult_1", name:"Multiplicador +", desc:"+0.10 al multiplicador base.", tag:"Combo",
       rarity:"epic", weight:5, max:10, unlockAt:8, price:360,
       apply(){ incNum("mult", +0.10, 1.0, 4.0); } });
@@ -297,7 +279,6 @@
       rarity:"epic", weight:3.4, max:6, unlockAt:18, price:380,
       apply(){ incNum("comboTimeBonus", +1.4, 0, 12); } });
 
-    // REROLL / OPCIONES
     add({ id:"reroll_1", name:"Reroll", desc:"Ganas 1 reroll para la pantalla de mejoras.", tag:"Upgrades",
       rarity:"rare", weight:7, max:8, unlockAt:6, price:220,
       apply(){ incInt("rerolls", +1, 0, 99); api.updateStatusHUD?.(); } });
@@ -310,7 +291,6 @@
       rarity:"rare", weight:4.8, max:3, unlockAt:10, price:320, secret:true,
       apply(){ incInt("extraUpgradeChoices", +1, 0, 4); } });
 
-    // KEYS / SHOP / CHEST (Discovery + economía)
     add({ id:"key_1", name:"Llave +1", desc:"Ganas 1 llave (para cofres).", tag:"Llaves",
       rarity:"common", weight:8.5, max:18, unlockAt:4, price:160,
       apply(){ incInt("keys", +1, 0, 999); api.updateStatusHUD?.(); } });
@@ -335,8 +315,6 @@
       rarity:"epic", weight:3.2, max:3, unlockAt:18, price:420, secret:true,
       apply(){ incInt("chestPicks", +1, 3, 7); } });
 
-    // SKILLS EXTRA (para superar 60)
-    // Variantes ligeras (pack) para añadir profundidad
     const pack = (id, name, desc, key, delta, rarity, unlockAt, price, max, tag) => add({
       id, name, desc, tag: tag || "General",
       rarity, weight: (rarity === "legendary") ? 2 : (rarity === "epic") ? 4 : (rarity === "rare") ? 6 : 10,
@@ -344,10 +322,10 @@
       apply(){ incInt(key, delta, 0, 999); api.updateStatusHUD?.(); }
     });
 
-    // packs
     pack("shield_pack_3", "Caja de Escudos", "Ganas +3 escudos.", "shields", 3, "epic", 24, 520, 6, "Defensa");
     pack("key_pack_3", "Llaves +3", "Ganas +3 llaves.", "keys", 3, "epic", 22, 520, 8, "Llaves");
     pack("reroll_pack_3", "Reroll x3", "Ganas +3 rerolls.", "rerolls", 3, "legendary", 26, 740, 4, "Upgrades");
+
     add({ id:"boost_pack", name:"Turbo de Puntos", desc:"+25% puntos.", tag:"Puntos",
       rarity:"epic", weight:3.6, max:6, unlockAt:20, price:520, secret:true,
       apply(){ incNum("scoreBoost", +0.25, 0, 10); api.updateStatusHUD?.(); } });
@@ -362,7 +340,6 @@
         api.updateStatusHUD?.();
       } });
 
-    // un poco más de “variedad” de valores
     add({ id:"coin_pack_big", name:"Monedas Premium", desc:"+10 valor de Moneda.", tag:"Puntos",
       rarity:"epic", weight:3.2, max:6, unlockAt:22, price:520, secret:true,
       apply(){ incInt("coinValue", +10, 1, 9999); } });
@@ -379,13 +356,11 @@
       rarity:"legendary", weight:1.7, max:4, unlockAt:24, price:780, secret:true,
       apply(){ incNum("comboTimeBonus", +2.5, 0, 14); } });
 
-    // ───────────────────────── Reglas / Selección ─────────────────────────
     function canPick(u) {
       const id = u.id;
       const max = (u.max ?? 999) | 0;
       if ((getPickCount(id) | 0) >= max) return false;
 
-      // reglas específicas opcionales
       if (id === "mag_1" && (api.magnet|0) >= 1) return false;
       if (id === "mag_2" && (api.magnet|0) >= 2) return false;
       if (id === "mag_3" && (api.magnet|0) >= 3) return false;
@@ -396,9 +371,7 @@
       return true;
     }
 
-    function unlocked(u, level) {
-      return (level | 0) >= ((u.unlockAt ?? 1) | 0);
-    }
+    function unlocked(u, level) { return (level | 0) >= ((u.unlockAt ?? 1) | 0); }
 
     function visibleInLevelUp(u, level) {
       if (!unlocked(u, level)) return false;
@@ -410,7 +383,6 @@
     function visibleInShop(u, level) {
       if (!unlocked(u, level)) return false;
       if (!canPick(u)) return false;
-      // shop puede enseñar secretas (pero NO necesariamente “descubiertas”)
       return true;
     }
 
@@ -421,7 +393,6 @@
     }
 
     function chestBiasMul(r, luck) {
-      // luck: 0..12
       const L = clampInt(luck|0, 0, 12);
       if (r === "legendary") return 1.0 + 0.11 * L;
       if (r === "epic") return 1.0 + 0.08 * L;
@@ -445,7 +416,6 @@
     function chooseLevelUp({ level = 1, n = 3 } = {}) {
       const lvl = level | 0;
       const pool = Skills.filter(u => visibleInLevelUp(u, lvl));
-      // bias leve hacia no-pickeadas
       return choose(pool, n|0, (u) => {
         const pm = rarityMeta(u.rarity).wMul;
         const picked = getPickCount(u.id);
@@ -484,9 +454,8 @@
     function pick(u) {
       if (!u || !u.id) return false;
       picks.set(u.id, getPickCount(u.id) + 1);
-      // si lo has obtenido, queda “descubierto”
       discover(u.id);
-      try { u.apply && u.apply(); } catch {}
+      try { u.apply && u.apply(); } catch (_) {}
       return true;
     }
 
@@ -511,7 +480,6 @@
           discovered: d,
         });
       }
-      // orden: descubiertos primero, luego por rareza y nombre
       const rOrder = { common:0, rare:1, epic:2, legendary:3 };
       out.sort((a,b) => {
         if ((b.discovered|0) !== (a.discovered|0)) return (b.discovered|0)-(a.discovered|0);
@@ -539,10 +507,9 @@
     });
   }
 
-  // export
   try {
     g.GRSkills = Object.freeze({ create });
-  } catch {
+  } catch (_) {
     g.GRSkills = { create };
   }
 })();

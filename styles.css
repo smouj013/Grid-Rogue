@@ -1,4 +1,4 @@
-/* styles.css — Grid Rogue v1.1.0 */
+/* styles.css — Grid Rogue v1.1.0 (CORREGIDA: hearts-only + buffs debajo) */
 
 :root{
   --bg0:#0b0b10;
@@ -23,7 +23,6 @@
 
   --topbarH:64px;
 
-  /* Safe-area helpers */
   --safeL: env(safe-area-inset-left, 0px);
   --safeR: env(safe-area-inset-right, 0px);
   --safeT: env(safe-area-inset-top, 0px);
@@ -32,7 +31,6 @@
 
 *{box-sizing:border-box}
 
-/* ✅ FIX CRÍTICO: hidden siempre gana */
 [hidden]{display:none !important}
 .overlay[hidden]{display:none !important}
 .dpad[hidden]{display:none !important}
@@ -75,7 +73,6 @@ body{
   min-height:100%;
 }
 
-/* ───────── Topbar ───────── */
 .topbar{
   min-height:var(--topbarH);
   height:auto;
@@ -117,8 +114,6 @@ body{
   align-items:center;
   gap:8px;
   min-width:0;
-
-  /* ✅ evita que “reviente” el header: scroll suave si falta espacio */
   overflow:auto;
   scrollbar-width:none;
   -ms-overflow-style:none;
@@ -134,7 +129,6 @@ body{
   flex:0 0 auto;
 }
 
-/* Pills */
 .pill{
   display:inline-flex;
   align-items:center;
@@ -156,7 +150,6 @@ body{
 .pillBtn:active{transform:translateY(1px)}
 .pill .ms{font-size:18px;opacity:.92}
 
-/* Buttons */
 .iconBtn{
   border:1px solid var(--stroke);
   background:rgba(255,255,255,.03);
@@ -188,7 +181,6 @@ body{
 .btnBlock{width:100%}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
 
-/* Stage */
 .stage{
   flex:1;
   min-height:0;
@@ -196,7 +188,6 @@ body{
   overflow:hidden;
 }
 
-/* Canvas area */
 .canvasWrap{
   position:relative;
   height:100%;
@@ -273,7 +264,6 @@ body{
 }
 .toast.show{opacity:1;transform:translateY(0)}
 
-/* Canvas side */
 .railCanvas{
   display:flex;
   align-items:center;
@@ -299,15 +289,12 @@ body{
   border:1px solid rgba(255,255,255,.10);
   background:#000;
   box-shadow:0 18px 60px rgba(0,0,0,.45);
-
-  /* ✅ nunca se sale del frame */
   max-width:100%;
   max-height:100%;
   width:auto;
   height:auto;
 }
 
-/* Overlays */
 .overlay{
   position:absolute;
   inset:0;
@@ -362,7 +349,6 @@ body{
 .splashText .title{font-weight:900;letter-spacing:.2px}
 .splashText .sub{color:var(--muted);font-size:12px}
 
-/* Loading bar */
 .loadingPanel{max-width:520px}
 .loadingBar{
   height:10px;border-radius:999px;background:rgba(255,255,255,.06);
@@ -380,7 +366,6 @@ body{
 .dots .dot:nth-child(3){animation-delay:.30s}
 @keyframes dot{0%{opacity:.25;transform:translateY(0)}50%{opacity:.9;transform:translateY(-2px)}100%{opacity:.25;transform:translateY(0)}}
 
-/* Forms */
 .form{padding:14px 16px 16px}
 .label{display:block;margin:10px 0 6px;color:var(--muted);font-size:12px}
 .row{display:flex;align-items:center;min-width:0}
@@ -397,7 +382,6 @@ body{
 .input:focus,.select:focus{border-color:rgba(106,176,255,.35)}
 .helpText{margin-top:10px}
 
-/* Upgrades */
 .upgradesPanel .panelBody{padding:12px 16px 16px}
 .upgradeChoices{
   display:grid;
@@ -445,7 +429,6 @@ body{
 
 .upgradesActions{justify-content:space-between}
 
-/* Game over */
 .goBig{padding:14px 16px 6px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
 .goScore{font-size:44px;font-weight:900;letter-spacing:.2px}
 .goBest{color:var(--muted);font-weight:900}
@@ -454,7 +437,6 @@ body{
 .stats .line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
 .stats .line:last-child{border-bottom:none}
 
-/* Options */
 .optionsPanel .panelHead{
   position:sticky;
   top:0;
@@ -492,7 +474,6 @@ body{
 .sliderRow input[type="range"]{flex:1;accent-color:var(--accent)}
 .legal{margin-top:10px;padding:8px 4px;opacity:.85}
 
-/* Error box */
 .errorBox{
   padding:12px 12px;
   border-radius:14px;
@@ -502,7 +483,7 @@ body{
   word-break:break-word;
 }
 
-/* ───────── HUD float layer (corazones + buffs) ───────── */
+/* ───────── HUD float (CORREGIDO) ───────── */
 #hudFloat{
   position:absolute;
   inset:0;
@@ -510,19 +491,19 @@ body{
   z-index:40;
   overflow:visible;
 
-  /* ✅ centrado y seguro: nunca sale del viewport */
   display:flex;
   align-items:flex-start;
   justify-content:center;
   padding:12px;
   padding-top:calc(12px + var(--safeT));
 }
+
 .statusBar{
   display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  padding:8px 10px;
+  flex-direction:column;          /* ✅ buffs debajo */
+  align-items:flex-start;
+  gap:8px;                        /* ✅ separación limpia */
+  padding:10px 12px;
   border-radius:16px;
   border:1px solid rgba(255,255,255,.10);
   background:rgba(0,0,0,.22);
@@ -533,39 +514,54 @@ body{
   max-width:100%;
   min-width:0;
 }
-.statusBar.compact{padding:7px 9px}
+
+.statusBar.compact{padding:9px 11px}
 
 .hpWrap{
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   gap:8px;
+  width:100%;
   min-width:0;
-  flex:0 0 auto;
 }
+
 .hpWrap .hpIcon{color:rgba(255,120,120,.92)}
+
 .hpHearts{
-  display:inline-flex;
+  display:flex;
   gap:2px;
-  flex-wrap:nowrap;
-  min-width:0;
-  max-width: 52vw; /* ✅ no invade buffs */
-  overflow:hidden;
+  flex-wrap:wrap;                 /* ✅ permite muchas vidas sin romper */
+  max-width:100%;
 }
+
 .heart{display:inline-flex;align-items:center;justify-content:center}
 .heart.full{color:rgba(255,120,120,.92)}
 .heart.empty{color:rgba(255,255,255,.22)}
-.hpMore{color:var(--muted);font-weight:900;flex:0 0 auto}
-.hpText{color:var(--muted);font-weight:900;flex:0 0 auto}
+
+/* ✅ Quita cualquier número/texto de vida */
+.hpMore,
+.hpText{display:none !important}
 
 .buffBar{
   display:flex;
   align-items:center;
   gap:8px;
-  justify-content:flex-end;
+  justify-content:flex-start;
   flex-wrap:wrap;
+  width:100%;
   min-width:0;
-  flex:1 1 auto;
+
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.08); /* ✅ separación visual */
 }
+
+/* ✅ Si no hay buffs, no deja línea/hueco */
+.buffBar:empty{
+  display:none;
+  padding-top:0;
+  border-top:none;
+}
+
 .buffBadge{
   display:inline-flex;align-items:center;gap:6px;
   padding:6px 8px;
@@ -577,21 +573,16 @@ body{
 .buffBadge .bIcon{font-size:18px;color:rgba(255,255,255,.86)}
 .buffBadge .bTime,.buffBadge .bCount{font-size:12px;color:rgba(255,255,255,.86);font-weight:900}
 
-/* Upgrade FX canvas */
 .upFxCanvas{position:absolute;inset:0;pointer-events:none}
 
-/* ───────── D-PAD (a los lados, no abajo) ───────── */
-/* El contenedor ocupa toda la pantalla pero no bloquea clicks salvo botones */
+/* ───────── D-PAD ───────── */
 .dpad{
   position:fixed;
   inset:0;
   z-index:55;
   pointer-events:none;
 }
-
-/* Ignoramos layout interno (row) y colocamos botones en “side rails” */
 .dpadRow{display:contents}
-
 .dpadBtn{
   width:58px;height:58px;
   border-radius:20px;
@@ -601,16 +592,13 @@ body{
   cursor:pointer;
   pointer-events:auto;
   touch-action:manipulation;
-
   box-shadow:0 14px 36px rgba(0,0,0,.28);
   backdrop-filter: blur(6px);
 }
-
 .dpadBtn:hover{border-color:rgba(255,255,255,.18);background:rgba(0,0,0,.30)}
 .dpadBtn:active{transform:translateY(1px)}
 .dpadBtn .ms{font-size:30px}
 
-/* Posicionamiento: left y right en los laterales; up/down en el lateral derecho (no tapa el juego) */
 #btnLeft{
   position:fixed;
   left:calc(12px + var(--safeL));
@@ -653,24 +641,13 @@ body{
   }
 
   .brandSub{display:none}
-
   .upgradeChoices{grid-template-columns:1fr; gap:10px}
 
-  /* HUD: apila para que NUNCA se salga */
-  .statusBar{
-    flex-direction:column;
-    align-items:stretch;
-    gap:8px;
-  }
-  .buffBar{justify-content:flex-start}
-
-  /* D-pad un pelín más compacto en móviles pequeños */
   .dpadBtn{width:54px;height:54px;border-radius:18px}
   #btnUp{top:calc(50% - 78px)}
   #btnDown{top:calc(50% + 78px)}
 }
 
-/* Mejoras extra para dispositivos táctiles */
 @media (pointer: coarse){
   .dpadBtn{background:rgba(0,0,0,.28)}
 }
