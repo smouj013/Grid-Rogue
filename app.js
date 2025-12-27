@@ -12,6 +12,13 @@
    - Update pill: aplica update sin forzar reload durante run (espera a GameOver o click)
    - Robustez extra en resize/viewport + observers (sin romper DOM/ids)
    - Integración skills.js (si existe): LevelUp usa Skills Pack; fallback a upgrades internos si no está
+
+   ✅ PATCH UI (sin cambiar versión):
+   - FIX: los overlays (Upgrades/Start/Options/etc.) ya NO mueven el layout del juego al aparecer
+     (forzados a fixed/inset:0 si el CSS no lo hacía).
+   - FIX: el toast se fuerza a fixed (no participa en flow), evitando “saltos” de layout.
+   - Menú principal con pestañas (Jugar / Catálogo / Tienda) creado dinámicamente si no existe.
+   - Catálogo/Tienda renderizados con skills.js cuando está disponible (fallback si no).
 */
 (() => {
   "use strict";
@@ -227,54 +234,71 @@
 
   // DOM refs (necesarias para anti-scroll guards)
   let overlayOptions = null;
+  let overlayStart = null; // <- se usa también para permitir scroll en Catálogo/Tienda
+  let startPanelCatalog = null;
+  let startPanelShop = null;
+
+  function findScrollableAncestor(target, limitEl) {
+    try {
+      if (!target) return null;
+      let el = target;
+      while (el && el !== document && el !== window && el !== limitEl) {
+        if (!el.getBoundingClientRect) { el = el.parentElement; continue; }
+        const st = getComputedStyle(el);
+        const oy = st.overflowY;
+        if ((oy === "auto" || oy === "scroll") && (el.scrollHeight > el.clientHeight + 2)) return el;
+        el = el.parentElement;
+      }
+      return null;
+    } catch { return null; }
+  }
 
   function installAntiScrollGuards() {
-    const isScrollableInOptions = (target, event) => {
-      try {
-        if (!overlayOptions || overlayOptions.hidden) return false;
-        if (!target) return false;
-        if (!overlayOptions.contains(target)) return false;
+    // Permitir scroll SOLO dentro de overlays que lo necesiten (Options y, si existe, Catálogo/Tienda)
+    const allowedRoots = () => {
+      const out = [];
+      if (overlayOptions && !overlayOptions.hidden) out.push(overlayOptions);
+      if (overlayStart && !overlayStart.hidden) {
+        // Solo permitimos scroll si estás dentro de los paneles “largos”
+        if (startPanelCatalog && !startPanelCatalog.hidden) out.push(startPanelCatalog);
+        if (startPanelShop && !startPanelShop.hidden) out.push(startPanelShop);
+      }
+      return out;
+    };
 
-        const tag = (target.tagName || "").toLowerCase();
+    const isScrollableInAllowed = (target, event) => {
+      try {
+        const roots = allowedRoots();
+        if (!roots.length) return false;
+
+        const tag = (target?.tagName || "").toLowerCase();
         if (tag === "input" || tag === "textarea" || tag === "select") return true;
 
         const path = (event && typeof event.composedPath === "function") ? event.composedPath() : null;
         const iter = (path && path.length) ? path : null;
 
-        const canScrollEl = (el) => {
-          if (!el || el === document || el === window) return false;
-          if (el === overlayOptions) return false;
-          if (!el.getBoundingClientRect) return false;
-          const st = getComputedStyle(el);
-          const oy = st.overflowY;
-          if ((oy !== "auto" && oy !== "scroll") || (el.scrollHeight <= el.clientHeight + 2)) return false;
-          return true;
-        };
+        for (const root of roots) {
+          if (!root) continue;
 
-        if (iter) {
-          for (const el of iter) {
-            if (el === overlayOptions) break;
-            if (canScrollEl(el)) return true;
-          }
-        } else {
-          let el = target;
-          while (el && el !== overlayOptions) {
-            if (canScrollEl(el)) return true;
-            el = el.parentElement;
+          if (iter) {
+            for (const el of iter) {
+              if (el === root) break;
+              const sc = findScrollableAncestor(el, root);
+              if (sc) return true;
+            }
+          } else {
+            const sc = findScrollableAncestor(target, root);
+            if (sc) return true;
           }
         }
 
-        const body =
-          overlayOptions.querySelector?.("#optionsBody") ||
-          overlayOptions.querySelector?.(".options") ||
-          overlayOptions;
-        return !!(body && (target === body || target.closest?.("#optionsBody") || target.closest?.(".options")));
+        return false;
       } catch { return false; }
     };
 
     const preventIfNeeded = (e) => {
       if (!e.cancelable) return;
-      if (isScrollableInOptions(e.target, e)) return;
+      if (isScrollableInAllowed(e.target, e)) return;
       e.preventDefault();
     };
 
@@ -513,11 +537,10 @@
   let pillScore, pillBest, pillStreak, pillMult, pillLevel, pillSpeed, pillPlayer, pillUpdate, pillOffline, pillVersion;
   let btnOptions, btnPause, btnRestart, btnInstall;
 
-  let overlayLoading, overlayPress, loadingSub, overlayStart, overlayPaused, overlayUpgrades, overlayGameOver, overlayError;
-  let btnPressStart, pressMeta;
+  let overlayLoading, overlayPress, loadingSub, btnPressStart, pressMeta;
   let pillModeVal, railCanvasEl;
 
-  let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
+  let overlayPaused, overlayUpgrades, overlayGameOver, overlayError;
   let btnResume, btnQuitToStart, btnPausedRestart;
 
   let upTitle, upSub, upgradeChoices, btnReroll, btnSkipUpgrade;
@@ -535,6 +558,21 @@
   let levelProgFill, levelProgText, levelProgPct;
 
   let dpad, btnUp, btnDown, btnLeft, btnRight;
+
+  // Menú tabs + paneles (creados dinámicamente si no existen)
+  let startTabBar = null;
+  let startTabPlay = null;
+  let startTabCatalog = null;
+  let startTabShop = null;
+  let startPanelPlay = null;
+
+  let catalogHost = null;
+  let shopHost = null;
+  let catalogList = null;
+  let catalogSearch = null;
+  let shopList = null;
+  let shopMeta = null;
+  let btnShopRefresh = null;
 
   // HUD flotante
   let hudFloat = null;
@@ -611,23 +649,135 @@
     return v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  // ───────────────────────── HUD FLOAT LAYER ─────────────────────────
-  function ensureCriticalCSS() {
-    if (document.getElementById("grCriticalCss")) return;
+  // ───────────────────────── Layout Stability (NO layout shift) ─────────────────────────
+  function ensureLayoutStableCSS() {
+    if (document.getElementById("grLayoutStableCss")) return;
     try {
       const st = document.createElement("style");
-      st.id = "grCriticalCss";
+      st.id = "grLayoutStableCss";
       st.textContent = `
+/* Anti layout-shift: overlays y toast fuera del flow */
+#toast{
+  position:fixed !important;
+  left:50% !important;
+  transform:translateX(-50%) !important;
+  bottom:calc(env(safe-area-inset-bottom, 0px) + 16px) !important;
+  z-index:80 !important;
+  pointer-events:none !important;
+  max-width:min(92vw, 560px) !important;
+}
 #hudFloat{position:absolute;inset:0;pointer-events:none;z-index:40;overflow:visible}
 #hudStatus{position:absolute;left:0;top:0;transform:translate(0,0);pointer-events:none;will-change:transform}
 .upFxCanvas{position:absolute;inset:0;pointer-events:none}
+
+/* Tabs del menú principal (solo si existen) */
+#startTabBar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;margin:0 0 12px 0}
+.startTabBtn{
+  appearance:none;border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.06);
+  color:inherit;border-radius:12px;padding:10px 12px;
+  font-weight:800;letter-spacing:0.2px;
+  cursor:pointer;user-select:none;
+}
+.startTabBtn.active{
+  border-color:rgba(106,176,255,0.45);
+  background:rgba(106,176,255,0.10);
+}
+#startPanels .startPanel{display:block}
+#startPanels .startPanel[hidden]{display:none !important}
+#startPanelCatalog, #startPanelShop{
+  overflow:auto; max-height:min(68vh, 560px);
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(0,0,0,0.18);
+  border-radius:14px; padding:12px;
+}
+.catalogGrid, .shopGrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+  gap:10px;
+}
+.catCard, .shopCard{
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.06);
+  border-radius:14px;
+  padding:12px;
+}
+.catCard .row, .shopCard .row{display:flex;gap:10px;align-items:flex-start}
+.catCard .icon, .shopCard .icon{
+  width:44px;height:44px;border-radius:12px;
+  display:grid;place-items:center;
+  background:rgba(255,255,255,0.07);
+  border:1px solid rgba(255,255,255,0.10);
+  flex:0 0 auto;
+}
+.catCard .ttl, .shopCard .ttl{font-weight:900}
+.catCard .sub, .shopCard .sub{opacity:0.85;font-size:13px;line-height:1.35}
+.catBadges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.catBadge{border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);border-radius:999px;padding:4px 8px;font-weight:800;font-size:12px;opacity:0.95}
+.shopActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.shopBtn{
+  appearance:none;border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.08);color:inherit;
+  border-radius:12px;padding:9px 10px;font-weight:900;cursor:pointer
+}
+.shopBtn.primary{
+  border-color:rgba(46,242,160,0.35);
+  background:rgba(46,242,160,0.10);
+}
       `.trim();
       document.head.appendChild(st);
     } catch {}
   }
 
+  function forceOverlayFixed(el, z = 50) {
+    if (!el) return;
+    try {
+      const cs = getComputedStyle(el);
+      // Si ya está fixed/absolute, no tocamos (respetar CSS)
+      if (cs.position === "static" || !cs.position) {
+        el.style.position = "fixed";
+        el.style.left = "0";
+        el.style.top = "0";
+        el.style.right = "0";
+        el.style.bottom = "0";
+        el.style.inset = "0";
+      }
+      if (!el.style.zIndex) el.style.zIndex = String(z);
+      // Evitar que el overlay entre en el flow por display accidental (solo si era block sin posicionar)
+      // Aquí NO cambiamos display para no romper tu CSS.
+    } catch {}
+  }
+
+  function stabilizeToastEl() {
+    if (!toast) return;
+    try {
+      const cs = getComputedStyle(toast);
+      if (cs.position === "static" || !cs.position) {
+        toast.style.position = "fixed";
+        toast.style.left = "50%";
+        toast.style.transform = "translateX(-50%)";
+        toast.style.bottom = "calc(env(safe-area-inset-bottom, 0px) + 16px)";
+        toast.style.zIndex = "80";
+        toast.style.pointerEvents = "none";
+      }
+    } catch {}
+  }
+
+  function stabilizeOverlaysNow() {
+    // Orden de z para que no se solapen raro
+    forceOverlayFixed(overlayLoading, 90);
+    forceOverlayFixed(overlayError, 95);
+    forceOverlayFixed(overlayPress, 70);
+    forceOverlayFixed(overlayStart, 70);
+    forceOverlayFixed(overlayOptions, 80);
+    forceOverlayFixed(overlayUpgrades, 85);
+    forceOverlayFixed(overlayPaused, 82);
+    forceOverlayFixed(overlayGameOver, 86);
+  }
+
+  // ───────────────────────── HUD FLOAT LAYER ─────────────────────────
   function ensureHudFloatLayer() {
-    ensureCriticalCSS();
+    ensureLayoutStableCSS();
     if (hudFloat && hudFloat.parentElement) return;
 
     const existing = $("hudFloat");
@@ -710,6 +860,8 @@
     if (overlayGameOver && !overlayGameOver.hidden) return false;
     if (overlayLoading && !overlayLoading.hidden) return false;
     if (overlayError && !overlayError.hidden) return false;
+    if (overlayStart && !overlayStart.hidden) return false;
+    if (overlayPress && !overlayPress.hidden) return false;
     return true;
   }
 
@@ -974,6 +1126,376 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     return Array.isArray(b) ? b : null;
   }
 
+  // ───────────────────────── Catálogo / Tienda (Skills) ─────────────────────────
+  function skillsGetCatalog() {
+    if (!Skills) return null;
+    const out =
+      callFirst(Skills, ["getCatalog", "listCatalog", "catalog", "getAllSkills", "allSkills"], { kind: "catalog" }) ??
+      callFirst(Skills, ["getAll", "all"], "catalog") ??
+      null;
+    return Array.isArray(out) ? out : null;
+  }
+
+  function skillsGetShopOffers(count = 6) {
+    if (!Skills) return null;
+    const out =
+      callFirst(Skills, ["getShopOffers", "getShopPicks", "shopPicks", "rollShop", "shop"], { count }) ??
+      callFirst(Skills, ["getChoices", "choices"], { kind: "shop", count }) ??
+      null;
+    return Array.isArray(out) ? out : null;
+  }
+
+  function skillsBuyFromShop(choice) {
+    if (!Skills || !choice) return false;
+    const id = String(choice.id || choice.key || choice.skillId || "");
+    if (!id) return false;
+    const out =
+      callFirst(Skills, ["buy", "purchase", "buyShop", "shopBuy"], id, choice) ??
+      callFirst(Skills, ["pick", "choose", "take", "apply", "select"], id, choice) ??
+      null;
+    if (typeof out === "boolean") return out;
+    return out !== false;
+  }
+
+  function normalizeChoiceForUI(u) {
+    if (!u) return null;
+    const id = String(u.id || u.key || u.skillId || u.nameKey || "");
+    const rarity = String(u.rarity || u.tier || u.rare || "common");
+    const icon = String(u.icon || u.iconName || upgradeIcon(u) || "upgrade");
+    const tags = u.tags || u.tag || u.tagKey || null;
+
+    const name =
+      (typeof u.name === "string" && u.name.trim()) ? u.name.trim() :
+      (typeof u.title === "string" && u.title.trim()) ? u.title.trim() :
+      (u.nameKey ? (I18n.t(u.nameKey) !== u.nameKey ? I18n.t(u.nameKey) : u.nameKey) : id);
+
+    const desc =
+      (typeof u.desc === "string" && u.desc.trim()) ? u.desc.trim() :
+      (typeof u.description === "string" && u.description.trim()) ? u.description.trim() :
+      (u.descKey ? (I18n.t(u.descKey) !== u.descKey ? I18n.t(u.descKey) : "") : "");
+
+    const maxLv = Number(u.max ?? u.maxLevel ?? u.cap ?? 999) || 999;
+    const curLv = (pickedCount.get(id) || 0) + 1;
+
+    let tagText = "";
+    if (Array.isArray(tags) && tags.length) tagText = String(tags[0]);
+    else if (typeof tags === "string") tagText = tags;
+    else if (typeof u.tagName === "string") tagText = u.tagName;
+    else if (typeof u.tagKey === "string") tagText = I18n.t(u.tagKey);
+
+    const extraMeta =
+      (typeof u.meta === "string" && u.meta) ? u.meta :
+      (u.duration ? `⏱ ${u.duration}s` : "");
+
+    return { raw: u, id, rarity, icon, name, desc, tagText, maxLv, curLv, extraMeta };
+  }
+
+  function renderCatalog() {
+    if (!catalogList) return;
+    const q = (catalogSearch?.value || "").trim().toLowerCase();
+    const items = skillsGetCatalog() || [];
+    if (!items.length) {
+      catalogList.innerHTML = `
+<div class="catCard">
+  <div class="row">
+    <div class="icon"><span class="ms">info</span></div>
+    <div>
+      <div class="ttl">${escapeAttr(T("catalog_empty", "Catálogo no disponible"))}</div>
+      <div class="sub">${escapeAttr(T("catalog_need_skills", "Cargando skills.js… (o no está incluido)."))}</div>
+    </div>
+  </div>
+</div>`;
+      return;
+    }
+
+    const view = [];
+    for (const it of items) {
+      const ui = normalizeChoiceForUI(it);
+      if (!ui) continue;
+
+      if (q) {
+        const hay = `${ui.name} ${ui.desc} ${ui.id} ${ui.tagText}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+      }
+
+      const owned = (pickedCount.get(ui.id) || 0);
+      const rarityText = rarityLabel(ui.rarity);
+
+      view.push(`
+<div class="catCard" data-rarity="${escapeAttr(ui.rarity)}" data-id="${escapeAttr(ui.id)}">
+  <div class="row">
+    <div class="icon"><span class="ms">${escapeAttr(ui.icon)}</span></div>
+    <div style="min-width:0">
+      <div class="ttl">${escapeAttr(ui.name)}</div>
+      <div class="sub">${escapeAttr(ui.desc || "—")}</div>
+      <div class="catBadges">
+        <span class="catBadge">${escapeAttr(rarityText)}</span>
+        ${ui.tagText ? `<span class="catBadge">${escapeAttr(ui.tagText)}</span>` : ``}
+        <span class="catBadge">${escapeAttr(`Owned: ${owned}`)}</span>
+        <span class="catBadge">${escapeAttr(`Cap: ${ui.maxLv}`)}</span>
+        ${ui.extraMeta ? `<span class="catBadge">${escapeAttr(ui.extraMeta)}</span>` : ``}
+      </div>
+    </div>
+  </div>
+</div>`);
+    }
+
+    catalogList.innerHTML = view.join("") || `
+<div class="catCard">
+  <div class="row">
+    <div class="icon"><span class="ms">search_off</span></div>
+    <div>
+      <div class="ttl">${escapeAttr(T("catalog_no_match", "Sin resultados"))}</div>
+      <div class="sub">${escapeAttr(T("catalog_try_other", "Prueba otra búsqueda."))}</div>
+    </div>
+  </div>
+</div>`;
+  }
+
+  let _shopOffers = [];
+
+  function renderShop() {
+    if (!shopList) return;
+
+    _shopOffers = skillsGetShopOffers(6) || [];
+
+    if (!_shopOffers.length) {
+      shopList.innerHTML = `
+<div class="shopCard">
+  <div class="row">
+    <div class="icon"><span class="ms">store</span></div>
+    <div>
+      <div class="ttl">${escapeAttr(T("shop_empty", "Tienda no disponible"))}</div>
+      <div class="sub">${escapeAttr(T("shop_need_skills", "Necesitas skills.js para Tienda/Cofres (o aún no está listo)."))}</div>
+    </div>
+  </div>
+</div>`;
+      if (shopMeta) shopMeta.textContent = "";
+      return;
+    }
+
+    if (shopMeta) shopMeta.textContent = T("shop_hint", "La tienda depende del pack de skills (precios/moneda los define skills.js).");
+
+    const html = [];
+    for (const it of _shopOffers) {
+      const ui = normalizeChoiceForUI(it);
+      if (!ui) continue;
+
+      const rarityText = rarityLabel(ui.rarity);
+      const owned = (pickedCount.get(ui.id) || 0);
+
+      html.push(`
+<div class="shopCard" data-id="${escapeAttr(ui.id)}">
+  <div class="row">
+    <div class="icon"><span class="ms">${escapeAttr(ui.icon)}</span></div>
+    <div style="min-width:0;flex:1">
+      <div class="ttl">${escapeAttr(ui.name)}</div>
+      <div class="sub">${escapeAttr(ui.desc || "—")}</div>
+      <div class="catBadges">
+        <span class="catBadge">${escapeAttr(rarityText)}</span>
+        ${ui.tagText ? `<span class="catBadge">${escapeAttr(ui.tagText)}</span>` : ``}
+        <span class="catBadge">${escapeAttr(`Owned: ${owned}`)}</span>
+      </div>
+      <div class="shopActions">
+        <button class="shopBtn primary" data-buy="${escapeAttr(ui.id)}">${escapeAttr(T("shop_buy", "Comprar"))}</button>
+      </div>
+    </div>
+  </div>
+</div>`);
+    }
+    shopList.innerHTML = `<div class="shopGrid">${html.join("")}</div>`;
+
+    // wire buy
+    const buttons = shopList.querySelectorAll?.("[data-buy]");
+    buttons?.forEach?.((btn) => {
+      on(btn, "click", () => {
+        const id = btn.getAttribute("data-buy") || "";
+        const found = _shopOffers.find(x => String(x.id || x.key || x.skillId || "") === id) || null;
+        AudioSys.unlock();
+
+        const ok = found ? skillsBuyFromShop(found) : false;
+        if (ok) {
+          // marca pick para stacks/limits y refresca UI (skills.js suele hacerlo internamente también)
+          pickedCount.set(id, (pickedCount.get(id) || 0) + 1);
+          showToast(T("shop_bought", "Comprado"), 850);
+          AudioSys.sfx("upgrade");
+          updatePillsNow();
+          renderCatalog();
+          renderShop();
+        } else {
+          showToast(T("shop_nope", "No se pudo comprar"), 900);
+          AudioSys.sfx("ui");
+        }
+      });
+    });
+  }
+
+  // ───────────────────────── Menú principal con pestañas ─────────────────────────
+  let _startActiveTab = "play";
+
+  function setStartTab(tab) {
+    _startActiveTab = tab;
+
+    if (startTabPlay) startTabPlay.classList.toggle("active", tab === "play");
+    if (startTabCatalog) startTabCatalog.classList.toggle("active", tab === "catalog");
+    if (startTabShop) startTabShop.classList.toggle("active", tab === "shop");
+
+    if (startPanelPlay) startPanelPlay.hidden = (tab !== "play");
+    if (startPanelCatalog) startPanelCatalog.hidden = (tab !== "catalog");
+    if (startPanelShop) startPanelShop.hidden = (tab !== "shop");
+
+    // cuando cambiamos a Catálogo/Tienda, aseguramos render y que el scroll esté permitido
+    if (tab === "catalog") renderCatalog();
+    if (tab === "shop") renderShop();
+  }
+
+  function ensureStartTabsUI() {
+    if (!overlayStart) return;
+
+    // Si ya existe una estructura, solo cacheamos refs
+    const existingBar = $("startTabBar") || overlayStart.querySelector?.("#startTabBar");
+    const existingPanels = $("startPanels") || overlayStart.querySelector?.("#startPanels");
+    if (existingBar && existingPanels) {
+      startTabBar = existingBar;
+      startPanelPlay = $("startPanelPlay") || overlayStart.querySelector?.("#startPanelPlay");
+      startPanelCatalog = $("startPanelCatalog") || overlayStart.querySelector?.("#startPanelCatalog");
+      startPanelShop = $("startPanelShop") || overlayStart.querySelector?.("#startPanelShop");
+
+      startTabPlay = $("startTabPlay") || overlayStart.querySelector?.("#startTabPlay");
+      startTabCatalog = $("startTabCatalog") || overlayStart.querySelector?.("#startTabCatalog");
+      startTabShop = $("startTabShop") || overlayStart.querySelector?.("#startTabShop");
+
+      catalogHost = $("catalogHost") || overlayStart.querySelector?.("#catalogHost");
+      shopHost = $("shopHost") || overlayStart.querySelector?.("#shopHost");
+      catalogList = $("catalogList") || overlayStart.querySelector?.("#catalogList");
+      catalogSearch = $("catalogSearch") || overlayStart.querySelector?.("#catalogSearch");
+      shopList = $("shopList") || overlayStart.querySelector?.("#shopList");
+      shopMeta = $("shopMeta") || overlayStart.querySelector?.("#shopMeta");
+      btnShopRefresh = $("btnShopRefresh") || overlayStart.querySelector?.("#btnShopRefresh");
+      return;
+    }
+
+    // Creamos tabs “sin romper” el contenido: metemos todo lo actual en Play panel
+    try {
+      const host =
+        overlayStart.querySelector?.(".startPanel") ||
+        overlayStart.querySelector?.(".panel") ||
+        overlayStart;
+
+      if (!host) return;
+
+      // contenedor tabs + panels
+      const bar = document.createElement("div");
+      bar.id = "startTabBar";
+      bar.className = "startTabBar";
+
+      const mkBtn = (id, label, tab) => {
+        const b = document.createElement("button");
+        b.id = id;
+        b.className = "startTabBtn";
+        b.type = "button";
+        b.textContent = label;
+        b.dataset.tab = tab;
+        return b;
+      };
+
+      const bPlay = mkBtn("startTabPlay", T("tab_play", "Jugar"), "play");
+      const bCat  = mkBtn("startTabCatalog", T("tab_catalog", "Catálogo"), "catalog");
+      const bShop = mkBtn("startTabShop", T("tab_shop", "Tienda"), "shop");
+
+      bar.appendChild(bPlay);
+      bar.appendChild(bCat);
+      bar.appendChild(bShop);
+
+      const panels = document.createElement("div");
+      panels.id = "startPanels";
+
+      const panelPlay = document.createElement("div");
+      panelPlay.id = "startPanelPlay";
+      panelPlay.className = "startPanel";
+
+      const panelCatalog = document.createElement("div");
+      panelCatalog.id = "startPanelCatalog";
+      panelCatalog.className = "startPanel";
+      panelCatalog.hidden = true;
+
+      const panelShop = document.createElement("div");
+      panelShop.id = "startPanelShop";
+      panelShop.className = "startPanel";
+      panelShop.hidden = true;
+
+      // mover hijos actuales del host al panelPlay (menos si ya están dentro de host y son el mismo panel)
+      const moving = [];
+      for (const ch of Array.from(host.childNodes)) moving.push(ch);
+      for (const ch of moving) panelPlay.appendChild(ch);
+
+      // construir catálogo
+      const catWrap = document.createElement("div");
+      catWrap.id = "catalogHost";
+      catWrap.innerHTML = `
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+  <div style="font-weight:900">${escapeAttr(T("catalog_title", "Catálogo"))}</div>
+  <div style="flex:1"></div>
+  <input id="catalogSearch" class="input" type="search" placeholder="${escapeAttr(T("catalog_search", "Buscar…"))}" style="min-width:220px;max-width:360px;width:100%" />
+</div>
+<div id="catalogList" class="catalogGrid"></div>
+      `.trim();
+      panelCatalog.appendChild(catWrap);
+
+      // construir tienda
+      const shopWrap = document.createElement("div");
+      shopWrap.id = "shopHost";
+      shopWrap.innerHTML = `
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+  <div style="font-weight:900">${escapeAttr(T("shop_title", "Tienda"))}</div>
+  <div style="flex:1"></div>
+  <button id="btnShopRefresh" class="shopBtn" type="button">${escapeAttr(T("shop_refresh", "Refrescar"))}</button>
+</div>
+<div id="shopMeta" style="opacity:0.85;font-size:13px;margin:0 0 10px 0"></div>
+<div id="shopList" class="shopGrid"></div>
+      `.trim();
+      panelShop.appendChild(shopWrap);
+
+      panels.appendChild(panelPlay);
+      panels.appendChild(panelCatalog);
+      panels.appendChild(panelShop);
+
+      // Inyectamos tabs arriba del host
+      host.appendChild(bar);
+      host.appendChild(panels);
+
+      // cache refs
+      startTabBar = bar;
+      startTabPlay = bPlay;
+      startTabCatalog = bCat;
+      startTabShop = bShop;
+
+      startPanelPlay = panelPlay;
+      startPanelCatalog = panelCatalog;
+      startPanelShop = panelShop;
+
+      catalogHost = catWrap;
+      shopHost = shopWrap;
+      catalogSearch = $("catalogSearch");
+      catalogList = $("catalogList");
+      shopList = $("shopList");
+      shopMeta = $("shopMeta");
+      btnShopRefresh = $("btnShopRefresh");
+
+      // eventos
+      on(bPlay, "click", () => { AudioSys.unlock(); setStartTab("play"); AudioSys.sfx("ui"); });
+      on(bCat, "click", () => { AudioSys.unlock(); setStartTab("catalog"); AudioSys.sfx("ui"); });
+      on(bShop, "click", () => { AudioSys.unlock(); setStartTab("shop"); AudioSys.sfx("ui"); });
+
+      on(catalogSearch, "input", () => renderCatalog());
+      on(btnShopRefresh, "click", () => { AudioSys.unlock(); renderShop(); AudioSys.sfx("ui"); });
+
+      // estado inicial
+      setStartTab("play");
+    } catch {}
+  }
+
+  // ───────────────────────── Buffs UI ─────────────────────────
   function updateBuffsUI() {
     if (!hudBuffs) return;
 
@@ -1817,39 +2339,6 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     pauseForOverlay(false);
   }
 
-  function normalizeChoiceForUI(u) {
-    if (!u) return null;
-    const id = String(u.id || u.key || u.skillId || u.nameKey || "");
-    const rarity = String(u.rarity || u.tier || u.rare || "common");
-    const icon = String(u.icon || u.iconName || upgradeIcon(u) || "upgrade");
-    const tags = u.tags || u.tag || u.tagKey || null;
-
-    const name =
-      (typeof u.name === "string" && u.name.trim()) ? u.name.trim() :
-      (typeof u.title === "string" && u.title.trim()) ? u.title.trim() :
-      (u.nameKey ? (I18n.t(u.nameKey) !== u.nameKey ? I18n.t(u.nameKey) : u.nameKey) : id);
-
-    const desc =
-      (typeof u.desc === "string" && u.desc.trim()) ? u.desc.trim() :
-      (typeof u.description === "string" && u.description.trim()) ? u.description.trim() :
-      (u.descKey ? (I18n.t(u.descKey) !== u.descKey ? I18n.t(u.descKey) : "") : "");
-
-    const maxLv = Number(u.max ?? u.maxLevel ?? u.cap ?? 999) || 999;
-    const curLv = (pickedCount.get(id) || 0) + 1;
-
-    let tagText = "";
-    if (Array.isArray(tags) && tags.length) tagText = String(tags[0]);
-    else if (typeof tags === "string") tagText = tags;
-    else if (typeof u.tagName === "string") tagText = u.tagName;
-    else if (typeof u.tagKey === "string") tagText = I18n.t(u.tagKey);
-
-    const extraMeta =
-      (typeof u.meta === "string" && u.meta) ? u.meta :
-      (u.duration ? `⏱ ${u.duration}s` : "");
-
-    return { raw: u, id, rarity, icon, name, desc, tagText, maxLv, curLv, extraMeta };
-  }
-
   function renderUpgradeChoices() {
     // 1) skills.js choices si existe
     const skillsChoices = skillsGetLevelUpChoices(3);
@@ -2470,7 +2959,7 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
       await overlayFadeOut(overlayPress, 160);
       overlayShow(overlayStart);
 
-      try { btnStart?.focus?.(); } catch (_) {}
+      try { $("btnStart")?.focus?.(); } catch (_) {}
     };
 
     if (btnPressStart) btnPressStart.onclick = proceed;
@@ -2537,8 +3026,12 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
     // hook skills
     callFirst(Skills, ["onResetRun", "resetRun", "onNewRun", "newRun"], skillsApi);
 
-    if (showMenu) { overlayShow(overlayStart); setState("menu"); }
-    else overlayHide(overlayStart);
+    if (showMenu) {
+      overlayShow(overlayStart);
+      setState("menu");
+      // volvemos a “Jugar” por defecto para no confundir
+      if (startPanelPlay && startPanelCatalog && startPanelShop) setStartTab("play");
+    } else overlayHide(overlayStart);
 
     updatePillsNow();
     draw(16);
@@ -2993,6 +3486,8 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
   }
 
   // ───────────────────────── Auth UI ─────────────────────────
+  let btnStart, profileSelect, btnNewProfile, newProfileWrap, startName;
+
   function initAuthUI() {
     if (!profileSelect) return;
 
@@ -3240,144 +3735,223 @@ ${extra > 0 ? `<span class="hpMore">+${extra}</span>` : ``}
         renderComboUI();
         if (overlayUpgrades && !overlayUpgrades.hidden) renderUpgradeChoices();
         if (brandSub) brandSub.textContent = I18n.t("app_ready");
+
+        // refrescar títulos de tabs y contenido
+        if (startTabPlay) startTabPlay.textContent = T("tab_play", "Jugar");
+        if (startTabCatalog) startTabCatalog.textContent = T("tab_catalog", "Catálogo");
+        if (startTabShop) startTabShop.textContent = T("tab_shop", "Tienda");
+        if (btnShopRefresh) btnShopRefresh.textContent = T("shop_refresh", "Refrescar");
+
+        // si estás en catálogo/tienda, re-render
+        if (startPanelCatalog && !startPanelCatalog.hidden) renderCatalog();
+        if (startPanelShop && !startPanelShop.hidden) renderShop();
       });
     }
 
-    on(btnRepairPWA, "click", repairPWA);
+    // Actions extra
+    on(btnReroll, "click", () => { AudioSys.unlock(); rerollUpgrades(); });
+    on(btnSkipUpgrade, "click", () => { AudioSys.unlock(); closeUpgrade(); AudioSys.sfx("ui"); });
 
-    on(btnClearLocal, "click", () => {
-      const ok = confirm(I18n.t("confirm_clear_local"));
+    on(btnRepairPWA, "click", () => { AudioSys.unlock(); repairPWA(); });
+
+    on(btnClearLocal, "click", async () => {
+      AudioSys.unlock();
+      const ok = confirm(T("confirm_clear_local", "¿Borrar datos locales? (score, runs, settings)"));
       if (!ok) return;
-      localStorage.clear();
-      location.reload();
+
+      try {
+        const keys = [
+          BEST_KEY, NAME_KEY, SETTINGS_KEY, RUNS_KEY,
+          BEST_KEY_OLD, NAME_KEY_OLD, SETTINGS_KEY_OLD, RUNS_KEY_OLD,
+          SW_RELOAD_KEY, SW_RELOAD_KEY_OLD,
+          SW_RELOAD_TAG,
+          "gridrogue_press_seen_v1",
+        ];
+        for (const k of keys) {
+          try { localStorage.removeItem(k); } catch {}
+          try { sessionStorage.removeItem(k); } catch {}
+        }
+      } catch {}
+
+      // intento soft reset
+      settings = defaultSettings();
+      saveSettings();
+      pushPrefsToAuth();
+
+      try { location.reload(); } catch {}
     });
 
-    on(btnErrClose, "click", () => overlayHide(overlayError));
-    on(btnErrReload, "click", () => location.reload());
+    // Error overlay buttons
+    on(btnErrClose, "click", () => { try { overlayHide(overlayError); } catch {} });
+    on(btnErrReload, "click", () => { try { requestAppReload(); } catch { location.reload(); } });
 
-    on(btnReroll, "click", rerollUpgrades);
-    on(btnSkipUpgrade, "click", () => { closeUpgrade(); showToast(I18n.t("toast_skip"), 650); AudioSys.sfx("ui"); });
-
+    // Start
     on(btnStart, "click", async () => {
-      await AudioSys.unlock();
+      AudioSys.unlock();
 
-      if (Auth && profileSelect) {
-        if (profileSelect.value === "__new__") {
-          const nm = (startName?.value || "").trim();
-          const p = Auth.createProfile?.(nm);
-          if (!p) { showToast(I18n.t("name_min"), 900); return; }
-          syncFromAuth();
-          initAuthUI();
-        } else {
-          Auth.setActiveProfile?.(profileSelect.value);
-          syncFromAuth();
+      // Si Auth existe y estamos creando perfil nuevo
+      if (Auth && profileSelect && profileSelect.value === "__new__") {
+        const nm = String((startName?.value || "")).trim().slice(0, 16);
+        if (nm.length < 2) { showToast(T("need_name", "Pon un nombre"), 900); return; }
+
+        // Crear perfil si el auth.js lo soporta
+        try {
+          const id =
+            Auth.createProfile?.(nm) ??
+            Auth.addProfile?.(nm) ??
+            null;
+
+          if (id) {
+            Auth.setActiveProfile?.(id);
+            syncFromAuth();
+          } else {
+            // fallback: sin API clara, usamos nombre local
+            playerName = nm;
+            writeLS(NAME_KEY, playerName);
+            writeLS(NAME_KEY_OLD, playerName);
+          }
+        } catch {
+          playerName = nm;
+          writeLS(NAME_KEY, playerName);
+          writeLS(NAME_KEY_OLD, playerName);
         }
-      } else {
-        const nm = (startName?.value || "").trim().slice(0, 16);
+      } else if (!Auth) {
+        // sin Auth: usa startName si existe
+        const nm = String((startName?.value || playerName || "")).trim().slice(0, 16);
         if (nm.length >= 2) {
           playerName = nm;
           writeLS(NAME_KEY, playerName);
           writeLS(NAME_KEY_OLD, playerName);
         }
+      } else {
+        // Auth: cambio de profile ya lo gestiona el select
+        syncFromAuth();
       }
 
-      updatePillsNow();
+      resetRun(false);
       await startRun();
     });
+  }
 
-    on(pillPlayer, "click", () => resetRun(true));
-    on(pillPlayer, "keydown", (e) => { if (e.key === "Enter" || e.key === " ") resetRun(true); });
+  // ───────────────────────── Boot sequence ─────────────────────────
+  let _didAntiScroll = false;
+
+  function safeEndPerfBoot() {
+    try {
+      if (!perfEndBoot) return;
+      if (typeof perfEndBoot === "function") perfEndBoot();
+      else if (typeof perfEndBoot.end === "function") perfEndBoot.end();
+    } catch {}
   }
 
   async function boot() {
-    try {
-      const bootStartedAt = pNow();
+    if (window.__GRIDROGUE_BOOTED) return;
+    window.__GRIDROGUE_BOOTED = true;
 
+    ensureLayoutStableCSS();
+
+    // watchdog anti “loading infinito”
+    let watchdog = null;
+    try {
+      watchdog = setTimeout(() => {
+        try { overlayHide(overlayLoading); } catch {}
+        try { overlayShow(overlayStart); } catch {}
+        setState("menu");
+      }, 5200);
+    } catch {}
+
+    try {
       cacheDOM();
 
-      window.__GRIDRUNNER_BOOTED = true;
-      window.__GRIDROGUE_BOOTED = true;
+      // fija overlays/toast para evitar layout shift
+      stabilizeOverlaysNow();
+      stabilizeToastEl();
 
+      // scroll-lock global (el scroll solo dentro de overlays permitidos por guards)
       lockPageScroll();
-      installAntiScrollGuards();
-      updateVhUnit();
+      if (!_didAntiScroll) { installAntiScrollGuards(); _didAntiScroll = true; }
 
-      ensureUpgradeFxCanvas();
+      // UI dinámica
+      setupLanguageUI();
+      ensureStartTabsUI();
+
+      // HUD flotante
       ensureHudStatusUI();
       installHudObservers();
 
-      setPill(pillVersion, `v${APP_VERSION}`);
-      if (pillUpdate) pillUpdate.hidden = true;
-
-      if (loadingSub) loadingSub.textContent = I18n.t("app_loading");
+      // State base
       setState("loading");
+      if (pillVersion) setPill(pillVersion, `v${APP_VERSION}`);
+      if (brandSub) brandSub.textContent = I18n.t("app_loading") || I18n.t("app_ready") || "Ready";
 
+      // Auth + prefs
       syncFromAuth();
-      applyAudioSettingsNow();
+      initAuthUI();
 
-      // skills.js (si está cargado) — se inicializa aquí para que use el estado y el pickedCount compartido
+      // Skills pack
       initSkillsPackIfPresent();
 
-      ROWS = desiredRows();
+      // Sprites opcionales
+      try { await preloadSpritesWithTimeout(950); } catch {}
 
+      // Wire
+      wireUI();
+      bindInputs();
+
+      // aplicar settings a UI + audio + resize
+      applySettingsToUI();
+
+      // grid init
       recomputeZone();
       makeGrid();
       rerollCombo();
 
-      initAuthUI();
+      // Resize listeners (robusto)
+      let _rzRAF = 0;
+      const scheduleResize = () => {
+        if (_rzRAF) return;
+        _rzRAF = raf(() => { _rzRAF = 0; resize(); });
+      };
+      on(window, "resize", scheduleResize, { passive: true });
+      on(window, "orientationchange", scheduleResize, { passive: true });
+      on(window.visualViewport, "resize", scheduleResize, { passive: true });
+      on(window.visualViewport, "scroll", scheduleResize, { passive: true });
 
-      setupLanguageUI();
-      applySettingsToUI();
+      // PWA
+      try { await setupPWA(); } catch {}
 
+      // Primer render
       resize();
-      on(window, "resize", resize, { passive: true });
-      on(window.visualViewport, "resize", resize, { passive: true });
+      updatePillsNow();
 
-      bindInputs();
-      wireUI();
+      // mostrar UI inicial
+      try { overlayHide(overlayLoading); } catch {}
+      setState("menu");
 
-      if (loadingSub) loadingSub.textContent = I18n.t("app_pwa");
-      await setupPWA();
-      preloadSpritesWithTimeout(900);
+      const pressSeen = (() => {
+        try { return sessionStorage.getItem("gridrogue_press_seen_v1") === "1"; } catch { return false; }
+      })();
 
-      try { GRPerf?.start?.(); } catch {}
+      if (!pressSeen) showPressToStart();
+      else overlayShow(overlayStart);
 
-      resetRun(true);
+      if (brandSub) brandSub.textContent = I18n.t("app_ready");
 
+      // loop
       lastT = pNow();
       requestAnimationFrame(frame);
 
-      const SPLASH_MIN_MS = 1400;
-      const elapsed = pNow() - bootStartedAt;
-      const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
-
-      setTimeout(async () => {
-        await overlayFadeOut(overlayLoading, 180);
-
-        setState("menu");
-        if (brandSub) brandSub.textContent = I18n.t("app_ready");
-
-        const seen = (() => { try { return sessionStorage.getItem("gridrogue_press_seen_v1") === "1"; } catch { return false; } })();
-        if (!seen && overlayPress) showPressToStart();
-        else overlayShow(overlayStart);
-
-        updatePillsNow();
-      }, wait);
-
-      on(document, "visibilitychange", () => {
-        if (document.hidden && running && !gameOver && !inLevelUp) {
-          pauseForOverlay(true);
-          overlayShow(overlayPaused);
-          updateStatusHUD();
-        }
-      });
-
-      try { perfEndBoot?.(); } catch {}
-    } catch (e) {
-      showFatal(e);
+      safeEndPerfBoot();
+    } finally {
+      try { if (watchdog) clearTimeout(watchdog); } catch {}
     }
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
-  else boot();
+  // ───────────────────────── Start boot ─────────────────────────
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => boot().catch(showFatal), { once: true });
+  } else {
+    boot().catch(showFatal);
+  }
+
 })();
