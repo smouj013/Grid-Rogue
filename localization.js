@@ -342,7 +342,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Active",
 
-      // v1.1.0
       ui_menu: "Menu",
       ui_play: "Play",
       ui_start: "Start",
@@ -524,7 +523,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Active",
 
-      // v1.1.0
       ui_menu: "Menu",
       ui_play: "Jouer",
       ui_start: "Démarrer",
@@ -706,7 +704,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Aktiv",
 
-      // v1.1.0
       ui_menu: "Menü",
       ui_play: "Spielen",
       ui_start: "Start",
@@ -888,7 +885,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Attiva",
 
-      // v1.1.0
       ui_menu: "Menu",
       ui_play: "Gioca",
       ui_start: "Avvia",
@@ -1070,7 +1066,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Ativa",
 
-      // v1.1.0
       ui_menu: "Menu",
       ui_play: "Jogar",
       ui_start: "Iniciar",
@@ -1252,7 +1247,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Activa",
 
-      // v1.1.0
       ui_menu: "Menú",
       ui_play: "Jugar",
       ui_start: "Començar",
@@ -1434,7 +1428,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "已激活",
 
-      // v1.1.0
       ui_menu: "菜单",
       ui_play: "开始",
       ui_start: "开始",
@@ -1616,7 +1609,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "已啟用",
 
-      // v1.1.0
       ui_menu: "選單",
       ui_play: "開始",
       ui_start: "開始",
@@ -1798,7 +1790,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "発動中",
 
-      // v1.1.0
       ui_menu: "メニュー",
       ui_play: "プレイ",
       ui_start: "スタート",
@@ -1980,7 +1971,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "활성",
 
-      // v1.1.0
       ui_menu: "메뉴",
       ui_play: "플레이",
       ui_start: "시작",
@@ -2162,7 +2152,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Активно",
 
-      // v1.1.0
       ui_menu: "Меню",
       ui_play: "Играть",
       ui_start: "Старт",
@@ -2344,7 +2333,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "مفعّل",
 
-      // v1.1.0
       ui_menu: "القائمة",
       ui_play: "لعب",
       ui_start: "ابدأ",
@@ -2526,7 +2514,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Aktif",
 
-      // v1.1.0
       ui_menu: "Menü",
       ui_play: "Oyna",
       ui_start: "Başla",
@@ -2708,7 +2695,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Aktywne",
 
-      // v1.1.0
       ui_menu: "Menu",
       ui_play: "Graj",
       ui_start: "Start",
@@ -2890,7 +2876,6 @@
       badge_stack_fmt: "x{0}",
       badge_active: "Actief",
 
-      // v1.1.0
       ui_menu: "Menu",
       ui_play: "Spelen",
       ui_start: "Start",
@@ -3005,6 +2990,36 @@
     try { if (typeof document !== "undefined" && document.documentElement) document.documentElement.dir = RTL_LANGS.has(code) ? "rtl" : "ltr"; } catch {}
   }
 
+  function fmt(str, args) {
+    return String(str).replace(/\{(\d+)\}/g, (_, i) =>
+      (args && args[+i] != null) ? String(args[+i]) : ""
+    );
+  }
+
+  function _getRaw(lang, key) {
+    const ex = extra[lang];
+    if (ex && ex[key] != null) return ex[key];
+    const base = dict[lang];
+    if (base && base[key] != null) return base[key];
+    return null;
+  }
+
+  function has(key, lang = current) {
+    const v = _getRaw(lang, key);
+    return v != null;
+  }
+
+  function t(key, ...args) {
+    const lang = current;
+    const val =
+      _getRaw(lang, key) ??
+      _getRaw("en", key) ??
+      _getRaw("es", key) ??
+      key;
+
+    return args.length ? fmt(val, args) : String(val);
+  }
+
   function applyDataAttrs(root = (typeof document !== "undefined" ? document : null)) {
     try {
       const r = root && root.nodeType ? root : (typeof document !== "undefined" ? document : null);
@@ -3049,36 +3064,6 @@
   }
 
   function getLang() { return current; }
-
-  function fmt(str, args) {
-    return String(str).replace(/\{(\d+)\}/g, (_, i) =>
-      (args && args[+i] != null) ? String(args[+i]) : ""
-    );
-  }
-
-  function _getRaw(lang, key) {
-    const ex = extra[lang];
-    if (ex && ex[key] != null) return ex[key];
-    const base = dict[lang];
-    if (base && base[key] != null) return base[key];
-    return null;
-  }
-
-  function has(key, lang = current) {
-    const v = _getRaw(lang, key);
-    return v != null;
-  }
-
-  function t(key, ...args) {
-    const lang = current;
-    const val =
-      _getRaw(lang, key) ??
-      _getRaw("en", key) ??
-      _getRaw("es", key) ??
-      key;
-
-    return args.length ? fmt(val, args) : String(val);
-  }
 
   function languageOptions() {
     const order = [

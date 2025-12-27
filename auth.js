@@ -1,16 +1,42 @@
-/* auth.js — Grid Rogue v0.2.3 (UPDATED+HARDENED)
+/* auth.js — Grid Rogue v1.1.0 (MENU-FIRST + HARDENED)
    Perfiles locales + best score + prefs opcionales por perfil.
-   ✅ Mantiene API y migración desde gridrunner_* (sin perder datos)
-   ✅ Sanitización reforzada (ids/nombres/prefs)
+   ✅ API estable + migración desde gridrunner_* (sin perder datos)
+   ✅ MENU-FIRST: no autoselecciona perfil al boot (no salta el menú principal)
+   ✅ Guarda lastId (último usado) pero activeId = null hasta confirmar (Start/selección)
+   ✅ Guard anti SW: si entra un auth viejo, este lo reemplaza (no bloquea updates)
    ✅ Anti-corrupt: auto-repair si el estado guardado viene roto
    ✅ canLS robusto + fallback en memoria si LS bloqueado (Safari privado / políticas)
-   ✅ Evita duplicados de nombre (case-insensitive) y de id
    ✅ Export/Import con merge/replace seguro
 */
 (() => {
   "use strict";
 
-  const VERSION = "1.0.0";
+  const VERSION = "1.1.0";
+
+  // ───────────────────────── Guard inteligente (no bloquea updates) ─────────────────────────
+  const g = (typeof globalThis !== "undefined") ? globalThis : window;
+
+  function parseVer(v) {
+    const s = String(v || "").trim();
+    const parts = s.split(".").map(n => parseInt(n, 10));
+    return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+  }
+  function cmpVer(a, b) {
+    const A = parseVer(a), B = parseVer(b);
+    for (let i = 0; i < 3; i++) {
+      if (A[i] > B[i]) return 1;
+      if (A[i] < B[i]) return -1;
+    }
+    return 0;
+  }
+
+  try {
+    if (g && g.Auth && typeof g.Auth.VERSION === "string") {
+      // Si ya hay una versión >= a ésta, no hacemos nada.
+      if (cmpVer(g.Auth.VERSION, VERSION) >= 0) return;
+      // Si hay una más vieja, seguimos y la reemplazamos.
+    }
+  } catch (_) {}
 
   const U = window.GRUtils || window.Utils || null;
 
@@ -77,8 +103,8 @@
 
   // ───────────────────────── Keys ─────────────────────────
   const AUTH_KEY = "gridrogue_auth_v1";
-
   const AUTH_KEY_OLD = "gridrunner_auth_v1";
+
   const LEGACY_NAME_KEY = "gridrunner_name_v1";
   const LEGACY_BEST_KEY = "gridrunner_best_v1";
 
@@ -97,7 +123,6 @@
   };
 
   function normalizeName(name) {
-    // Manténlo simple, pero robusto (sin chars invisibles)
     const s = safeString(name)
       .replace(/[\u0000-\u001f\u007f]/g, "")
       .trim()
@@ -154,7 +179,6 @@
     if (!p || typeof p !== "object") return null;
 
     let id = (typeof p.id === "string" && p.id.trim()) ? p.id.trim() : uid();
-    // Si el id viene súper largo/extraño, lo recortamos (evita keys gigantes por corrupción)
     id = safeString(id).replace(/\s+/g, "").slice(0, 80) || uid();
 
     const name = normalizeName(p.name) || "Jugador";
@@ -183,24 +207,28 @@
       cleaned.push(sp);
     }
 
-    // Orden: recientes arriba
     cleaned.sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
 
-    let activeId = (typeof st?.activeId === "string" ? st.activeId : null);
-    if (activeId && !cleaned.some(p => p.id === activeId)) {
-      activeId = cleaned[0]?.id || null;
-    }
+    const lastId = (typeof st?.lastId === "string" && st.lastId.trim()) ? st.lastId.trim() : null;
 
-    return { v: clampInt(st?.v ?? 1, 1, 99), activeId, profiles: cleaned };
+    // MENU-FIRST: activeId puede ser null aunque exista lastId
+    let activeId = (typeof st?.activeId === "string" && st.activeId.trim()) ? st.activeId.trim() : null;
+
+    if (activeId && !cleaned.some(p => p.id === activeId)) activeId = null;
+
+    return {
+      v: clampInt(st?.v ?? 1, 1, 99),
+      activeId,
+      lastId: (lastId && cleaned.some(p => p.id === lastId)) ? lastId : (cleaned[0]?.id || null),
+      profiles: cleaned
+    };
   }
 
   function loadStateFromKey(key) {
     const raw = readLS(key);
     const st = raw ? safeParse(raw, null) : null;
-
     if (!st || typeof st !== "object") return null;
     if (!Array.isArray(st.profiles)) return null;
-
     return sanitizeState(st);
   }
 
@@ -211,32 +239,52 @@
     const old = loadStateFromKey(AUTH_KEY_OLD);
     if (old) return { st: old, loadedFrom: AUTH_KEY_OLD };
 
-    return { st: { v: 1, activeId: null, profiles: [] }, loadedFrom: null };
+    return { st: { v: 1, activeId: null, lastId: null, profiles: [] }, loadedFrom: null };
   }
 
   function saveState(st) {
-    // Aunque canLS falle, seguimos guardando en RAM (writeLS lo hace)
     const json = safeStringify(st, "");
     if (!json) return false;
 
     const okNew = writeLS(AUTH_KEY, json);
-    // Mantén compat (viejo key)
+    // Compat: viejo key
     writeLS(AUTH_KEY_OLD, json);
 
-    // Si LS está disponible, okNew suele ser true; si no, se queda en RAM
     return okNew || !canLS();
   }
 
+  function dispatchChange(type, detail) {
+    try {
+      window.dispatchEvent(new CustomEvent("gridrogue:auth-changed", {
+        detail: { type, ...(detail || {}) }
+      }));
+    } catch (_) {}
+  }
+
   function ensureMigration(st, loadedFrom) {
-    // Si venimos del key viejo, guardamos al nuevo también
     if (loadedFrom === AUTH_KEY_OLD) saveState(st);
 
-    // Si ya hay perfiles, ok
+    // Migración especial: estados antiguos usaban activeId como “último usado”
+    // MENU-FIRST: convertimos activeId -> lastId y dejamos activeId=null para no saltar el menú.
+    if (st.activeId && !st.lastId) {
+      st.lastId = st.activeId;
+      st.activeId = null;
+      saveState(st);
+    }
+
+    // Si ya hay perfiles, no creamos nada.
     if (st.profiles.length > 0) return st;
 
-    // Migración legacy (name/best sueltos)
+    // Migración legacy (name/best sueltos) SOLO si existen datos reales.
     const legacyName = normalizeName(readLS(LEGACY_NAME_KEY) || "");
     const legacyBest = parseInt(readLS(LEGACY_BEST_KEY) || "0", 10) || 0;
+
+    const hasLegacy = (legacyName.length >= 2) || (legacyBest > 0);
+    if (!hasLegacy) {
+      // Primera vez real: deja vacío para que el menú principal pida perfil.
+      saveState(st);
+      return st;
+    }
 
     const name = legacyName.length >= 2 ? legacyName : "Jugador";
     const id = uid();
@@ -249,7 +297,10 @@
       best: Math.max(0, legacyBest | 0),
     });
 
-    st.activeId = id;
+    // MENU-FIRST: guardamos como lastId pero activeId sigue null (para que salga el menú)
+    st.lastId = id;
+    st.activeId = null;
+
     saveState(st);
     return st;
   }
@@ -258,9 +309,13 @@
   const loaded = loadState();
   const state = ensureMigration(loaded.st, loaded.loadedFrom);
 
-  // Auto-repair si viene corrupto (ej: activeId null con perfiles existentes)
-  if (!state.activeId && state.profiles.length) {
-    state.activeId = state.profiles[0].id;
+  // Auto-repair mínimo
+  if (state.profiles.length && state.lastId && !state.profiles.some(p => p.id === state.lastId)) {
+    state.lastId = state.profiles[0].id;
+    saveState(state);
+  }
+  if (state.activeId && !state.profiles.some(p => p.id === state.activeId)) {
+    state.activeId = null;
     saveState(state);
   }
 
@@ -268,6 +323,7 @@
   function cloneProfile(p) {
     return p ? { ...p, ...(p.prefs ? { prefs: { ...p.prefs } } : {}) } : null;
   }
+
   function uniqueName(name, exceptId = null) {
     const base = normalizeName(name);
     if (base.length < 2) return null;
@@ -276,16 +332,20 @@
     const dup = state.profiles.find(p => p.id !== exceptId && (p.name || "").toLowerCase() === lower);
     if (!dup) return base;
 
-    // Añade sufijo simple " (2)" " (3)"...
     for (let i = 2; i <= 99; i++) {
-      const cand = (base.slice(0, 16 - (` (${i})`.length)) + ` (${i})`).slice(0, 16);
+      const suf = ` (${i})`;
+      const cand = (base.slice(0, 16 - suf.length) + suf).slice(0, 16);
       const cLower = cand.toLowerCase();
       if (!state.profiles.some(p => p.id !== exceptId && (p.name || "").toLowerCase() === cLower)) {
         return cand;
       }
     }
-    // fallback extremo
     return (base.slice(0, 14) + " *").slice(0, 16);
+  }
+
+  function getById(id) {
+    if (!id) return null;
+    return state.profiles.find(p => p.id === id) || null;
   }
 
   // ───────────────────────── Public API ─────────────────────────
@@ -296,27 +356,46 @@
       .map(cloneProfile);
   }
 
+  // MENU-FIRST: esto devolverá null hasta que el usuario confirme perfil (setActive/create)
   function getActiveProfile() {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     return cloneProfile(p);
   }
 
+  function getLastProfileId() {
+    return state.lastId || null;
+  }
+
+  function getLastProfile() {
+    const p = getById(state.lastId);
+    return cloneProfile(p);
+  }
+
+  // Útil para UI: si aún no hay activeId, te da el lastId para preseleccionar dropdown
+  function getActiveOrLastProfile() {
+    return getActiveProfile() || getLastProfile();
+  }
+
   function setActiveProfile(id) {
-    const p = state.profiles.find(x => x.id === id);
+    const p = getById(id);
     if (!p) return null;
 
-    state.activeId = p.id;
+    state.activeId = p.id;     // confirma selección => ya puede empezar run
+    state.lastId = p.id;       // persiste último usado
     p.lastLoginAt = now();
+
     saveState(state);
+    dispatchChange("setActive", { id: p.id });
 
     return cloneProfile(p);
   }
 
   function touchActiveLogin() {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     if (!p) return false;
     p.lastLoginAt = now();
     saveState(state);
+    dispatchChange("touch", { id: p.id });
     return true;
   }
 
@@ -326,14 +405,20 @@
 
     const id = uid();
     const p = { id, name: nm, createdAt: now(), lastLoginAt: now(), best: 0 };
+
     state.profiles.push(p);
+    // al crear, sí confirmamos (normalmente el usuario lo acaba de crear en el menú)
     state.activeId = id;
+    state.lastId = id;
+
     saveState(state);
+    dispatchChange("create", { id });
+
     return cloneProfile(p);
   }
 
   function renameProfile(id, newName) {
-    const p = state.profiles.find(x => x.id === id);
+    const p = getById(id);
     if (!p) return null;
 
     const nm = uniqueName(newName, id);
@@ -342,6 +427,7 @@
     p.name = nm;
     p.lastLoginAt = now();
     saveState(state);
+    dispatchChange("rename", { id });
 
     return cloneProfile(p);
   }
@@ -351,27 +437,29 @@
     if (idx < 0) return false;
 
     const wasActive = (state.activeId === id);
+    const wasLast = (state.lastId === id);
+
     state.profiles.splice(idx, 1);
 
-    if (state.profiles.length === 0) {
-      state.activeId = null;
-    } else if (wasActive) {
-      // el más reciente
+    if (wasActive) state.activeId = null;
+    if (wasLast) {
       state.profiles.sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
-      state.activeId = state.profiles[0].id;
+      state.lastId = state.profiles[0]?.id || null;
     }
 
     saveState(state);
+    dispatchChange("delete", { id });
+
     return true;
   }
 
   function getBestForActive() {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     return p ? (p.best | 0) : 0;
   }
 
   function setBestForActive(best) {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     if (!p) return false;
 
     const b = Math.max(0, best | 0);
@@ -379,18 +467,19 @@
       p.best = b;
       p.lastLoginAt = now();
       saveState(state);
+      dispatchChange("best", { id: p.id, best: b });
       return true;
     }
     return false;
   }
 
   function getPrefsForActive() {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     return p && p.prefs ? { ...p.prefs } : null;
   }
 
   function setPrefsForActive(prefs) {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     if (!p) return false;
 
     const sp = sanitizePrefs(prefs);
@@ -399,17 +488,19 @@
       if ("prefs" in p) delete p.prefs;
       p.lastLoginAt = now();
       saveState(state);
+      dispatchChange("prefs", { id: p.id });
       return true;
     }
 
     p.prefs = sp;
     p.lastLoginAt = now();
     saveState(state);
+    dispatchChange("prefs", { id: p.id });
     return true;
   }
 
   function patchPrefsForActive(partialPrefs) {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     if (!p) return false;
 
     const current = p.prefs ? { ...p.prefs } : {};
@@ -418,11 +509,12 @@
   }
 
   function clearPrefsForActive() {
-    const p = state.profiles.find(p => p.id === state.activeId) || null;
+    const p = getById(state.activeId);
     if (!p) return false;
     if ("prefs" in p) delete p.prefs;
     p.lastLoginAt = now();
     saveState(state);
+    dispatchChange("prefs", { id: p.id });
     return true;
   }
 
@@ -430,6 +522,7 @@
     const snap = sanitizeState({
       v: state.v || 1,
       activeId: state.activeId,
+      lastId: state.lastId,
       profiles: state.profiles,
     });
     return safeStringify(snap, "{}") || "{}";
@@ -445,12 +538,13 @@
     if (!merge) {
       state.v = inc.v;
       state.profiles = inc.profiles.slice();
-      state.activeId =
-        (inc.activeId && inc.profiles.some(p => p.id === inc.activeId))
-          ? inc.activeId
-          : inc.profiles[0].id;
+
+      // MENU-FIRST: tras import, dejamos activeId=null y fijamos lastId seguro
+      state.activeId = null;
+      state.lastId = inc.lastId || inc.profiles[0].id;
 
       saveState(state);
+      dispatchChange("import", { mode: "replace", count: state.profiles.length });
       return { ok: true, mode: "replace", count: state.profiles.length };
     }
 
@@ -474,28 +568,38 @@
 
     const merged = sanitizeState({
       v: Math.max(state.v || 1, inc.v || 1),
-      activeId: state.activeId,
+      activeId: state.activeId, // se mantiene (probablemente null en menú)
+      lastId: state.lastId || inc.lastId,
       profiles: state.profiles,
     });
 
     state.v = merged.v;
     state.profiles = merged.profiles;
 
-    if (!state.activeId || !state.profiles.some(p => p.id === state.activeId)) {
-      state.activeId = merged.activeId || state.profiles[0]?.id || null;
+    if (!state.lastId || !state.profiles.some(p => p.id === state.lastId)) {
+      state.lastId = merged.lastId || state.profiles[0]?.id || null;
+    }
+
+    // MENU-FIRST: no forzamos activeId
+    if (state.activeId && !state.profiles.some(p => p.id === state.activeId)) {
+      state.activeId = null;
     }
 
     saveState(state);
+    dispatchChange("import", { mode: "merge", count: state.profiles.length });
     return { ok: true, mode: "merge", count: state.profiles.length };
   }
 
   function clearAuth() {
     state.activeId = null;
+    state.lastId = null;
     state.profiles = [];
     saveState(state);
 
     removeLS(AUTH_KEY);
     removeLS(AUTH_KEY_OLD);
+
+    dispatchChange("clear", {});
     return true;
   }
 
@@ -511,6 +615,11 @@
 
     listProfiles,
     getActiveProfile,
+    getActiveOrLastProfile,
+
+    getLastProfileId,
+    getLastProfile,
+
     setActiveProfile,
     createProfile,
     renameProfile,
